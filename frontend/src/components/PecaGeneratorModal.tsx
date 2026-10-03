@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 
 import api from "../lib/api";
-import { authFetch } from "../lib/stream";
+import { streamSSE } from "../lib/stream";
 import { Badge, Button, Modal } from "./UI";
 import { toast } from "./Toast";
 import GuiadoForm from "./GuiadoForm";
@@ -328,7 +328,7 @@ export default function PecaGeneratorModal({
       aprovado_para_redacao: false,
     };
 
-    const body = JSON.stringify({
+    const body = {
       tipo_peca: tipoPeca,
       area_direito: areaDireito,
       nivel_complexidade: nivelComplexidade,
@@ -342,76 +342,48 @@ export default function PecaGeneratorModal({
       case_id: caseId ?? null,
       instrucoes_adicionais: instrucoes || null,
       modo_producao: modoProducao,
-    });
+    };
 
     try {
-      const res = await authFetch("/api/pecas/gerar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body,
+      await streamSSE("/api/pecas/gerar", body, {
         signal: abortRef.current.signal,
-      });
+        missingBodyMessage: "Stream de geração indisponível",
+        onResponseError: async (res) => {
+          const err = await res
+            .json()
+            .catch(() => ({ detail: "Erro desconhecido" }));
+          const detailObj =
+            typeof err.detail === "object" && err.detail !== null
+              ? (err.detail as Record<string, any>)
+              : null;
 
-      if (!res.ok) {
-        const err = await res
-          .json()
-          .catch(() => ({ detail: "Erro desconhecido" }));
-        const detailObj =
-          typeof err.detail === "object" && err.detail !== null
-            ? (err.detail as Record<string, any>)
-            : null;
-
-        if (res.status === 409 && detailObj?.need_ficha_triagem) {
-          setFase("form");
-          onNeedFicha?.(detailObj.case_id ?? caseId ?? "");
-          return;
-        }
-
-        if (res.status === 409 && Array.isArray(detailObj?.bloqueios)) {
-          setFase("form");
-          toast.error(detailObj.bloqueios.join(" · "));
-          return;
-        }
-
-        const detail = detailObj
-          ? (detailObj.mensagem ??
-            detailObj.detail ??
-            JSON.stringify(detailObj))
-          : err.detail;
-        throw new Error(detail || "Falha na geração");
-      }
-
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error("Stream de geração indisponível");
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const partes = buffer.split("\n\n");
-        buffer = partes.pop() ?? "";
-
-        for (const parte of partes) {
-          const eventName = parte.match(/^event:\s*(.+)$/m)?.[1]?.trim();
-          const dataLine = parte.match(/^data:\s*(.+)$/ms)?.[1]?.trim();
-          if (!dataLine) continue;
-
-          let payload: Record<string, any>;
-          try {
-            payload = JSON.parse(dataLine);
-          } catch {
-            continue;
+          if (res.status === 409 && detailObj?.need_ficha_triagem) {
+            setFase("form");
+            onNeedFicha?.(detailObj.case_id ?? caseId ?? "");
+            return;
           }
 
-          if (eventName === "step") {
+          if (res.status === 409 && Array.isArray(detailObj?.bloqueios)) {
+            setFase("form");
+            toast.error(detailObj.bloqueios.join(" · "));
+            return;
+          }
+
+          const detail = detailObj
+            ? (detailObj.mensagem ??
+              detailObj.detail ??
+              JSON.stringify(detailObj))
+            : err.detail;
+          throw new Error(detail || "Falha na geração");
+        },
+        onEvent: ({ event, data: payload }) => {
+          if (event === "step") {
             setEtapaStatus(
               payload.etapa,
               payload.status === "em_andamento" ? "em_andamento" : "concluido",
               payload.resultado,
             );
-          } else if (eventName === "concluido") {
+          } else if (event === "concluido") {
             setDocumento(payload.documento ?? "");
             setAiLogId(payload.ai_log_id ?? "");
             setCodigoPeca(payload.codigo_peca ?? "");
@@ -422,13 +394,13 @@ export default function PecaGeneratorModal({
                 : [],
             );
             setFase("concluido");
-          } else if (eventName === "residuos") {
+          } else if (event === "residuos") {
             setResiduos(Array.isArray(payload.achados) ? payload.achados : []);
-          } else if (eventName === "erro") {
+          } else if (event === "erro") {
             throw new Error(payload.detail ?? "Erro na geração");
           }
-        }
-      }
+        },
+      });
     } catch (e: any) {
       if (e?.name === "AbortError") return;
       setErroMsg(e?.message ?? "Erro desconhecido");

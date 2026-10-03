@@ -1,3 +1,4 @@
+import { rotulo } from "../../lib/uiHelpers";
 import { useEffect, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import api from "../../lib/api";
@@ -5,10 +6,6 @@ import { toast } from "../../components/Toast";
 import { Modal } from "../../components/UI";
 import type { Case } from "../../types";
 import type { RamoConfig } from "./ramosConfig";
-
-function rotulo(v: string) {
-  return v.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
 
 export function valorObrigatorioAusente(valor: unknown): boolean {
   return valor === undefined || valor === null || valor === "";

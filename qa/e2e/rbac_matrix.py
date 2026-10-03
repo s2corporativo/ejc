@@ -128,6 +128,15 @@ _GATES_COMPARTILHADOS: dict[str, "GateInfo"] = {
     "requer_equipe_juridica": (
         "local_membership", list(EQUIPE_JURIDICA), ROLE_LEVEL["estagiario"],
     ),
+    "cliente_portal_id": ("local_membership", ["cliente_externo"], ROLE_LEVEL["cliente_externo"]),
+    "bloquear_cliente_externo_ia": (
+        "local_membership", [r for r in ROLE_LEVEL if r != "cliente_externo"], ROLE_LEVEL["secretaria"],
+    ),
+}
+
+_PREDICADOS_COMPARTILHADOS: dict[str, "GateInfo"] = {
+    "eh_equipe_juridica": ("local_membership", list(EQUIPE_JURIDICA), ROLE_LEVEL["estagiario"]),
+    "pode_ato_juridico": ("local_level", None, ROLE_LEVEL["advogado"]),
 }
 
 # Espelha app/core/auth_middleware.py::PREFIXOS_PUBLICOS filtrados para o
@@ -518,8 +527,8 @@ def _import_aliases(tree: ast.Module) -> dict[str, str]:
     _je_requer_equipe_juridica` em jurimetria.py — sem isto o gate do router
     inteiro ficava invisível e a matriz derivava "permitido" onde o app nega
     com 403)."""
-    reconhecidos = ("require_roles", "require_roles_exact", "require_admin",
-                    *_GATES_COMPARTILHADOS)
+    reconhecidos = ("require_roles", "require_roles_exact", "require_admin", "requer_perfis",
+                    *_GATES_COMPARTILHADOS, *_PREDICADOS_COMPARTILHADOS)
     aliases: dict[str, str] = {}
     for node in ast.walk(tree):
         if not isinstance(node, ast.ImportFrom):
@@ -633,9 +642,33 @@ def _analisar_helpers_locais(
     primeiro conjunto de helpers de raise disponível."""
     funcs = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
 
-    helper_gates: dict[str, GateInfo] = {}
-    bool_helpers: dict[str, GateInfo] = {}
+    aliases = aliases or {}
+    helper_gates: dict[str, GateInfo] = {
+        local: _GATES_COMPARTILHADOS[original]
+        for local, original in aliases.items() if original in _GATES_COMPARTILHADOS
+    }
+    bool_helpers: dict[str, GateInfo] = {
+        **_PREDICADOS_COMPARTILHADOS,
+        **{local: _PREDICADOS_COMPARTILHADOS[original]
+           for local, original in aliases.items() if original in _PREDICADOS_COMPARTILHADOS},
+    }
     for fn in funcs:
+        # Gate parametrizado: a allowlist vive no chamador, e o raise no core.
+        for call in ast.walk(fn):
+            if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+                    and aliases.get(call.func.id, call.func.id) == "requer_perfis"):
+                continue
+            container = call.args[1] if len(call.args) > 1 else next(
+                (kw.value for kw in call.keywords if kw.arg == "perfis"), None,
+            )
+            roles = _extract_roles_from_expr(container, constants) if container else None
+            if roles:
+                helper_gates[fn.name] = (
+                    "local_membership", roles, min(ROLE_LEVEL.get(r, 0) for r in roles),
+                )
+                break
+        if fn.name in helper_gates:
+            continue
         roles = _find_membership_check(fn.body, constants)
         if roles:
             level = min((ROLE_LEVEL.get(r, 0) for r in roles), default=0)

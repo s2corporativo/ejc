@@ -2,33 +2,30 @@
 """Reproduz a falha de duplicidade CNJ na bateria M07.
 Estratégia: replicar o MESMO fluxo exato da bateria (mesmo CNJ valido,
 mesma ordem) e isolar quando o 409 deixa de valer."""
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import random, requests, time
 
 
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 
 SENHA = _qa_pw('DEBUG')
-BASE = "http://127.0.0.1:8000"
+BASE = _shared.LOCAL_API
 S = requests.Session()
 S.headers.update({"Content-Type": "application/json", "X-Forwarded-For": "127.0.0.1"})
 
 def cnj_valido():
-    n = f"{random.randint(1000000, 9999999)}"
-    ano = "2026"
-    j, tr, oo = "8", "01", "0001"
-    corpo = int(f"{n}{ano}{j}{tr}{oo}00")
-    dv = (1 - corpo) % 97
-    return f"{n}-{dv:02d}.{ano}.{j}.{tr}.{oo}"
+    return _shared.valid_cnj(random=random)
 
 time.sleep(18)
 r = S.post(f"{BASE}/api/auth/login",
-           json={"email": "ejc_qa_auth_admin@golocal.ejc",
+           json={"email": _shared.qa_email('admin'),
                  "password": SENHA})
 H = {"Authorization": f"Bearer {r.json()['access_token']}"}
 

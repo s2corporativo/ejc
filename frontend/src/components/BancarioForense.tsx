@@ -1,3 +1,7 @@
+import MinutaProgress from "./MinutaProgress";
+import { statusEtapa, type StatusEtapa } from "../lib/minuta";
+import { fmtBRL, parseNum } from "../utils/formato";
+import { apiDetailMessage as apiDetail } from "../lib/apiError";
 // ── src/components/BancarioForense.tsx ───────────────────────────────────────
 // Ferramentas forenses do ramo bancário (backend determinístico, sem IA):
 //   1. Verificador de Abusividade de juros — compara a taxa do contrato com a
@@ -17,46 +21,21 @@ import {
   Sparkles,
 } from "lucide-react";
 import api from "../lib/api";
-import { authFetch } from "../lib/stream";
+import { streamSSE } from "../lib/stream";
 import { Modal, Button, Spinner } from "./UI";
 import { toast } from "./Toast";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
-function fmtBRL(v: number | null | undefined) {
-  return Number(v ?? 0).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
 function fmtNum(v: number | null | undefined, casas = 2) {
   return Number(v ?? 0).toLocaleString("pt-BR", {
     minimumFractionDigits: casas,
     maximumFractionDigits: casas,
   });
 }
-function parseNum(s: string): number | null {
-  const n = parseFloat(String(s).trim().replace(/\./g, "").replace(",", "."));
-  // aceita também "1234.56" digitado com ponto decimal simples
-  if (isNaN(n)) {
-    const n2 = parseFloat(String(s).trim().replace(",", "."));
-    return isNaN(n2) ? null : n2;
-  }
-  return n;
-}
 // Campos de taxa/percentual não têm separador de milhar — só vírgula decimal.
 function parsePct(s: string): number | null {
   const n = parseFloat(String(s).trim().replace(",", "."));
   return isNaN(n) ? null : n;
-}
-function apiDetail(e: any, fallback: string): string {
-  const d = e?.response?.data?.detail;
-  if (typeof d === "string") return d;
-  if (Array.isArray(d))
-    return d
-      .map((x: any) => (typeof x === "string" ? x : x?.msg || ""))
-      .filter(Boolean)
-      .join("; ");
-  return fallback;
 }
 
 const AVISO_HITL_UI =
@@ -487,16 +466,6 @@ function CalculadoraCET() {
 }
 
 // ── Esteira SSE da minuta revisional (mesma de AnaliseExtratos.tsx) ──────────
-const ETAPAS_MINUTA: { num: number; titulo: string }[] = [
-  { num: 1, titulo: "Identificando tipo de peça" },
-  { num: 2, titulo: "Estruturando enquadramento" },
-  { num: 3, titulo: "Buscando fundamentos legais" },
-  { num: 4, titulo: "Analisando jurisprudência" },
-  { num: 5, titulo: "Organizando argumentos" },
-  { num: 6, titulo: "Identificando riscos" },
-  { num: 7, titulo: "Montando documento completo" },
-];
-type StatusEtapa = "aguardando" | "em_andamento" | "concluido";
 type FaseMinuta = "escolher" | "gerando" | "concluido" | "erro";
 
 // A seção de abusividade não tem um bank_analysis id no contexto (o cálculo é
@@ -551,8 +520,7 @@ function MinutaRevisionalModal({
     onClose();
   };
 
-  // Espelha o consumo de SSE de AnaliseExtratos.tsx / PecaGeneratorModal.tsx
-  // (fetch direto + reader; axios não faz stream de resposta no browser).
+  // Consumo SSE autenticado compartilhado com a geração de peças.
   const gerar = async () => {
     if (!analiseSel || !abusividade) return;
     setFase("gerando");
@@ -561,50 +529,37 @@ function MinutaRevisionalModal({
     setErro("");
     abort.current = new AbortController();
     try {
-      const r = await authFetch(`/api/bank-analysis/${analiseSel}/gerar-peca`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ abusividade }),
-        signal: abort.current.signal,
-      });
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({ detail: "" }));
-        throw new Error(err.detail || "Falha ao gerar a minuta revisional.");
-      }
-      const reader = r.body!.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const parts = buf.split("\n\n");
-        buf = parts.pop() ?? "";
-        for (const part of parts) {
-          const eventLine = part.match(/^event:\s*(.+)$/m)?.[1]?.trim();
-          const dataLine = part.match(/^data:\s*(.+)$/ms)?.[1]?.trim();
-          if (!dataLine) continue;
-          let payload: Record<string, any> = {};
-          try {
-            payload = JSON.parse(dataLine);
-          } catch {
-            continue;
-          }
-          if (eventLine === "step") {
-            const num = Number(payload.etapa);
-            const st: StatusEtapa =
-              payload.status === "em_andamento" ? "em_andamento" : "concluido";
-            setEtapas((prev) => ({ ...prev, [num]: st }));
-          } else if (eventLine === "concluido") {
-            setDoc(payload.documento ?? "");
-            setLegalDocId(payload.legal_doc_id ?? "");
-            setFase("concluido");
-            toast.success("Minuta revisional gerada (rascunho — revise, OAB).");
-          } else if (eventLine === "erro") {
-            throw new Error(payload.detail ?? "Erro na geração da minuta.");
-          }
-        }
-      }
+      await streamSSE(
+        `/api/bank-analysis/${analiseSel}/gerar-peca`,
+        { abusividade },
+        {
+          signal: abort.current.signal,
+          onResponseError: async (r) => {
+            const err = await r.json().catch(() => ({ detail: "" }));
+            throw new Error(
+              err.detail || "Falha ao gerar a minuta revisional.",
+            );
+          },
+          onEvent: ({ event, data: payload }) => {
+            if (event === "step") {
+              const num = Number(payload.etapa);
+              setEtapas((prev) => ({
+                ...prev,
+                [num]: statusEtapa(payload.status),
+              }));
+            } else if (event === "concluido") {
+              setDoc(payload.documento ?? "");
+              setLegalDocId(payload.legal_doc_id ?? "");
+              setFase("concluido");
+              toast.success(
+                "Minuta revisional gerada (rascunho — revise, OAB).",
+              );
+            } else if (event === "erro") {
+              throw new Error(payload.detail ?? "Erro na geração da minuta.");
+            }
+          },
+        },
+      );
     } catch (e: any) {
       if (e.name === "AbortError") return;
       setErro(e.message ?? "Erro desconhecido");
@@ -692,44 +647,7 @@ function MinutaRevisionalModal({
 
         {(fase === "gerando" || fase === "erro") && (
           <div className="flex flex-col gap-2">
-            {ETAPAS_MINUTA.map((e) => {
-              const st = etapas[e.num] ?? "aguardando";
-              return (
-                <div
-                  key={e.num}
-                  className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border transition-colors ${
-                    st === "concluido"
-                      ? "bg-success-50 border-success-200"
-                      : st === "em_andamento"
-                        ? "bg-bronze-50/40 border-bronze-pale"
-                        : "bg-white border-slate-100"
-                  }`}
-                >
-                  <div
-                    className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-[11px] font-medium ${
-                      st === "concluido"
-                        ? "bg-success-600 text-white"
-                        : st === "em_andamento"
-                          ? "bg-bronze text-white"
-                          : "bg-slate-100 text-slate-400"
-                    }`}
-                  >
-                    {st === "em_andamento" ? (
-                      <Loader2 size={12} className="animate-spin" />
-                    ) : st === "concluido" ? (
-                      <CheckCircle2 size={12} />
-                    ) : (
-                      e.num
-                    )}
-                  </div>
-                  <span
-                    className={`text-sm ${st === "aguardando" ? "text-slate-400" : "text-navy"}`}
-                  >
-                    {e.titulo}
-                  </span>
-                </div>
-              );
-            })}
+            <MinutaProgress etapas={etapas} />
             {fase === "erro" && (
               <div className="mt-3 bg-danger-50 border border-danger-200 rounded-lg px-4 py-3 text-sm text-danger-700">
                 {erro}

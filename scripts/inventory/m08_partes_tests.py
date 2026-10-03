@@ -5,21 +5,23 @@ duplicidade, permissões, auditoria e consistência da listagem.
 Execução: /home/ubuntu/ejc_repo/scripts/inventory/env_shell.sh python3 <script>
 """
 from __future__ import annotations
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import random, sys, time
 import requests
 
-BASE = "http://127.0.0.1:8000"
-ADMIN = "ejc_qa_auth_admin@golocal.ejc"
-SOCIO = "ejc_qa_auth_socio@golocal.ejc"
-ADV = "ejc_qa_auth_advogado@golocal.ejc"
-FIN = "ejc_qa_auth_financeiro@golocal.ejc"
-CLI = "ejc_qa_auth_cliente@golocal.ejc"
+BASE = _shared.LOCAL_API
+ADMIN = _shared.qa_email('admin')
+SOCIO = _shared.qa_email('socio')
+ADV = _shared.qa_email('advogado')
+FIN = _shared.qa_email('financeiro')
+CLI = _shared.qa_email('cliente')
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 SENHA = _qa_pw('SENHA')
 # CPF válido (módulo 11) e CNPJ válido com dígito
@@ -51,7 +53,7 @@ def _dv_cnpj(base: str) -> str:
     return "".join(c)
 
 CNPJ_VALIDO = _dv_cnpj(f"112223{random.randint(100000,999999)}")
-HEADERS = {"Content-Type": "application/json", "X-Forwarded-For": "127.0.0.1"}
+HEADERS = _shared.qa_headers(content_type=True)
 TOKENS = {}
 TOTAL, OK = 0, 0
 

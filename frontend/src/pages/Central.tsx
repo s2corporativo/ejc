@@ -1,3 +1,4 @@
+import { paramsDaAba } from "../lib/uiHelpers";
 // Central unificada: fusão de CentralAtividades (/atividades) e
 // CentralRelacionamento (/central-relacionamento, agora redirect) em uma
 // única tela com abas. A aba é controlada por ?tab= para deep links; o
@@ -46,9 +47,7 @@ export default function Central() {
       : "atividades";
 
   const setTab = (next: CentralTab) => {
-    const params = new URLSearchParams(searchParams);
-    params.set("tab", next);
-    setSearchParams(params, { replace: true });
+    setSearchParams(paramsDaAba(searchParams, next), { replace: true });
   };
 
   return (

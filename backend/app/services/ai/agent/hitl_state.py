@@ -31,6 +31,8 @@ from uuid import uuid4
 
 from app.core.config import get_settings
 
+from app.services.runtime_helpers import cliente_redis
+
 logger = logging.getLogger("ejc.ai.agent.hitl")
 
 _PREFIXO = "agente:hitl:"
@@ -47,17 +49,7 @@ def hash_tool_call(nome: str, args: dict | None) -> str:
 
 
 async def _cliente():
-    """Cliente Redis assíncrono (curto timeout) — mesmo padrão do ai_cache.
-    None em qualquer falha (import/conexão): o chamador cai no fallback por hash."""
-    try:
-        import redis.asyncio as aioredis
-        s = get_settings()
-        return aioredis.from_url(
-            s.REDIS_URL, socket_connect_timeout=1.0, socket_timeout=1.0,
-            decode_responses=True,
-        )
-    except Exception:
-        return None
+    return await cliente_redis(get_settings)
 
 
 async def salvar(estado: dict, ttl: int | None = None) -> str | None:

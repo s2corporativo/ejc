@@ -67,7 +67,10 @@ def test_conferir_e_assinar_existe_e_e_um_post():
 
 def test_conferir_e_assinar_mantem_os_dois_gates_de_qualidade():
     """Os MESMOS gates do /aprovar. Consolidar não pode baixar a régua."""
-    bloco = _function_source(_source("app/routers/legal_docs.py"), "conferir_e_assinar")
+    fonte = _source("app/routers/legal_docs.py")
+    bloco = _function_source(fonte, "conferir_e_assinar")
+    assert "await _registrar_aprovacao(" in bloco
+    bloco = _function_source(fonte, "_registrar_aprovacao")
     assert "_bloquear_sem_validacao" in bloco
     assert "_bloquear_jurisprudencia_nao_validada" in bloco
 
@@ -80,7 +83,10 @@ def test_conferir_e_assinar_exige_observacoes_para_peca_de_ia():
 
 def test_conferir_e_assinar_registra_quem_quando_e_sobre_qual_versao():
     """O rastro do ato profissional — Lei 8.906/94, art. 32."""
-    bloco = _function_source(_source("app/routers/legal_docs.py"), "conferir_e_assinar")
+    fonte = _source("app/routers/legal_docs.py")
+    bloco = _function_source(fonte, "conferir_e_assinar")
+    assert "await _registrar_aprovacao(" in bloco
+    bloco = _function_source(fonte, "_registrar_aprovacao")
     assert "d.revisor_id = cu.id" in bloco
     assert "d.revisado_em = datetime.now(timezone.utc)" in bloco
     assert "d.notas_revisao = observacoes" in bloco
@@ -102,7 +108,10 @@ def test_conferir_e_assinar_grava_tudo_em_uma_transacao():
     """
     bloco = _function_source(_source("app/routers/legal_docs.py"), "conferir_e_assinar")
     assert bloco.count("await db.commit()") == 1
-    corpo_antes_dos_gates = bloco[: bloco.index("_bloquear_sem_validacao")]
+    corpo_antes_dos_gates = bloco[: bloco.index("await _registrar_aprovacao(")]
+    helper = _function_source(_source("app/routers/legal_docs.py"), "_registrar_aprovacao")
+    # Limita ao corpo do helper (o marcador seguinte é a rota /aprovar).
+    assert "await db.commit()" not in helper
     assert "await db.commit()" not in corpo_antes_dos_gates, (
         "commit antes dos gates deixaria validação e HITL gravados numa peça reprovada"
     )

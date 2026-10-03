@@ -3,6 +3,7 @@
 // "Todos os provedores falharam para task=…") NUNCA devem chegar ao advogado.
 // `mensagemErroIA` deixa passar apenas `detail` do backend que seja legível
 // por leigo; qualquer marcador técnico cai na mensagem padrão.
+import { detailMessage } from "./apiError";
 
 export const MENSAGEM_IA_INDISPONIVEL =
   "A inteligência artificial não está disponível no momento. " +
@@ -115,10 +116,7 @@ function detailDaResposta(err: unknown): {
 function mensagemObjeto(detail: unknown): string | null {
   if (!detail || typeof detail !== "object" || Array.isArray(detail))
     return null;
-  const mensagem = (detail as { mensagem?: unknown }).mensagem;
-  return typeof mensagem === "string" && mensagem.trim()
-    ? mensagem.trim()
-    : null;
+  return detailMessage(detail, "", { empty: false }).trim() || null;
 }
 
 function mensagemSegura(texto: string): string | null {

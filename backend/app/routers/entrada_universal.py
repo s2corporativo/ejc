@@ -5,7 +5,6 @@ import asyncio
 import json
 import logging
 import os
-import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import uuid4
@@ -38,6 +37,10 @@ from app.services.entrada_universal_service import (
     extrair_paginas, manifesto_pacote, montar_dossie, resumo_documentos, sha256_bytes,
 )
 from app.services.contract_migration import mark_contract_response
+
+from app.utils.ai_json import parse_json_response
+
+from app.utils.ai_json import fechar_json_truncado, reparar_json_truncado
 
 logger = logging.getLogger("ejc.entrada_universal.router")
 settings = get_settings()
@@ -73,87 +76,15 @@ def _role_value(user: User) -> str:
 
 
 def _fechar_json_truncado(texto: str) -> str | None:
-    """Fecha as estruturas abertas de um JSON cortado no meio.
-
-    Devolve None quando o corte caiu DENTRO de uma string ou de um escape (aí
-    não há fechamento honesto possível) ou quando há fechamento desbalanceado.
-    """
-    pilha: list[str] = []
-    em_string = escape = False
-    for ch in texto:
-        if escape:
-            escape = False
-            continue
-        if em_string:
-            if ch == "\\":
-                escape = True
-            elif ch == '"':
-                em_string = False
-            continue
-        if ch == '"':
-            em_string = True
-        elif ch in "{[":
-            pilha.append("}" if ch == "{" else "]")
-        elif ch in "}]":
-            if not pilha or pilha[-1] != ch:
-                return None
-            pilha.pop()
-    if em_string or escape:
-        return None
-    return texto + "".join(reversed(pilha))
+    return fechar_json_truncado(texto)
 
 
 def _reparar_json_truncado(bruto: str) -> dict[str, Any] | None:
-    """Recupera o máximo possível de um JSON interrompido pelo teto de tokens.
-
-    Tenta o texto inteiro e, em seguida, cortes sucessivos nos últimos
-    separadores (`,`/`}`/`]`), descartando o valor incompleto da cauda antes de
-    fechar a pilha. O número de tentativas é limitado — reparo é rede de
-    segurança, não substituto de orçamento de tokens adequado.
-    """
-    inicio = bruto.find("{")
-    if inicio < 0:
-        return None
-    texto = bruto[inicio:]
-    cortes = [len(texto)]
-    for i in range(len(texto) - 1, 0, -1):
-        if texto[i] in ",}]":
-            cortes.append(i + 1 if texto[i] in "}]" else i)
-            if len(cortes) > 60:
-                break
-    for corte in cortes:
-        candidato = _fechar_json_truncado(texto[:corte].rstrip().rstrip(","))
-        if not candidato:
-            continue
-        try:
-            valor = json.loads(candidato)
-        except Exception:
-            continue
-        if isinstance(valor, dict):
-            return valor
-    return None
+    return reparar_json_truncado(bruto)
 
 
 def _parse_json(texto: str) -> dict[str, Any] | None:
-    if not texto:
-        return None
-    try:
-        value = json.loads(texto)
-        return value if isinstance(value, dict) else None
-    except Exception:
-        pass
-    match = re.search(r"\{.*\}", texto, re.DOTALL)
-    if match:
-        try:
-            value = json.loads(match.group(0))
-            if isinstance(value, dict):
-                return value
-        except Exception:
-            pass
-    # Resposta cortada no meio (teto de tokens / stop do provedor): o regex
-    # acima não fecha o objeto e o parse falha. Tenta o reparo antes de
-    # declarar a estrutura perdida.
-    return _reparar_json_truncado(texto)
+    return parse_json_response(texto, require_dict=True, repair=_reparar_json_truncado)
 
 
 async def _acesso_batch(db: AsyncSession, cu: User, batch_id: str) -> DocumentIntakeBatch:

@@ -6,46 +6,34 @@ indexação, status, retry) contra o servidor local do EJC.
 Dependências: requests. Dados sintéticos identificados por EJC_QA.
 """
 
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
+
 
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 
 SENHA = _qa_pw('M21')
 import os
-import sys
+import sys as sys
 import time
 import json
 import uuid
 import requests
 
-BASE = "http://127.0.0.1:8000"
+BASE = _shared.LOCAL_API
 S = requests.Session()
 TOKENS = {}
 
 def login(email: str) -> str:
-    if email in TOKENS:
-        return TOKENS[email]
-    for _ in range(2):
-        r = S.post(f"{BASE}/api/auth/login", json={
-            "email": email,
-            "password": SENHA,
-        }, headers={"X-Forwarded-For": "127.0.0.1"}, timeout=15)
-        if r.status_code == 429:
-            time.sleep(45)
-            continue
-        r.raise_for_status()
-        TOKENS[email] = r.json()["access_token"]
-        return TOKENS[email]
-    raise SystemExit("login falhou (rate limit persistente)")
+    return _shared.login_rag(email, BASE=BASE, S=S, SENHA=SENHA, TOKENS=TOKENS, time=time)
 
 def H(email: str) -> dict:
-    return {"Authorization": f"Bearer {login(email)}",
-            "X-Forwarded-For": "127.0.0.1"}
+    return _shared.email_headers(email, login=login)
 
 def db(msg: str) -> None:
     print(f"[M21] {msg}")
@@ -65,14 +53,9 @@ def doc_extra(doc_id: str) -> dict:
         return {}
 
 PASS = FAIL = 0
-def chk(nome: str, cond: bool, extra: str = "") -> None:
-    global PASS, FAIL
-    if cond:
-        PASS += 1
-        print(f"[PASS] {nome}")
-    else:
-        FAIL += 1
-        print(f"[FAIL] {nome} — {extra}")
+def chk(nome: str, cond: bool, extra: str='') -> None:
+    global FAIL, PASS
+    FAIL, PASS = _shared.check_pass_fail(nome, cond, extra, FAIL=FAIL, PASS=PASS)
 
 # ═══════════════════ 0. PREPARAÇÃO ════════════════════════════════════════
 db("preparação: tokens + PDFs de teste")
@@ -164,7 +147,7 @@ r = S.post(f"{BASE}/api/rag/ingest", json={
     "fonte": "manual_qa_m21",
     "tribunal": "STJ",
     "confianca": "media",
-}, headers=H("ejc_qa_auth_advogado@golocal.ejc"), timeout=30)
+}, headers=H(_shared.qa_email('advogado')), timeout=30)
 chk("ingest texto: 201 com contagem de chunks e status",
     r.status_code == 201 and r.json().get("chunks", 0) >= 1
     and r.json().get("status_indexacao") in ("pendente", "indexado"),
@@ -176,7 +159,7 @@ r = S.post(f"{BASE}/api/rag/ingest", json={
     "titulo": "EJC_QA conteúdo muito curto",
     "categoria": "jurisprudencia",
     "conteudo": "curto demais",
-}, headers=H("ejc_qa_auth_advogado@golocal.ejc"), timeout=30)
+}, headers=H(_shared.qa_email('advogado')), timeout=30)
 chk("ingest texto: conteúdo < 50 chars rejeitado 422",
     r.status_code == 422, f"{r.status_code}")
 
@@ -184,7 +167,7 @@ r = S.post(f"{BASE}/api/rag/ingest", json={
     "titulo": "EJC_QA peça interna restrita",
     "categoria": "peca_interna",
     "conteudo": texto_ingest,
-}, headers=H("ejc_qa_auth_advogado@golocal.ejc"), timeout=30)
+}, headers=H(_shared.qa_email('advogado')), timeout=30)
 chk("ingest texto: categoria restrita rejeitada 422 (fluxo dedicado)",
     r.status_code == 422, f"{r.status_code}")
 
@@ -199,7 +182,7 @@ with open(PDF_TEXT, "rb") as f:
                    "tribunal": "TJMG",
                    "confianca": "alta",
                },
-               headers=H("ejc_qa_auth_advogado@golocal.ejc"), timeout=90)
+               headers=H(_shared.qa_email('advogado')), timeout=90)
 j = r.json() if r.status_code == 201 else {}
 chk("ingest-pdf texto nativo: 201, sem OCR nas páginas com texto",
     r.status_code == 201 and j.get("chunks", 0) >= 1
@@ -219,7 +202,7 @@ with open(PDF_SCAN, "rb") as f:
                    "tribunal": "TRF1",
                    "confianca": "media",
                },
-               headers=H("ejc_qa_auth_advogado@golocal.ejc"), timeout=180)
+               headers=H(_shared.qa_email('advogado')), timeout=180)
 j = r.json() if r.status_code == 201 else {}
 ocr = j.get("ocr", {})
 if r.status_code == 201:
@@ -244,7 +227,7 @@ else:
                        "tribunal": "TRF1",
                        "confianca": "media",
                    },
-                   headers=H("ejc_qa_auth_advogado@golocal.ejc"), timeout=180)
+                   headers=H(_shared.qa_email('advogado')), timeout=180)
     j = r.json() if r.status_code == 201 else {}
     if r.status_code == 201:
         extra_scan = doc_extra(r.json()["id"])
@@ -264,7 +247,7 @@ with open(PDF_FALSO, "rb") as f:
     r = S.post(f"{BASE}/api/rag/ingest-pdf",
                files={"file": ("falso.pdf", f, "application/pdf")},
                data={"titulo": "EJC_QA falso", "categoria": "jurisprudencia"},
-               headers=H("ejc_qa_auth_advogado@golocal.ejc"), timeout=30)
+               headers=H(_shared.qa_email('advogado')), timeout=30)
 chk("upload PDF falso (assinatura ausente): 422",
     r.status_code == 422, f"{r.status_code}")
 
@@ -272,7 +255,7 @@ with open(PDF_CURTO, "rb") as f:
     r = S.post(f"{BASE}/api/rag/ingest-pdf",
                files={"file": ("curto.pdf", f, "application/pdf")},
                data={"titulo": "EJC_QA curto", "categoria": "jurisprudencia"},
-               headers=H("ejc_qa_auth_advogado@golocal.ejc"), timeout=30)
+               headers=H(_shared.qa_email('advogado')), timeout=30)
 chk("upload PDF com texto < 50 chars: 422",
     r.status_code == 422, f"{r.status_code}")
 
@@ -285,7 +268,7 @@ r = S.post(f"{BASE}/api/rag/ingest-url",
                "categoria": "legislacao",
                "confianca": "baixa",
            },
-           headers=H("ejc_qa_auth_advogado@golocal.ejc"), timeout=90)
+           headers=H(_shared.qa_email('advogado')), timeout=90)
 if r.status_code == 201:
     doc_id_url = r.json()["id"]
 chk("ingest-url público: 201 (ou falha de rede tratada sem expor stack)",
@@ -299,7 +282,7 @@ r = S.post(f"{BASE}/api/rag/ingest-url",
                "titulo": "EJC_QA ssrf teste",
                "categoria": "legislacao",
            },
-           headers=H("ejc_qa_auth_advogado@golocal.ejc"), timeout=30)
+           headers=H(_shared.qa_email('advogado')), timeout=30)
 chk("ingest-url: SSRF interno rejeitado (422)",
     r.status_code == 422, f"{r.status_code}")
 
@@ -309,7 +292,7 @@ r = S.post(f"{BASE}/api/rag/ingest-url",
                "titulo": "EJC_QA ssrf metadados",
                "categoria": "legislacao",
            },
-           headers=H("ejc_qa_auth_advogado@golocal.ejc"), timeout=30)
+           headers=H(_shared.qa_email('advogado')), timeout=30)
 chk("ingest-url: SSRF metadados de nuvem rejeitado (422)",
     r.status_code == 422, f"{r.status_code}")
 
@@ -319,7 +302,7 @@ r = S.post(f"{BASE}/api/rag/ingest-url",
                "titulo": "EJC_QA dns",
                "categoria": "legislacao",
            },
-           headers=H("ejc_qa_auth_advogado@golocal.ejc"), timeout=60)
+           headers=H(_shared.qa_email('advogado')), timeout=60)
 chk("ingest-url: DNS inválido → retry esgotado com erro tratado (422/500s)",
     r.status_code in (422, 500, 502, 503, 504),
     f"{r.status_code} {r.text[:100]}")
@@ -349,7 +332,7 @@ chk("chunk_texto_com_paginas: preserva número da página de origem",
 db("7. metadados e idempotência (upsert)")
 if doc_id_texto:
     r = S.get(f"{BASE}/api/rag/docs", params={"page": 1, "per_page": 100},
-              headers=H("ejc_qa_auth_advogado@golocal.ejc"), timeout=30)
+              headers=H(_shared.qa_email('advogado')), timeout=30)
     docs = r.json().get("data", []) if r.status_code == 200 else []
     alvo = next((d for d in docs if d["id"] == doc_id_texto), None)
     chk("metadados: documento listado com título, categoria, tribunal e fonte",
@@ -369,7 +352,7 @@ if doc_id_texto:
         "fonte": "manual_qa_m21",
         "tribunal": "STJ",
         "confianca": "media",
-    }, headers=H("ejc_qa_auth_advogado@golocal.ejc"), timeout=30)
+    }, headers=H(_shared.qa_email('advogado')), timeout=30)
     j2 = r2.json() if r2.status_code == 201 else {}
     chk("idempotência: re-ingestão idêntica reutiliza documento (upsert)",
         r2.status_code == 201 and j2.get("resultado_upsert") in
@@ -379,7 +362,7 @@ if doc_id_texto:
 
 # ═══════════════════ 8. STATUS E INDEXAÇÃO ══════════════════════════════
 db("8. status e indexação de embeddings")
-r = S.get(f"{BASE}/api/rag/status", headers=H("ejc_qa_auth_advogado@golocal.ejc"),
+r = S.get(f"{BASE}/api/rag/status", headers=H(_shared.qa_email('advogado')),
           timeout=30)
 chk("status RAG: endpoint acessível (200)",
     r.status_code == 200, f"{r.status_code} {r.text[:80]}")
@@ -391,7 +374,7 @@ for did, nome in ((doc_id_texto, "texto"), (doc_id_pdf, "pdf nativo"),
     if not did:
         continue
     r = S.get(f"{BASE}/api/rag/docs", params={"page": 1, "per_page": 100},
-              headers=H("ejc_qa_auth_advogado@golocal.ejc"), timeout=30)
+              headers=H(_shared.qa_email('advogado')), timeout=30)
     docs = r.json().get("data", []) if r.status_code == 200 else []
     alvo = next((d for d in docs if d["id"] == did), None)
     st = (alvo or {}).get("status_indexacao", "?")
@@ -403,13 +386,13 @@ db("9. busca semântica")
 alvo = None
 if doc_id_texto:
     r = S.get(f"{BASE}/api/rag/docs", params={"page": 1, "per_page": 100},
-              headers=H("ejc_qa_auth_advogado@golocal.ejc"), timeout=30)
+              headers=H(_shared.qa_email('advogado')), timeout=30)
     docs = r.json().get("data", []) if r.status_code == 200 else []
     alvo = next((d for d in docs if d["id"] == doc_id_texto), None)
 if alvo and alvo.get("status_indexacao") == "indexado":
     r = S.get(f"{BASE}/api/rag/buscar",
         params={"q": "revisão da vida toda benefícios", "limite": 6},
-        headers=H("ejc_qa_auth_advogado@golocal.ejc"), timeout=60)
+        headers=H(_shared.qa_email('advogado')), timeout=60)
     j = r.json() if r.status_code == 200 else {}
     res = (j.get("resultados") or j.get("data") or j.get("docs") or [])
     chk("busca semântica: encontra o documento ingerido por texto",

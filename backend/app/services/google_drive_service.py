@@ -38,6 +38,8 @@ from app.services.google_drive_taxonomy import DriveTaxonomyDecision, classifica
 from app.services.ingestion_service import upsert_documento
 from app.services.ocr_service import extrair_texto
 
+from app.services.runtime_helpers import refresh_oauth_if_needed
+
 logger = logging.getLogger("ejc.google_drive")
 
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
@@ -206,9 +208,7 @@ def auth_status() -> dict[str, Any]:
 def _refresh_if_needed(creds):
     # Credenciais authorized_user normalmente vêm sem access_token inicial.
     # Se houver refresh_token, renovamos aqui para falhar cedo com erro claro.
-    if not creds.valid and getattr(creds, "refresh_token", None):
-        creds.refresh(Request())
-    return creds
+    return refresh_oauth_if_needed(creds, Request)
 
 
 def _credentials_from_oauth_user_json(raw_json: str):

@@ -1,3 +1,6 @@
+import { downloadGeneratedPdf } from "../lib/download";
+import { fmtBRL, parseNum } from "../utils/formato";
+import { apiDetailMessage as apiDetail } from "../lib/apiError";
 // ── src/components/AmbientalEstrategia.tsx ───────────────────────────────────
 // Simulador de Estratégia do Auto de Infração Ambiental (diferencial do ramo).
 // Comparador econômico determinístico (sem IA) dos caminhos possíveis diante de
@@ -21,30 +24,6 @@ import { Modal, Button } from "./UI";
 import { toast } from "./Toast";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
-function fmtBRL(v: number | null | undefined) {
-  return Number(v ?? 0).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
-function parseNum(s: string): number | null {
-  const n = parseFloat(String(s).trim().replace(/\./g, "").replace(",", "."));
-  if (isNaN(n)) {
-    const n2 = parseFloat(String(s).trim().replace(",", "."));
-    return isNaN(n2) ? null : n2;
-  }
-  return n;
-}
-function apiDetail(e: any, fallback: string): string {
-  const d = e?.response?.data?.detail;
-  if (typeof d === "string") return d;
-  if (Array.isArray(d))
-    return d
-      .map((x: any) => (typeof x === "string" ? x : x?.msg || ""))
-      .filter(Boolean)
-      .join("; ");
-  return fallback;
-}
 
 // ── Tipos da resposta (contrato /ambiental/estrategia/simular) ───────────────
 type CenarioId =
@@ -252,22 +231,15 @@ function PecaConversaoModal({
     setGerando(true);
     setErro("");
     try {
-      const r = await api.post("/ambiental/estrategia/peca-conversao", {
-        ...simulacao,
-        orgao_autuador: orgao.trim(),
-        numero_auto: numeroAuto.trim(),
-      });
-      const downloadUrl: string | undefined = r.data?.download_url;
-      if (!downloadUrl) throw new Error("download_url ausente na resposta");
-      const blob = await api.get(downloadUrl.replace(/^\/api/, ""), {
-        responseType: "blob",
-      });
-      const url = URL.createObjectURL(blob.data as Blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "requerimento-conversao-multa.pdf";
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadGeneratedPdf(
+        "/ambiental/estrategia/peca-conversao",
+        "requerimento-conversao-multa.pdf",
+        {
+          ...simulacao,
+          orgao_autuador: orgao.trim(),
+          numero_auto: numeroAuto.trim(),
+        },
+      );
       toast.success("Requerimento de conversão (Visual Law) gerado.");
       onClose();
     } catch (e: any) {

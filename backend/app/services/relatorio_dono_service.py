@@ -23,6 +23,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 
+from app.utils.format import formatar_brl
+
 logger = logging.getLogger("ejc.relatorio_dono")
 settings = get_settings()
 
@@ -147,9 +149,7 @@ async def coletar_numeros_semana(db: AsyncSession, hoje: date) -> dict:
 # ── Template determinístico ───────────────────────────────────────────────────
 
 def _brl(valor: float) -> str:
-    """Formata R$ no padrão brasileiro (1.234,56)."""
-    txt = f"{valor:,.2f}".replace(",", "@").replace(".", ",").replace("@", ".")
-    return f"R$ {txt}"
+    return formatar_brl(valor, coagir=False)
 
 
 def montar_email_relatorio(

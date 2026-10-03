@@ -179,9 +179,7 @@ async def listar(
     return {"total": total, "page": page, "data": [dict(r) for r in rows]}
 
 
-@router.get("/{analysis_id}")
-async def detalhe(analysis_id: str, db: AsyncSession = Depends(get_db),
-                  cu: User = Depends(get_current_user)):
+async def _analise_autorizada(db: AsyncSession, cu: User, analysis_id: str):
     a = (await db.execute(select(BankAnalysis).where(
         BankAnalysis.id == analysis_id, BankAnalysis.deleted_at.is_(None)))).scalar_one_or_none()
     if not a:
@@ -190,6 +188,13 @@ async def detalhe(analysis_id: str, db: AsyncSession = Depends(get_db),
         await verificar_acesso_caso(db, cu, a.case_id)
     elif not (is_gestao(cu) or a.created_by == cu.id):
         raise HTTPException(403, "Sem permissão para esta análise")
+    return a
+
+
+@router.get("/{analysis_id}")
+async def detalhe(analysis_id: str, db: AsyncSession = Depends(get_db),
+                  cu: User = Depends(get_current_user)):
+    a = await _analise_autorizada(db, cu, analysis_id)
     txs = (await db.execute(select(BankTransaction).where(
         BankTransaction.analysis_id == analysis_id).order_by(BankTransaction.data))).scalars().all()
     chs = (await db.execute(select(BankAbusiveCharge).where(
@@ -381,14 +386,7 @@ async def gerar_peca(analysis_id: str, payload: dict | None = Body(default=None)
 @router.delete("/{analysis_id}")
 async def remover(analysis_id: str, db: AsyncSession = Depends(get_db),
                   cu: User = Depends(get_current_user)):
-    a = (await db.execute(select(BankAnalysis).where(
-        BankAnalysis.id == analysis_id, BankAnalysis.deleted_at.is_(None)))).scalar_one_or_none()
-    if not a:
-        raise HTTPException(404, "Análise não encontrada")
-    if a.case_id:
-        await verificar_acesso_caso(db, cu, a.case_id)
-    elif not (is_gestao(cu) or a.created_by == cu.id):
-        raise HTTPException(403, "Sem permissão para esta análise")
+    await _analise_autorizada(db, cu, analysis_id)
     await db.execute(text("UPDATE bank_analyses SET deleted_at = :n WHERE id = :i"),
                      {"n": datetime.now(timezone.utc), "i": analysis_id})
     await db.commit()

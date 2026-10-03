@@ -19,6 +19,8 @@ from app.models.legal_doc import LegalDoc, PecaStatus
 from app.services.case_integrity_service import sincronizar_processo_principal_do_caso
 from app.services.validators_service import normalizar_cnj, validar_cnj
 
+from app.utils.values import mascara_cnj
+
 
 def formatar_cnj(numero: str | None) -> str | None:
     """20 dígitos → NNNNNNN-DD.AAAA.J.TR.OOOO; outro formato volta como veio (trim)."""
@@ -27,7 +29,7 @@ def formatar_cnj(numero: str | None) -> str | None:
     d = normalizar_cnj(numero)
     if len(d) != 20:
         return numero.strip()[:30]
-    return f"{d[:7]}-{d[7:9]}.{d[9:13]}.{d[13]}.{d[14:16]}.{d[16:]}"
+    return mascara_cnj(d)
 
 
 async def registrar_protocolo(

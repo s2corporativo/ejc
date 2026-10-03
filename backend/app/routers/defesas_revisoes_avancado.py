@@ -38,6 +38,10 @@ from app.models.user import User
 from app.services.ai.core.orchestrator import orchestrator
 from app.routers.defesas_revisoes import MODALIDADES, _parse_json, _texto_upload
 
+from app.utils.values import como_lista
+
+from app.core.ownership import role_str
+
 router = APIRouter(prefix="/defesas-revisoes/avancado", tags=["Defesas e Revisões — avançado"])
 
 JURIDICO_ROLES = {
@@ -56,8 +60,7 @@ ROLES_PACOTE = ADVOGADO_ROLES - {"advogado_auxiliar"}
 
 
 def _role(user: User) -> str:
-    role = getattr(user, "role", "")
-    return role.value if hasattr(role, "value") else str(role)
+    return role_str(user) if hasattr(user, "role") else ""
 
 
 def _exigir_juridico(user: User) -> None:
@@ -73,7 +76,7 @@ def _exigir_advogado(user: User) -> None:
 
 
 def _lista(value: Any) -> list:
-    return value if isinstance(value, list) else []
+    return como_lista(value)
 
 
 def _dict(value: Any) -> dict:

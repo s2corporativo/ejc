@@ -11,6 +11,8 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
+from app.utils.values import como_lista
+
 
 def _normalizar(value: Any) -> str:
     text = unicodedata.normalize("NFKD", str(value or ""))
@@ -19,9 +21,7 @@ def _normalizar(value: Any) -> str:
 
 
 def _lista(value: Any) -> list[Any]:
-    if value is None:
-        return []
-    return value if isinstance(value, list) else [value]
+    return como_lista(value, aceitar_escalar=True)
 
 
 def _texto_contexto(contexto: dict[str, Any]) -> str:

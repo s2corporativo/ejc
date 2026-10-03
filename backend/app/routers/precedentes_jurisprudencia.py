@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core.rate_limit import rate_limit
-from app.core.security import EQUIPE_JURIDICA, get_current_user
+from app.core.security import get_current_user
 from app.models.user import User
 from app.services.crawler_precedentes import buscar_precedentes
 
@@ -27,10 +27,7 @@ class BuscaPrecedentesRequest(BaseModel):
     por_pagina: int = Field(10, ge=1, le=30)
 
 
-def _is_staff(u: User) -> bool:
-    # Issue #694: allowlist EXATA — financeiro não acessa a busca de
-    # precedentes multi-fonte, mesmo com ROLE_LEVEL acima de estagiario.
-    return u.role.value in EQUIPE_JURIDICA
+from app.core.security import eh_equipe_juridica as _is_staff
 
 
 @router.post("/buscar", dependencies=[Depends(rate_limit("precedentes_multifonte", 10))])

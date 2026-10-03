@@ -5,19 +5,21 @@ honorários, inadimplência, relatórios, totais, filtros, permissões e auditor
 Números da tela (API) são comparados com o banco (promessa do PROMPT 35).
 Dados sintéticos EJC_QA_*; não modifica código do sistema.
 """
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import json
 import sys
 import time
 import subprocess
 import requests
 
-API = "http://127.0.0.1:8000"
+API = _shared.LOCAL_API
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 SENHA = _qa_pw('SENHA')
 CLIENTE_ID = "9e6cd7cd-148c-49c9-95cb-d61de37fe520"
@@ -27,43 +29,23 @@ COMP = "2026-08"
 PASS, FAIL, NA = [], [], []
 
 
-def _pass(t, d=""): PASS.append((t, d)); print(f"  [PASS] {t} — {d}"[:200])
-def _fail(t, d=""): FAIL.append((t, d)); print(f"  [FAIL] {t} — {d}"[:200])
-def _na(t, d=""): NA.append((t, d)); print(f"  [N/A]  {t} — {d}"[:200])
+def _pass(t, d=''):
+    return _shared.record_detailed_pass(t, d, PASS=PASS)
+def _fail(t, d=''):
+    return _shared.record_detailed_fail(t, d, FAIL=FAIL)
+def _na(t, d=''):
+    return _shared.record_detailed_unavailable(t, d, NA=NA)
 
 S = requests.Session()
 _TOKENS = {}
 
 
 def authed(nome):
-    if nome in _TOKENS:
-        S.headers["Authorization"] = "Bearer " + _TOKENS[nome]
-        return
-    time.sleep(18)
-    r = S.post(f"{API}/api/auth/login", json={
-        "email": "ejc_qa_auth_" +
-                 (nome if nome != "cliente_externo" else "cliente") +
-                 "@golocal.ejc", "password": SENHA}, timeout=20)
-    if r.status_code == 429:
-        time.sleep(45)
-        r = S.post(f"{API}/api/auth/login", json={
-            "email": "ejc_qa_auth_" +
-                     (nome if nome != "cliente_externo" else "cliente") +
-                     "@golocal.ejc", "password": SENHA}, timeout=20)
-    assert r.status_code == 200, f"login {nome} falhou: {r.status_code} {r.text[:150]}"
-    tk = r.json().get("access_token") or r.json().get("token") or r.json().get("access")
-    assert tk, f"login {nome} sem token: {r.text[:200]}"
-    _TOKENS[nome] = tk
-    S.headers["Authorization"] = "Bearer " + tk
+    return _shared.authed_role(nome, API=API, S=S, SENHA=SENHA, _TOKENS=_TOKENS, time=time)
 
 
 def get(url, **kw):
-    for _ in range(3):
-        r = S.get(url, timeout=20, **kw)
-        if r.status_code != 429:
-            return r
-        time.sleep(12)
-    return r
+    return _shared.get_with_retry(url, S=S, time=time, **kw)
 
 
 def db_q(sql):

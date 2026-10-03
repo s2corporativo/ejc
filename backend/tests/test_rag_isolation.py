@@ -4,6 +4,7 @@ Garante que o filtro fail-closed está presente e é aplicado nas consultas
 (protege contra regressão do vazamento cruzado entre clientes).
 """
 import inspect
+from types import SimpleNamespace
 
 import pytest
 
@@ -157,15 +158,79 @@ async def test_consulta_sem_caso_mantem_bind_fail_closed_para_case_id():
     assert db.params["scope_case"] == ""
 
 
-def test_todas_as_pernas_usam_o_mesmo_contrato_de_escopo():
+class _CaptureHybridDB:
+    def __init__(self, rankings=None):
+        self.queries = []
+        self.rankings = list(rankings or [[], []])
+
+    async def execute(self, stmt, params):
+        self.queries.append((str(stmt), dict(params)))
+        return self.rankings.pop(0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cliente,caso", [
+    (None, None), ("cliente-sintetico", None),
+    ("cliente-sintetico", "caso-sintetico"),
+])
+async def test_pernas_hibridas_preservam_ownership_fail_closed(monkeypatch, cliente, caso):
     from app.services import ai_service
 
-    fonte = inspect.getsource(ai_service)
-    # vetor, trigram, FTS e fallback textual compartilham o mesmo fragmento.
-    assert fonte.count("{_FILTRO_ESCOPO_RAG}") == 4
-    assert fonte.count("_params_escopo_rag(scope_client_id, scope_case_id)") >= 4
-    assert "_FILTRO_CASO_RAG" not in fonte
-    assert "_CASE_SCOPED_CATS" not in fonte
+    monkeypatch.setattr(ai_service.settings, "RAG_FTS_ENABLED", True)
+    db = _CaptureHybridDB()
+    consulta = "entrada-sintetica-%-' " * 30
+    await ai_service._fundir_lexical(
+        db, consulta, [], 3, ["jurisprudencia"],
+        scope_client_id=cliente, scope_case_id=caso,
+    )
+    assert len(db.queries) == 2  # trigram e FTS foram executados
+    assert "similarity(kc.conteudo, :q) > 0.05" in db.queries[0][0]
+    assert "@@ plainto_tsquery('portuguese', :q)" in db.queries[1][0]
+    for sql, binds in db.queries:
+        assert "COALESCE(kd.base_rag::text, '') = 'publica'" in sql
+        assert "kd.client_id IS NULL AND kd.case_id IS NULL" in sql
+        assert "kd.categoria <> ALL(:restr_cats)" in sql
+        assert "kd.client_id = NULLIF(:scope_cli, '')" in sql
+        assert "kd.case_id IS NULL OR kd.case_id = NULLIF(:scope_case, '')" in sql
+        assert "COALESCE(kd.base_rag::text, '') <> 'caso' OR kd.case_id IS NOT NULL" in sql
+        assert binds["scope_cli"] == (cliente or "")
+        assert binds["scope_case"] == (caso or "")
+        assert {"peca_interna", "peca_escritorio", "precedente_interno"} <= set(binds["restr_cats"])
+        assert binds["cats"] == ["jurisprudencia"]
+        assert binds["q"] == consulta[:300]
+        assert consulta[:100] not in sql  # texto do usuário permanece bind
+        assert binds["lim"] == 12
+        assert binds["incl_hist"] is False
+
+
+@pytest.mark.asyncio
+async def test_rrf_mescla_fontes_sem_perder_metadados_semanticos(monkeypatch):
+    from app.services import ai_service
+
+    monkeypatch.setattr(ai_service.settings, "RAG_FTS_ENABLED", True)
+
+    def row(cid, score):
+        return SimpleNamespace(
+            id=cid, doc_id="doc-" + cid, conteudo="texto sintético",
+            titulo="título lexical", categoria="jurisprudencia", fonte="teste",
+            confianca="alta", versao=None, sim=score, rank=score,
+        )
+
+    semanticos = [
+        {"chunk_id": "a", "titulo": "título semântico", "score": 0.9},
+        {"chunk_id": "b", "titulo": "outro semântico", "score": 0.8},
+    ]
+    db = _CaptureHybridDB([[row("b", 0.7), row("c", 0.5)],
+                           [row("c", 0.4), row("a", 0.2), row("d", 0.1)]])
+    resultado = await ai_service._fundir_lexical(db, "consulta sintética", semanticos, 3, None)
+    assert [r["chunk_id"] for r in resultado] == ["a", "b", "c"]
+    assert resultado[0]["titulo"] == "título semântico"
+    assert resultado[0]["score"] == 0.9
+    assert resultado[1]["titulo"] == "outro semântico"
+    assert resultado[2]["score"] == 0.5  # metadado da primeira fonte lexical
+    assert all(r["rrf"] > 0 for r in resultado)
+    assert semanticos[0] == {"chunk_id": "a", "titulo": "título semântico", "score": 0.9}
+
 
 
 def test_call_sites_com_caso_repassam_o_escopo_de_caso():

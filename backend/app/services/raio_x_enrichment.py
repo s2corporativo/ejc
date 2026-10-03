@@ -14,6 +14,8 @@ from typing import Any, Iterable
 
 from app.services.rito_engine import identificar_rito
 
+from app.utils.values import como_lista
+
 
 def valor(campo: Any) -> Any:
     if isinstance(campo, dict):
@@ -24,9 +26,7 @@ def valor(campo: Any) -> Any:
 
 
 def lista(value: Any) -> list[Any]:
-    if value is None:
-        return []
-    return value if isinstance(value, list) else [value]
+    return como_lista(value, aceitar_escalar=True)
 
 
 def normalizar(value: Any) -> str:

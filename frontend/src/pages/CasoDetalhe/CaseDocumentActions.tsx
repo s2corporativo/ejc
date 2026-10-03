@@ -1,3 +1,4 @@
+import { apiDetailNonemptyMessage as detalheErro } from "../../lib/apiError";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileCheck2, Send, Signature } from "lucide-react";
 
@@ -27,20 +28,6 @@ type SolicitacaoResumo = {
   id?: string;
   status?: string;
 };
-
-function detalheErro(error: unknown, fallback: string): string {
-  const detail = (error as { response?: { data?: { detail?: unknown } } })
-    ?.response?.data?.detail;
-  if (typeof detail === "string" && detail) return detail;
-  if (
-    detail &&
-    typeof detail === "object" &&
-    typeof (detail as { mensagem?: unknown }).mensagem === "string"
-  ) {
-    return (detail as { mensagem: string }).mensagem;
-  }
-  return fallback;
-}
 
 function tituloDocumento(doc: DocumentoContextual): string {
   return doc.titulo || doc.filename || doc.nome_arquivo || "Documento";

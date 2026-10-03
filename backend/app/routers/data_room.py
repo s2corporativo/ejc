@@ -1,8 +1,8 @@
 # ── app/routers/data_room.py ──────────────────────────────────────────────────
 # Data Room — salas seguras de documentos com links de acesso externo.
 from __future__ import annotations
+from app.core.pagination import executar_pagina
 
-import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -59,9 +59,7 @@ def _pode_editar(u: User) -> bool:
     return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["advogado"]
 
 
-def _hash_token(token: str) -> str:
-    """SHA-256 determinístico do segredo público, sem salt para lookup exato."""
-    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
+from app.services.document_metadata import hash_token_data_room as _hash_token
 
 
 def _confidencialidade(doc: Document) -> str:
@@ -88,40 +86,10 @@ def _arquivo_publicavel(arquivo: DataRoomArquivo, doc: Document) -> bool:
     }
 
 
-def _ids_casos_visiveis(cu: User):
-    return (
-        select(Case.id)
-        .where(
-            Case.deleted_at.is_(None),
-            or_(
-                Case.advogado_responsavel_id == cu.id,
-                Case.advogado_auxiliar_id == cu.id,
-            ),
-        )
-        .scalar_subquery()
-    )
+from app.core.ownership import ids_casos_do_usuario as _ids_casos_visiveis
 
 
-def _ids_clientes_visiveis(cu: User):
-    casos_com_cliente = select(Case.client_id).where(
-        Case.client_id.is_not(None),
-        Case.deleted_at.is_(None),
-        or_(
-            Case.advogado_responsavel_id == cu.id,
-            Case.advogado_auxiliar_id == cu.id,
-        ),
-    )
-    return (
-        select(Client.id)
-        .where(
-            Client.deleted_at.is_(None),
-            or_(
-                Client.responsavel_id == cu.id,
-                Client.id.in_(casos_com_cliente),
-            ),
-        )
-        .scalar_subquery()
-    )
+from app.core.client_ownership import ids_clientes_visiveis as _ids_clientes_visiveis
 
 
 def _filtro_escopo_rooms(q, cu: User):
@@ -331,12 +299,8 @@ async def listar_data_rooms(
         q = q.where(DataRoom.client_id == client_id)
     q = q.order_by(DataRoom.created_at.desc())
 
-    total = (
-        await db.execute(select(func.count()).select_from(q.subquery()))
-    ).scalar() or 0
-    items = (
-        await db.execute(q.offset((page - 1) * per_page).limit(per_page))
-    ).scalars().all()
+    total, items = await executar_pagina(db, q, page, per_page)
+    total = total or 0
     return {
         "total": total,
         "page": page,

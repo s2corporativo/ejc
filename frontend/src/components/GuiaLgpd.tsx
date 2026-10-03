@@ -1,9 +1,15 @@
+import {
+  GuiaSec as Sec,
+  GuiaTab as Tab,
+  GuiaFlow as Flow,
+  GuiaShell,
+  useGuiaChecks,
+} from "./GuiaPrimitivas";
 // ── src/components/GuiaLgpd.tsx ──────────────────────────────────────────────
 // Guia operacional de adequação à LGPD (Lei 13.709/18), padrão dos demais
 // Guia*.tsx: seções colapsáveis, tabelas de prazos/bases legais, fluxos e
 // checklist com persistência local. Cita apenas artigos corretos da LGPD e
 // aponta para o ROPA (âncora #lgpd-registros) no bloco "No sistema".
-import React, { useState, useEffect } from "react";
 import {
   BookOpen,
   Clock,
@@ -13,79 +19,6 @@ import {
   ShieldCheck,
   ArrowRight,
 } from "lucide-react";
-
-function Sec({
-  title,
-  icon,
-  children,
-  open = false,
-}: {
-  title: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-  open?: boolean;
-}) {
-  const [isOpen, setIsOpen] = useState(open);
-  return (
-    <div className="border border-bronze-pale rounded-lg overflow-hidden">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 text-left"
-      >
-        <span className="flex items-center gap-2 font-semibold text-slate-800">
-          {icon}
-          {title}
-        </span>
-        <span className="text-slate-400">{isOpen ? "▲" : "▼"}</span>
-      </button>
-      {isOpen && (
-        <div className="p-4 border-t border-slate-100 bg-slate-50 space-y-3">
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Tab({ headers, rows }: { headers: string[]; rows: string[][] }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm border-collapse">
-        <thead>
-          <tr className="bg-slate-200">
-            {headers.map((h, i) => (
-              <th
-                key={i}
-                className="border border-bronze-pale px-3 py-2 text-left font-semibold"
-              >
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, i) => (
-            <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-slate-50"}>
-              {row.map((cell, j) => (
-                <td key={j} className="border border-bronze-pale px-3 py-2">
-                  {cell}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function Flow({ children }: { children: string }) {
-  return (
-    <pre className="text-[10px] bg-slate-50 border border-slate-100 rounded p-3 overflow-x-auto leading-relaxed whitespace-pre-wrap text-slate-700">
-      {children}
-    </pre>
-  );
-}
 
 const CHK_KEY = "guia_lgpd_chk";
 const ITEMS = [
@@ -102,29 +35,17 @@ const ITEMS = [
 ];
 
 export default function GuiaLgpd() {
-  const [checks, setChecks] = useState<boolean[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(CHK_KEY) || "[]");
-    } catch {
-      return [];
-    }
-  });
-  useEffect(() => {
-    localStorage.setItem(CHK_KEY, JSON.stringify(checks));
-  }, [checks]);
-  const toggle = (i: number) =>
-    setChecks((prev) => {
-      const n = [...prev];
-      n[i] = !n[i];
-      return n;
-    });
+  const { checks, toggle } = useGuiaChecks(CHK_KEY);
 
   return (
-    <div className="space-y-3 p-4">
-      <h2 className="text-xl font-bold text-primary-700 flex items-center gap-2">
-        <BookOpen size={20} /> Guia Operacional — Adequação LGPD
-      </h2>
-
+    <GuiaShell
+      titleClassName="text-xl font-bold text-primary-700 flex items-center gap-2"
+      title={
+        <>
+          <BookOpen size={20} /> Guia Operacional — Adequação LGPD
+        </>
+      }
+    >
       <Sec title="Bases Legais do Tratamento" icon={<Scale size={16} />} open>
         <Tab
           headers={["Base legal", "Quando se aplica", "Fundamento"]}
@@ -343,6 +264,6 @@ MEDIDAS PREVENTIVAS (art. 46-49):
           </p>
         </div>
       </Sec>
-    </div>
+    </GuiaShell>
   );
 }

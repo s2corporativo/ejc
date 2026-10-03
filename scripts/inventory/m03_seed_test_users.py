@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 # Seed de usuários QA — reconstruído após reset do sandbox (16/08/2026).
 # Mesmos emails/roles/senha do fluxo original M03 (padrão EJC_QA).
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import asyncio, os, uuid, sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "backend"))
 os.chdir(os.path.join(os.path.dirname(__file__), "..", "..", "backend"))
@@ -22,20 +28,16 @@ DATABASE_URL = env.get("DATABASE_URL", "postgresql+asyncpg://ejc:ejc@localhost/e
 engine = create_async_engine(DATABASE_URL)
 
 USERS = [
-    ("admin", "ejc_qa_auth_admin@golocal.ejc"),
-    ("socio", "ejc_qa_auth_socio@golocal.ejc"),
-    ("advogado", "ejc_qa_auth_advogado@golocal.ejc"),
-    ("estagiario", "ejc_qa_auth_estagiario@golocal.ejc"),
-    ("financeiro", "ejc_qa_auth_financeiro@golocal.ejc"),
-    ("secretaria", "ejc_qa_auth_secretaria@golocal.ejc"),
-    ("cliente_externo", "ejc_qa_auth_cliente@golocal.ejc"),
+    ("admin", _shared.qa_email('admin')),
+    ("socio", _shared.qa_email('socio')),
+    ("advogado", _shared.qa_email('advogado')),
+    ("estagiario", _shared.qa_email('estagiario')),
+    ("financeiro", _shared.qa_email('financeiro')),
+    ("secretaria", _shared.qa_email('secretaria')),
+    ("cliente_externo", _shared.qa_email('cliente')),
 ]
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 PWD = _qa_pw('PWD')
 NOME = {r: f"EJC QA {r.capitalize()}" for r, _ in USERS}

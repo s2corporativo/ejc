@@ -1,3 +1,5 @@
+import { uploadCaseDocument } from "../../lib/caseDocuments";
+import { apiDetailNonemptyMessage as detalheErro } from "../../lib/apiError";
 // ── Aba Documentos do caso — upload e vínculo embutidos (Tela C, Bloco 3.2) ──
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FileUp, Link2, Search } from "lucide-react";
@@ -31,20 +33,6 @@ async function baixarDoc(docId: string, filename: string) {
   } catch {
     toast.error("Não foi possível baixar o documento.");
   }
-}
-
-function detalheErro(error: unknown, fallback: string): string {
-  const detail = (error as { response?: { data?: { detail?: unknown } } })
-    ?.response?.data?.detail;
-  if (typeof detail === "string" && detail) return detail;
-  if (
-    detail &&
-    typeof detail === "object" &&
-    typeof (detail as { mensagem?: unknown }).mensagem === "string"
-  ) {
-    return (detail as { mensagem: string }).mensagem;
-  }
-  return fallback;
 }
 
 function formatarDataDocumento(value?: string | null): string | null {
@@ -179,14 +167,7 @@ export default function TabDocumentos({ caseId }: { caseId: string }) {
     }
     setEnviando(true);
     try {
-      const body = new FormData();
-      body.append("file", arquivo);
-      body.append("titulo", titulo.trim() || arquivo.name);
-      body.append("tipo", tipo);
-      body.append("case_id", caseId);
-      await api.post("/documents/upload", body, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      await uploadCaseDocument(caseId, arquivo, titulo, tipo);
       toast.success("Documento anexado ao caso.");
       setArquivo(null);
       setTitulo("");

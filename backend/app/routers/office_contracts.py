@@ -1,3 +1,4 @@
+from app.core.security import requer_perfis
 """Contratos operacionais do escritório — CRUD financeiro auditável."""
 from datetime import date
 from decimal import Decimal
@@ -21,8 +22,7 @@ _TIPO = Literal["prestacao_servico", "locacao", "fornecimento", "parceria", "nda
 
 
 def _req_fin(cu: User = Depends(get_current_user)) -> User:
-    if cu.role.value not in _FIN:
-        raise HTTPException(status_code=403, detail="Acesso restrito a gestão/financeiro")
+    requer_perfis(cu, _FIN, "Acesso restrito a gestão/financeiro")
     return cu
 
 

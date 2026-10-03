@@ -47,6 +47,8 @@ from app.services.raio_x_enrichment import (
     valor,
 )
 
+from app.services.conversion_helpers import alerta_protegido
+
 settings = get_settings()
 _CONVERSION_ROLES = {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar"}
 
@@ -285,13 +287,7 @@ async def _usuario_escopo(
 
 
 def _alerta_protegido(tipo: str, mensagem: str) -> dict[str, Any]:
-    return {
-        "tipo": tipo,
-        "nome": "Correspondência protegida na base do escritório",
-        "mensagem": mensagem,
-        "protegido": True,
-        "confirmado": False,
-    }
+    return alerta_protegido(tipo, mensagem)
 
 
 async def _detectar_conflitos(

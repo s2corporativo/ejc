@@ -12,7 +12,6 @@ processo; nunca promete resultado; toda saída é MINUTA — revisão obrigatór
 advogado (OAB).
 """
 import asyncio
-import json
 import logging
 import re
 from typing import Optional
@@ -26,6 +25,8 @@ from app.schemas.document_intake import (
 from app.services import ai_gateway, ocr_service
 from app.services.extracao_estruturada import extrair_estruturas, parse_data_br
 from app.services.sanitizer import sanitizar_pii
+
+from app.utils.ai_json import parse_json_response
 
 logger = logging.getLogger("ejc.documento_service")
 
@@ -135,20 +136,7 @@ def _verificar_origens_v2(campos_v2, texto: str) -> dict:
 
 
 def _parse_json(txt: str) -> Optional[dict]:
-    """Extrai o primeiro objeto JSON da resposta da IA (tolerante a texto ao redor)."""
-    if not txt:
-        return None
-    try:
-        return json.loads(txt)
-    except Exception:
-        pass
-    m = re.search(r"\{.*\}", txt, re.DOTALL)
-    if m:
-        try:
-            return json.loads(m.group(0))
-        except Exception:
-            return None
-    return None
+    return parse_json_response(txt)
 
 
 def _txt(v) -> Optional[str]:

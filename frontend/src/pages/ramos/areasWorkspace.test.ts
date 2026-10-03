@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   GRUPOS_AREAS,
   areaCombinaBusca,
+  buscarFerramentas,
   casosGeraisPath,
   configWorkspaceDaArea,
   hubSlugDaArea,
@@ -66,5 +67,18 @@ describe("Áreas de Atuação — contratos seguros", () => {
     expect(areaCombinaBusca(AREA, "tributario")).toBe(true);
     expect(areaCombinaBusca(AREA, "execução fiscal")).toBe(true);
     expect(areaCombinaBusca(AREA, "assunto inexistente xyz")).toBe(false);
+  });
+});
+
+// Regressão: o catálogo apresentava duas calculadoras para a mesma regra penal.
+describe("prescrição penal canônica", () => {
+  it("oferece uma única prescrição penal na busca de ferramentas", () => {
+    const resultados = buscarFerramentas("prescrição").filter(
+      (r) => r.areaSlug === "criminal",
+    );
+    expect(resultados).toHaveLength(1);
+    expect(resultados[0].ferramenta.endpoint).toBe(
+      "/penal/ferramentas/prescricao-penal",
+    );
   });
 });

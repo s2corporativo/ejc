@@ -1,3 +1,4 @@
+import { asDataList as asLista } from "../../lib/list";
 // Tela B da Entrada Única (/entrada, mesmo estado de rota): "Confira e
 // confirme". Tudo editável, nada obrigatório de digitar; blocos de conflito,
 // duplicado e responsável aparecem POR EXCEÇÃO (wireframe da seção 3 de
@@ -25,12 +26,6 @@ import type { Proposta } from "./types";
 function Origem({ valor }: { valor?: string | null }) {
   if (!valor) return null;
   return <p className="mt-1 text-[11px] text-slate-400">origem: {valor}</p>;
-}
-
-function asLista<T>(payload: unknown): T[] {
-  if (Array.isArray(payload)) return payload as T[];
-  const data = (payload as { data?: unknown })?.data;
-  return Array.isArray(data) ? (data as T[]) : [];
 }
 
 function listaParaTexto(itens: string[]): string {

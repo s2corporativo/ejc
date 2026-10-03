@@ -2,6 +2,7 @@
 Router: Geração de peças jurídicas com pipeline 7 etapas + SSE streaming.
 """
 from __future__ import annotations
+from app.core.pagination import executar_pagina
 
 import logging
 
@@ -362,7 +363,6 @@ async def listar_pecas(
 ):
     """Lista peças geradas pelo usuário (logs com tipo elaboracao_peca)."""
     from app.models.ai_log import AITipoUso
-    from sqlalchemy import func as sqlfunc
 
     q = select(AILog).where(AILog.tipo_uso == AITipoUso.redacao_peca)
 
@@ -374,12 +374,7 @@ async def listar_pecas(
 
     q = q.order_by(AILog.created_at.desc())
 
-    total = (await db.execute(
-        select(sqlfunc.count()).select_from(q.subquery())
-    )).scalar()
-    rows = (await db.execute(
-        q.offset((page - 1) * page_size).limit(page_size)
-    )).scalars().all()
+    total, rows = await executar_pagina(db, q, page, page_size)
 
     return {
         "data": [

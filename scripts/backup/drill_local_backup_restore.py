@@ -46,93 +46,28 @@ import json
 import os
 import re
 import secrets
-import subprocess
+import subprocess as subprocess  # Alias de monkeypatch dos helpers compartilhados.
 import sys
 import time
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import unquote, urlparse
 
 _DEFAULT_KEY_TABLES = "clients,cases,users,deadlines,knowledge_chunks"
 _EXTENSOES_OBRIGATORIAS = ("vector", "pg_trgm")
 
 
-@dataclass(frozen=True)
-class PgConn:
-    host: str
-    port: int
-    user: str
-    password: str
-    database: str
-
-    @classmethod
-    def from_url(cls, raw: str) -> "PgConn":
-        parsed = urlparse(raw)
-        if not parsed.hostname or not parsed.username:
-            raise RuntimeError("DATABASE_URL_SYNC inválida: host/usuário ausentes.")
-        database = unquote((parsed.path or "").lstrip("/"))
-        if not database:
-            raise RuntimeError("DATABASE_URL_SYNC inválida: banco ausente.")
-        return cls(
-            host=parsed.hostname,
-            port=parsed.port or 5432,
-            user=unquote(parsed.username),
-            password=unquote(parsed.password or ""),
-            database=database,
-        )
-
-    def args(self, database: str | None = None) -> list[str]:
-        return [
-            "-h",
-            self.host,
-            "-p",
-            str(self.port),
-            "-U",
-            self.user,
-            "-d",
-            database or self.database,
-        ]
-
-    def env(self) -> dict[str, str]:
-        return {**os.environ, "PGPASSWORD": self.password}
+if __package__:
+    from ._postgres import PgConn, _run as _shared_run, psql as _shared_psql
+else:  # Execução direta: python scripts/backup/<drill>.py
+    from _postgres import PgConn, _run as _shared_run, psql as _shared_psql
 
 
-def _run(
-    args: list[str], conn: PgConn, *, timeout: int = 300
-) -> subprocess.CompletedProcess[str]:
-    try:
-        return subprocess.run(
-            args,
-            env=conn.env(),
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except subprocess.CalledProcessError as exc:
-        detalhe = (exc.stderr or exc.stdout or "").strip()[:800]
-        raise RuntimeError(
-            f"Comando PostgreSQL falhou (código {exc.returncode}): {detalhe}"
-        ) from exc
+def _run(args: list[str], conn: PgConn, *, timeout: int = 300) -> subprocess.CompletedProcess[str]:
+    return _shared_run(args, conn, timeout=timeout, runner=subprocess.run)
 
 
 def _psql(conn: PgConn, sql: str, *, database: str | None = None) -> str:
-    result = _run(
-        [
-            "psql",
-            *conn.args(database),
-            "-v",
-            "ON_ERROR_STOP=1",
-            "-A",
-            "-t",
-            "-q",
-            "-c",
-            sql,
-        ],
-        conn,
-    )
-    return result.stdout.strip()
+    return _shared_psql(conn, sql, database=database, runner=_run)
 
 
 def _coletar_metricas(

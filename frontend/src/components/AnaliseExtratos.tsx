@@ -1,3 +1,5 @@
+import MinutaProgress from "./MinutaProgress";
+import { statusEtapa, type StatusEtapa } from "../lib/minuta";
 // ── src/components/AnaliseExtratos.tsx ───────────────────────────────────────
 // Módulo de Análise Bancária (EXTRATOS): upload PDF/OFX/CSV → detecta cobranças
 // abusivas (base legal) → Excel + minutas (notificação/petição/BACEN).
@@ -15,23 +17,12 @@ import {
   Copy,
 } from "lucide-react";
 import api from "../lib/api";
-import { authFetch } from "../lib/stream";
+import { streamSSE } from "../lib/stream";
 import { Modal, Button } from "./UI";
 import { toast } from "./Toast";
 import { mensagemErroHttp } from "../lib/iaErro";
 
 // Etapas do pipeline de peças (mesma esteira 7 etapas reutilizada pelo backend).
-const ETAPAS_MINUTA: { num: number; titulo: string }[] = [
-  { num: 1, titulo: "Identificando tipo de peça" },
-  { num: 2, titulo: "Estruturando enquadramento" },
-  { num: 3, titulo: "Buscando fundamentos legais" },
-  { num: 4, titulo: "Analisando jurisprudência" },
-  { num: 5, titulo: "Organizando argumentos" },
-  { num: 6, titulo: "Identificando riscos" },
-  { num: 7, titulo: "Montando documento completo" },
-];
-
-type StatusEtapa = "aguardando" | "em_andamento" | "concluido";
 type FaseMinuta = "gerando" | "concluido" | "erro";
 
 function fmt(v: any) {
@@ -123,9 +114,8 @@ export default function AnaliseExtratos() {
   };
 
   // ── Minuta revisional (IA) — consome o mesmo SSE do gerador de peças ─────────
-  // Espelha o padrão de leitura de stream de PecaGeneratorModal.tsx:174-231
-  // (fetch direto + reader + parse event:/data:). O endpoint reusa a esteira de
-  // peças (gerar_peca_pipeline), então os eventos são idênticos: step/concluido/erro.
+  // O leitor autenticado é comum; o endpoint reusa gerar_peca_pipeline e emite
+  // os mesmos eventos step/concluido/erro do gerador de peças.
   const [minutaOpen, setMinutaOpen] = useState(false);
   const [minutaFase, setMinutaFase] = useState<FaseMinuta>("gerando");
   const [minutaEtapas, setMinutaEtapas] = useState<Record<number, StatusEtapa>>(
@@ -158,71 +148,49 @@ export default function AnaliseExtratos() {
     minutaAbort.current = new AbortController();
 
     try {
-      const r = await authFetch(
+      await streamSSE(
         `/api/bank-analysis/${res.analise.id}/gerar-peca`,
+        undefined,
         {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
           signal: minutaAbort.current.signal,
+          onResponseError: async (r) => {
+            const err = await r.json().catch(() => ({ detail: "" }));
+            if (r.status === 422) {
+              throw new Error(
+                err.detail ||
+                  "Nenhuma cobrança abusiva para peticionar nesta análise.",
+              );
+            }
+            if (r.status === 503) {
+              throw new Error(
+                err.detail ||
+                  "Serviço de IA indisponível para geração de peças no momento.",
+              );
+            }
+            throw new Error(
+              err.detail || "Falha ao gerar a minuta revisional.",
+            );
+          },
+          onEvent: ({ event, data: payload }) => {
+            if (event === "step") {
+              const num = Number(payload.etapa);
+              setMinutaEtapas((prev) => ({
+                ...prev,
+                [num]: statusEtapa(payload.status),
+              }));
+            } else if (event === "concluido") {
+              setMinutaDoc(payload.documento ?? "");
+              setMinutaLegalDocId(payload.legal_doc_id ?? "");
+              setMinutaFase("concluido");
+              toast.success(
+                "Minuta revisional gerada (rascunho — revise, OAB).",
+              );
+            } else if (event === "erro") {
+              throw new Error(payload.detail ?? "Erro na geração da minuta.");
+            }
+          },
         },
       );
-
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({ detail: "" }));
-        if (r.status === 422) {
-          throw new Error(
-            err.detail ||
-              "Nenhuma cobrança abusiva para peticionar nesta análise.",
-          );
-        }
-        if (r.status === 503) {
-          throw new Error(
-            err.detail ||
-              "Serviço de IA indisponível para geração de peças no momento.",
-          );
-        }
-        throw new Error(err.detail || "Falha ao gerar a minuta revisional.");
-      }
-
-      const reader = r.body!.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-
-        const parts = buf.split("\n\n");
-        buf = parts.pop() ?? "";
-
-        for (const part of parts) {
-          const eventLine = part.match(/^event:\s*(.+)$/m)?.[1]?.trim();
-          const dataLine = part.match(/^data:\s*(.+)$/ms)?.[1]?.trim();
-          if (!dataLine) continue;
-
-          let payload: Record<string, any> = {};
-          try {
-            payload = JSON.parse(dataLine);
-          } catch {
-            continue;
-          }
-
-          if (eventLine === "step") {
-            const num = Number(payload.etapa);
-            const st: StatusEtapa =
-              payload.status === "em_andamento" ? "em_andamento" : "concluido";
-            setMinutaEtapas((prev) => ({ ...prev, [num]: st }));
-          } else if (eventLine === "concluido") {
-            setMinutaDoc(payload.documento ?? "");
-            setMinutaLegalDocId(payload.legal_doc_id ?? "");
-            setMinutaFase("concluido");
-            toast.success("Minuta revisional gerada (rascunho — revise, OAB).");
-          } else if (eventLine === "erro") {
-            throw new Error(payload.detail ?? "Erro na geração da minuta.");
-          }
-        }
-      }
     } catch (e: any) {
       if (e.name === "AbortError") return;
       setMinutaErro(e.message ?? "Erro desconhecido");
@@ -389,46 +357,7 @@ export default function AnaliseExtratos() {
 
           {(minutaFase === "gerando" || minutaFase === "erro") && (
             <div className="flex flex-col gap-2">
-              {ETAPAS_MINUTA.map((e) => {
-                const st = minutaEtapas[e.num] ?? "aguardando";
-                return (
-                  <div
-                    key={e.num}
-                    className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border transition-colors ${
-                      st === "concluido"
-                        ? "bg-success-50 border-success-200"
-                        : st === "em_andamento"
-                          ? "bg-bronze-50/40 border-bronze-pale"
-                          : "bg-white border-slate-100"
-                    }`}
-                  >
-                    <div
-                      className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-[11px] font-medium ${
-                        st === "concluido"
-                          ? "bg-success-600 text-white"
-                          : st === "em_andamento"
-                            ? "bg-bronze text-white"
-                            : "bg-slate-100 text-slate-400"
-                      }`}
-                    >
-                      {st === "em_andamento" ? (
-                        <Loader2 size={12} className="animate-spin" />
-                      ) : st === "concluido" ? (
-                        <CheckCircle2 size={12} />
-                      ) : (
-                        e.num
-                      )}
-                    </div>
-                    <span
-                      className={`text-sm ${
-                        st === "aguardando" ? "text-slate-400" : "text-navy"
-                      }`}
-                    >
-                      {e.titulo}
-                    </span>
-                  </div>
-                );
-              })}
+              <MinutaProgress etapas={minutaEtapas} />
 
               {minutaFase === "erro" && (
                 <div className="mt-3 bg-danger-50 border border-danger-200 rounded-lg px-4 py-3 text-sm text-danger-700">

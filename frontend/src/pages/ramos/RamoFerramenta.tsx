@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useFerramentaCalc } from "../../lib/useFerramentaCalc";
+import { rotulo } from "../../lib/uiHelpers";
+import { useState } from "react";
 import { Link } from "react-router";
 import { Calculator, TrendingUp } from "lucide-react";
 import api from "../../lib/api";
@@ -7,7 +9,6 @@ import {
   ehBloqueioDeExportacaoDemonstrativo,
   MENSAGEM_DEMONSTRATIVO_INDISPONIVEL,
   mensagemErroDemonstrativo,
-  mensagemErroFerramenta,
 } from "../../lib/iaErro";
 import { useDemonstrativoDisponivel } from "../../lib/pecasCapacidades";
 import { useCaseContext } from "../../stores/caseContext";
@@ -15,19 +16,10 @@ import { Spinner, fmtMoney } from "../../components/UI";
 import RodapeRegra, { METADADOS_REGRA } from "../../components/RodapeRegra";
 import type { FerramentaConfig } from "./ramosConfig";
 import {
-  camposVisiveis,
-  chavesObsoletas,
-  paramsVisiveis,
-} from "./camposCondicionais";
-import {
   linhasDoResultado,
   rodapeDoResultado,
   provenienciaDoResultado,
 } from "./demonstrativo";
-
-function rotulo(v: string) {
-  return v.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
 
 function TaxasBacenView({
   taxas,
@@ -193,16 +185,8 @@ export default function RamoFerramenta({
    */
   caseContext?: CasoFerramenta | null;
 }) {
-  const [vals, setVals] = useState<Record<string, any>>(() => {
-    const init: Record<string, any> = {};
-    f.campos.forEach((c) => {
-      if (c.default !== undefined) init[c.nome] = c.default;
-    });
-    return init;
-  });
-  const [res, setRes] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
+  const { vals, setVals, res, loading, erro, visiveis, calcular } =
+    useFerramentaCalc(f);
   const [gerandoDoc, setGerandoDoc] = useState(false);
   const [docMsg, setDocMsg] = useState<string | null>(null);
   const [docLink, setDocLink] = useState<string | null>(null);
@@ -217,8 +201,7 @@ export default function RamoFerramenta({
   // (botão habilitado + tratamento do 403).
   const { disponivel: exportacaoDisponivel } = useDemonstrativoDisponivel();
   const casoPersistido = useCaseContext((state) => state.caso);
-  const casoAtivo =
-    caseContext === undefined ? casoPersistido : caseContext;
+  const casoAtivo = caseContext === undefined ? casoPersistido : caseContext;
 
   const naoHomologada = f.homologada === false;
   const bloqueadaParaDocumento = naoHomologada || res?.homologada === false;
@@ -226,41 +209,6 @@ export default function RamoFerramenta({
   // o motivo é o mesmo — a exportação está travada administrativamente.
   const exportacaoIndisponivel = !exportacaoDisponivel || exportacaoBloqueada;
   const motivoBloqueio = `Bloqueado: ${AVISO_FERRAMENTA_NAO_HOMOLOGADA}`;
-  const visiveis = camposVisiveis(f.campos, vals);
-
-  useEffect(() => {
-    const obsoletas = chavesObsoletas(f.campos, vals);
-    if (obsoletas.length === 0) return;
-    setVals((atuais) => {
-      const copia = { ...atuais };
-      obsoletas.forEach((nome) => delete copia[nome]);
-      return copia;
-    });
-  }, [f.campos, vals]);
-
-  const calcular = async () => {
-    setLoading(true);
-    setErro(null);
-    setRes(null);
-    try {
-      const r = await api.get(f.endpoint, {
-        params: paramsVisiveis(f.campos, vals),
-      });
-      setRes(r.data);
-    } catch (e: any) {
-      setErro(mensagemErroFerramenta(e));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (f.autoLoad) void calcular();
-    // `f.id` identifica a ferramenta; recalcular por edição dos campos geraria
-    // requisições automáticas indevidas.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [f.id]);
-
   const gerarDemonstrativo = async () => {
     if (!res) return;
     if (bloqueadaParaDocumento) {

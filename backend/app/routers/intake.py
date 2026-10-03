@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from uuid import uuid4
 from typing import Any, Optional
 
@@ -33,6 +32,8 @@ from app.models.redesign import AreaModuloMapping, TabelaOABHonorario
 from app.models.tese import Tese, TeseStatus
 from app.models.user import User
 from app.core.rate_limit import rate_limit
+
+from app.utils.ai_json import parse_json_response
 
 logger = logging.getLogger("ejc.intake")
 
@@ -68,19 +69,7 @@ def _pode_usar_ia(cu: User) -> bool:
 
 
 def _parse_json(txt: str) -> Optional[dict]:
-    """Extrai o primeiro objeto JSON da resposta da IA (tolerante)."""
-    if not txt:
-        return None
-    try:
-        return json.loads(txt)
-    except Exception:
-        m = re.search(r"\{.*\}", txt, re.DOTALL)
-        if m:
-            try:
-                return json.loads(m.group(0))
-            except Exception:
-                return None
-    return None
+    return parse_json_response(txt)
 
 
 async def _log_ia(

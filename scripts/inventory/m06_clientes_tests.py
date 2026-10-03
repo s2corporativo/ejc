@@ -10,6 +10,12 @@ após cada escrita, re-lê o registro e confirma o estado real no banco.
 Uso: scripts/inventory/env_shell.sh python3 scripts/inventory/m06_clientes_tests.py
 Reiniciar uvicorn antes (limpa rate limits).
 """
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import os
 import sys
 import time
@@ -20,28 +26,18 @@ sys.path.insert(0, "/home/ubuntu/ejc_repo/backend")
 os.chdir("/home/ubuntu/ejc_repo/backend")
 DIR = "/home/ubuntu/ejc_repo/qa/homologacao/m06"
 os.makedirs(DIR, exist_ok=True)
-BASE = "http://127.0.0.1:8000"
+BASE = _shared.LOCAL_API
 S = requests.Session()
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 SENHA = _qa_pw('SENHA')
-HDR = {"Content-Type": "application/json", "X-Forwarded-For": "127.0.0.1"}
+HDR = _shared.qa_headers(content_type=True)
 RESULTADOS = []
 
 
 def _cpf_valido() -> str:
-    n = [random.randint(0, 9) for _ in range(9)]
-    s = sum((10 - i) * d for i, d in enumerate(n))
-    n.append(0 if s % 11 < 2 else 11 - s % 11)
-    s = sum((11 - i) * d for i, d in enumerate(n))
-    n.append(0 if s % 11 < 2 else 11 - s % 11)
-    d = "".join(str(x) for x in n)
-    return f"{d[:3]}.{d[3:6]}.{d[6:9]}-{d[9:]}"
+    return _shared.valid_cpf(random=random)
 
 
 def _cnpj_valido() -> str:
@@ -83,10 +79,10 @@ def h(email):
     return r
 
 
-ADMIN = "ejc_qa_auth_admin@golocal.ejc"
-SOCIO = "ejc_qa_auth_socio@golocal.ejc"
-SECRETARIA = "ejc_qa_auth_secretaria@golocal.ejc"
-CLIENTE = "ejc_qa_auth_cliente@golocal.ejc"
+ADMIN = _shared.qa_email('admin')
+SOCIO = _shared.qa_email('socio')
+SECRETARIA = _shared.qa_email('secretaria')
+CLIENTE = _shared.qa_email('cliente')
 
 
 def pf_payload(nome_extra=""):

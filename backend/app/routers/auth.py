@@ -678,14 +678,8 @@ async def redefinir_senha(
     return {"detail": "Senha redefinida com sucesso. Faça login."}
 
 
-# ─── TOTP: Setup ──────────────────────────────────────────────────────────────
-@router.post("/totp/setup")
-@limiter.limit("10/minute")
-async def totp_setup(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    """Gera segredo TOTP e URI para QR code. NÃO ativa ainda — requer /totp/verificar."""
+async def _usuario_totp(request: Request, db: AsyncSession) -> tuple[User, dict]:
+    """Autenticação comum do TOTP, inclusive token limitado ao setup de 2FA."""
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Não autenticado")
@@ -696,11 +690,23 @@ async def totp_setup(
         select(User).where(
             User.id == payload.get("sub"),
             User.is_active == True,
-            User.deleted_at.is_(None),  # item 10: mesmo filtro do get_current_user
+            User.deleted_at.is_(None),
         )
     )).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=401, detail="Usuário não encontrado")
+    return user, payload
+
+
+# ─── TOTP: Setup ──────────────────────────────────────────────────────────────
+@router.post("/totp/setup")
+@limiter.limit("10/minute")
+async def totp_setup(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Gera segredo TOTP e URI para QR code. NÃO ativa ainda — requer /totp/verificar."""
+    user, payload = await _usuario_totp(request, db)
     if user.totp_enabled:
         raise HTTPException(status_code=400, detail="TOTP já está ativo. Desative antes de reconfigurar.")
     secret = pyotp.random_base32()
@@ -734,21 +740,7 @@ async def totp_verificar(
     db: AsyncSession = Depends(get_db),
 ):
     """Ativa o TOTP após confirmar que o app autenticador está sincronizado."""
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Não autenticado")
-    payload = decode_token(auth.split(" ", 1)[1])
-    if not payload or payload.get("type") != "access":
-        raise HTTPException(status_code=401, detail="Token inválido")
-    user = (await db.execute(
-        select(User).where(
-            User.id == payload.get("sub"),
-            User.is_active == True,
-            User.deleted_at.is_(None),  # item 10: mesmo filtro do get_current_user
-        )
-    )).scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=401, detail="Usuário não encontrado")
+    user, payload = await _usuario_totp(request, db)
     if not user.totp_secret:
         raise HTTPException(status_code=400, detail="Execute /totp/setup primeiro")
     secret, legado = _totp_secret_de(user)
@@ -808,21 +800,7 @@ async def totp_desativar(
     db: AsyncSession = Depends(get_db),
 ):
     """Desativa o TOTP após confirmar o código atual."""
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Não autenticado")
-    payload = decode_token(auth.split(" ", 1)[1])
-    if not payload or payload.get("type") != "access":
-        raise HTTPException(status_code=401, detail="Token inválido")
-    user = (await db.execute(
-        select(User).where(
-            User.id == payload.get("sub"),
-            User.is_active == True,
-            User.deleted_at.is_(None),  # item 10: mesmo filtro do get_current_user
-        )
-    )).scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=401, detail="Usuário não encontrado")
+    user, payload = await _usuario_totp(request, db)
     if not user.totp_enabled:
         raise HTTPException(status_code=400, detail="TOTP não está ativo")
     # Enforcement por papel (REQUIRE_2FA_ROLES): um usuário cujo papel é OBRIGADO

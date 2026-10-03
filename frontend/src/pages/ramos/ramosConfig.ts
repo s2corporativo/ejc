@@ -26,6 +26,8 @@ export interface FerramentaCampo {
 }
 
 export interface FerramentaConfig {
+  /** IDs antigos aceitos em referências, sem duplicar a ferramenta visível. */
+  aliases?: string[];
   id: string;
   titulo: string;
   descricao: string;
@@ -743,45 +745,8 @@ const penal: RamoConfig = {
       ],
     },
     {
-      id: "prescricao",
-      titulo: "Prescrição Punitiva",
-      descricao:
-        "Prescrição pela pena máxima ou concreta, com marcos interruptivos e redutores etários.",
-      baseLegal: "CP arts. 109-117",
-      endpoint: "/penal/ferramentas/prescricao-punitiva",
-      campos: [
-        { nome: "data_fato", label: "Data do fato", tipo: "date" },
-        {
-          nome: "pena_maxima_anos",
-          label: "Pena máxima cominada (anos)",
-          tipo: "number",
-        },
-        {
-          nome: "pena_concreta_anos",
-          label: "Pena concreta aplicada (anos)",
-          tipo: "number",
-        },
-        {
-          nome: "marcos_interruptivos",
-          label: "Marcos interruptivos (datas AAAA-MM-DD, por vírgula)",
-          tipo: "text",
-        },
-        {
-          nome: "menor_21_na_data_fato",
-          label: "Menor de 21 anos na data do fato?",
-          tipo: "select",
-          opcoes: ["sim", "nao"],
-        },
-        {
-          nome: "maior_70_na_sentenca",
-          label: "Maior de 70 anos na sentença?",
-          tipo: "select",
-          opcoes: ["sim", "nao"],
-        },
-      ],
-    },
-    {
       id: "prescricao-penal",
+      aliases: ["prescricao"],
       titulo: "Prescrição Penal",
       descricao:
         "Prazo prescricional pela pena máxima ou concreta, com marcos interruptivos e redutores.",
@@ -3290,4 +3255,12 @@ export function ramosDaArea(area?: string | null): RamoConfig[] {
       (cfg) => cfg.areaCaso !== area && (cfg.areasLegadas ?? []).includes(area),
     ),
   ];
+}
+
+/** Resolve referências antigas para a mesma configuração canônica. */
+export function ferramentaPorId(
+  ramo: RamoConfig,
+  id: string,
+): FerramentaConfig | undefined {
+  return ramo.ferramentas.find((f) => f.id === id || f.aliases?.includes(id));
 }

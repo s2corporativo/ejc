@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import ROLE_LEVEL
@@ -26,6 +26,25 @@ def role_str(cu: User) -> str:
 
 def is_gestao(cu: User) -> bool:
     return ROLE_LEVEL.get(role_str(cu), 0) >= _NIVEL_GESTAO
+
+
+def ids_casos_do_usuario(user: User):
+    """Carteira de casos ativos por responsabilidade ou auxílio.
+
+    O chamador decide se gestão tem visão total; esta subconsulta nunca
+    amplia o escopo por perfil nem inclui casos órfãos ou excluídos.
+    """
+    return (
+        select(Case.id)
+        .where(
+            Case.deleted_at.is_(None),
+            or_(
+                Case.advogado_responsavel_id == user.id,
+                Case.advogado_auxiliar_id == user.id,
+            ),
+        )
+        .scalar_subquery()
+    )
 
 
 def pode_ver_todos(user: User) -> bool:

@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.legal_chat import CHAT_MODOS, SESSION_STATUS
 
+from app.utils.legal_state import CHAVES_ESTADO
+
 # Teto conservador por mensagem — protege o gateway de IA contra abuso de
 # tokens (mesma filosofia dos tetos de diplomacia_v3/trabalhista_liquidacao).
 MAX_MENSAGEM_CHARS = 40_000
@@ -86,13 +88,7 @@ class EstadoUpdate(BaseModel):
     @field_validator("estado")
     @classmethod
     def _chaves_conhecidas(cls, v: dict) -> dict:
-        permitidas = {
-            "fatos", "partes", "testemunhas", "enderecos", "identificacao_processual", "provas", "documentos",
-            "contradicoes", "questoes", "teses", "pedidos", "riscos",
-            "pendencias", "cronologia", "datas_relevantes", "valores",
-            "competencia", "ramo_direito", "natureza_acao", "procedimento_rito",
-            "prescricao_decadencia", "urgencia", "proximas_acoes", "fontes",
-        }
+        permitidas = CHAVES_ESTADO
         desconhecidas = set(v) - permitidas
         if desconhecidas:
             raise ValueError(f"chaves de estado desconhecidas: {sorted(desconhecidas)}")

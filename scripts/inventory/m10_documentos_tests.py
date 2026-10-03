@@ -5,6 +5,12 @@ vinculação a cliente/caso), listagem, metadados, download autenticado,
 exclusão soft com lixeira/restauração, permissões e auditoria.
 Executar com env_shell.sh para carregar o .env.
 """
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import io
 import os
 import sys
@@ -13,16 +19,12 @@ import random
 import requests
 from datetime import date
 
-BASE = "http://127.0.0.1:8000"
-ADMIN = "ejc_qa_auth_admin@golocal.ejc"
-FIN = "ejc_qa_auth_financeiro@golocal.ejc"
-CLI = "ejc_qa_auth_cliente@golocal.ejc"
+BASE = _shared.LOCAL_API
+ADMIN = _shared.qa_email('admin')
+FIN = _shared.qa_email('financeiro')
+CLI = _shared.qa_email('cliente')
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 SENHA = _qa_pw('SENHA')
 HEADERS = {"X-Forwarded-For": "127.0.0.1"}
@@ -31,34 +33,18 @@ TOTAL, OK = 0, 0
 
 
 def h(email):
-    if email not in TOKENS:
-        time.sleep(18)
-        r = requests.post(f"{BASE}/api/auth/login",
-                          json={"email": email, "password": SENHA},
-                          headers=HEADERS, timeout=15)
-        if r.status_code == 429:
-            time.sleep(45)
-            r = requests.post(f"{BASE}/api/auth/login",
-                              json={"email": email, "password": SENHA},
-                              headers=HEADERS, timeout=15)
-        TOKENS[email] = r.json()["access_token"]
-    return {**HEADERS, "Authorization": f"Bearer {TOKENS[email]}"}
+    return _shared.login_headers(email, BASE=BASE, HEADERS=HEADERS, SENHA=SENHA, TOKENS=TOKENS, requests=requests, time=time)
 
 
-def chk(nome, ok, detalhe=""):
-    global TOTAL, OK
-    TOTAL += 1
-    OK += int(ok)
-    print(f"{'PASS' if ok else 'FAIL'} {nome}" + (f" — {detalhe}" if not ok else ""))
+def chk(nome, ok, detalhe=''):
+    global OK, TOTAL
+    OK, TOTAL = _shared.check_ok(nome, ok, detalhe, OK=OK, TOTAL=TOTAL)
 
 
 def q(sql):
     import subprocess
-    r = subprocess.run(
-        ["psql", "-h", "localhost", "-U", "ejc", "-d", "ejc", "-t", "-A", "-c", sql],
-        capture_output=True, text=True,
-        env={**os.environ, "PGPASSWORD": "ejc"})
-    return r.stdout.strip()
+
+    return _shared.query_local(sql, runner=subprocess.run, environ=os.environ)
 
 
 if __name__ != "__main__":

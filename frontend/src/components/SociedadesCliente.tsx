@@ -1,3 +1,6 @@
+import { nomeCliente } from "../lib/uiHelpers";
+import { rotulo } from "../lib/uiHelpers";
+import { fmtDia, fmtMoneyInput as fmtBRL } from "../utils/formato";
 // ── src/components/SociedadesCliente.tsx ─────────────────────────────────────
 // Seção especial do ramo Empresarial (padrão AmbientalAutos/BancarioForense):
 // sociedades dos clientes via backend /empresarial/sociedades — cadastro com
@@ -120,27 +123,7 @@ const FORM_EVENTO_VAZIO = {
   data_evento: "",
 };
 
-function rotulo(v: string) {
-  return v.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function fmtBRL(v: number | string | null | undefined) {
-  const n = Number(v);
-  if (v == null || v === "" || isNaN(n)) return "—";
-  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
 /** Datas do backend vêm como "YYYY-MM-DD" — formata sem shift de timezone. */
-function fmtDia(d: string | null | undefined) {
-  if (!d) return "—";
-  const [iso] = d.split("T");
-  const partes = iso.split("-");
-  return partes.length === 3 ? partes.reverse().join("/") : d;
-}
-
-function nomeCliente(c: Client) {
-  return c.nome || c.razao_social || c.cnpj || c.cpf || c.id;
-}
 
 export default function SociedadesCliente() {
   // Lista + filtro

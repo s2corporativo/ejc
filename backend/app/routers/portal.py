@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.models.case import Case, CaseMovimento
 from app.models.deadline import Deadline
 from app.models.fee import Fee
@@ -30,10 +30,7 @@ TIPOS_MOVIMENTOS_PORTAL = (
 )
 
 
-def _exigir_cliente(cu: User) -> str:
-    if cu.role != UserRole.cliente_externo or not cu.client_id:
-        raise HTTPException(status_code=403, detail="Acesso exclusivo do Portal do Cliente")
-    return cu.client_id
+from app.core.security import cliente_portal_id as _exigir_cliente
 
 
 @router.get("/meus-casos", dependencies=[Depends(rate_limit("portal-meus-casos", 60))])

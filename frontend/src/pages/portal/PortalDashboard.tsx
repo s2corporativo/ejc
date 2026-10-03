@@ -1,3 +1,4 @@
+import { STATUS_COR } from "./statusCor";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import {
@@ -19,14 +20,6 @@ import { fmtDate } from "../../components/UI";
 import { CASE_STATUS_LABEL, isCasoAtivo } from "../../types/caseStatus";
 
 /** Cor por status; RÓTULO vem do vocabulário canônico (types/caseStatus.ts). */
-const STATUS_COR: Record<string, string> = {
-  aberto: "bg-warn-100 text-warn-700",
-  em_instrucao: "bg-primary-100 text-primary-700",
-  em_producao: "bg-primary-100 text-primary-700",
-  protocolado: "bg-primary-100 text-primary-700",
-  encerrado: "bg-success-100 text-success-700",
-  arquivado: "bg-slate-100 text-slate-500",
-};
 
 const fmtR$ = (v: number) =>
   v?.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) ??

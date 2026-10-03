@@ -33,8 +33,9 @@ TEXTO = "#111827"
 TEXTO_SUAVE = "#4b5563"
 RODAPE_COR = "#6b7280"
 
+# Fonte canônica do backend. O frontend conserva sua cópia de deployment;
+# assets pode ser um link relativo de compatibilidade para static/brand.
 _LOGO_CANDIDATOS = (
-    Path(__file__).resolve().parents[1] / "assets" / "de-paula-teixeira-logo.jpg",
     Path(__file__).resolve().parents[1] / "static" / "brand" / "de-paula-teixeira-logo.jpg",
 )
 

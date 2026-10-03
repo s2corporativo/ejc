@@ -1,3 +1,4 @@
+import { paramsDaAba } from "../lib/uiHelpers";
 import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router";
 import {
@@ -130,9 +131,7 @@ export default function Configuracoes() {
   const isAdministrationPath = tab === "administracao";
 
   const selectTab = (next: SettingsTab) => {
-    const params = new URLSearchParams(searchParams);
-    params.set("tab", next);
-    setSearchParams(params, { replace: true });
+    setSearchParams(paramsDaAba(searchParams, next), { replace: true });
   };
 
   const availableHomeOptions = HOME_OPTIONS.filter((option) =>

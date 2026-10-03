@@ -24,12 +24,13 @@ from app.models.ficha_triagem import FichaTriagem
 from app.models.user import User
 from app.services import ficha_triagem_service as svc
 
+from app.core.ownership import role_str
+
 router = APIRouter(prefix="/triagem/ficha", tags=["Triagem — Ficha pré-peça"])
 
 
 def _role_str(cu: User) -> str:
-    r = getattr(cu, "role", None)
-    return r.value if hasattr(r, "value") else str(r)
+    return role_str(cu)
 
 
 def _exigir_piso(cu: User) -> None:

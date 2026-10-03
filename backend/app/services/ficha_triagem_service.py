@@ -17,9 +17,7 @@
 # peça só nasce de uma ficha CONFIRMADA pelo advogado.
 from __future__ import annotations
 
-import json
 import logging
-import re
 from datetime import date
 from typing import Any, Optional
 from uuid import uuid4
@@ -34,6 +32,12 @@ from app.models.ai_log import AITipoUso
 from app.models.case import Case
 from app.models.ficha_triagem import FichaTriagem
 from app.models.prova import Prova
+
+from app.utils.ai_json import parse_json_response
+
+from app.services.proof_context import contexto_provas
+
+from app.utils.values import confianca_percentual
 
 settings = get_settings()
 logger = logging.getLogger("ejc.ficha_triagem")
@@ -101,29 +105,11 @@ Responda APENAS com JSON estrito (sem markdown, sem texto fora do JSON), neste f
 # ── Helpers de parse defensivo (padrão triagem_entrevista) ────────────────────
 
 def _parse_json(txt: str) -> Optional[dict]:
-    """Extrai o primeiro objeto JSON da resposta da IA (fallback tolerante)."""
-    if not txt:
-        return None
-    try:
-        obj = json.loads(txt)
-        return obj if isinstance(obj, dict) else None
-    except Exception:
-        m = re.search(r"\{.*\}", txt, re.DOTALL)
-        if m:
-            try:
-                obj = json.loads(m.group(0))
-                return obj if isinstance(obj, dict) else None
-            except Exception:
-                return None
-    return None
+    return parse_json_response(txt, require_dict=True)
 
 
 def _conf(v: Any) -> Optional[int]:
-    """Confiança 0-100 ou None — nunca propaga lixo da IA."""
-    try:
-        return max(0, min(100, int(float(v))))
-    except (TypeError, ValueError):
-        return None
+    return confianca_percentual(v)
 
 
 def _valor_str(v: Any, limite: int = 4000) -> Optional[str]:
@@ -138,28 +124,7 @@ def _valor_str(v: Any, limite: int = 4000) -> Optional[str]:
 
 
 def _contexto_caso(case: Case, provas: list[Prova]) -> str:
-    """Contexto DETERMINÍSTICO do caso (só campos do próprio caso) — único insumo
-    fático dado à IA (mesmo racional de provas._contexto_sugestao)."""
-    area = case.area.value if hasattr(case.area, "value") else str(case.area or "—")
-    tipo_acao = (getattr(case, "tipo_acao_prescricao", None)
-                 or getattr(case, "extrajudicial_type", None)
-                 or getattr(case, "case_type", None)
-                 or "não informado")
-    linhas = [
-        f"Área do direito: {area}",
-        f"Título do caso: {case.titulo or '—'}",
-        f"Tipo de ação: {tipo_acao}",
-        f"Tese principal: {(case.tese_principal or 'não informada').strip()[:2000]}",
-        "",
-        "Provas JÁ EXISTENTES no caso:",
-    ]
-    if provas:
-        for p in provas:
-            fato = (p.fato_probando or "não informado").strip()[:400]
-            linhas.append(f"- [{p.tipo}] {p.titulo} — fato probando: {fato}")
-    else:
-        linhas.append("- (nenhuma prova cadastrada ainda)")
-    return "\n".join(linhas)
+    return contexto_provas(case, provas, limite_fato=400)
 
 
 def _provas_disponiveis_texto(provas: list[Prova]) -> Optional[str]:

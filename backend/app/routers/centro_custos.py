@@ -1,3 +1,4 @@
+from app.core.pagination import executar_pagina
 # ── app/routers/centro_custos.py ──────────────────────────────────────────────
 # Centro de Custos por Processo — lucro real, receitas e despesas por caso.
 # Soft-delete arquitetural: lançamentos financeiros nunca são apagados
@@ -9,14 +10,13 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func, or_, case as sa_case
+from sqlalchemy import select, func, case as sa_case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.models.user import User
-from app.models.case import Case
 from app.models.centro_custo import CentroCusto, CentroCustoTipo, CentroCustoCategoria
 from app.models.audit_log import criar_audit_log
 from app.services.document_access_policy import exigir_documento_compativel_com_caso
@@ -68,20 +68,7 @@ def _pode_editar(u: User) -> bool:
     return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["advogado"]
 
 
-def _ids_casos_visiveis(user: User):
-    """IDs dos casos em que o usuário atua como responsável/auxiliar (espelha
-    fees._ids_casos_do_usuario) — usado para escopar a listagem sem case_id."""
-    return (
-        select(Case.id)
-        .where(
-            Case.deleted_at.is_(None),
-            or_(
-                Case.advogado_responsavel_id == user.id,
-                Case.advogado_auxiliar_id == user.id,
-            ),
-        )
-        .scalar_subquery()
-    )
+from app.core.ownership import ids_casos_do_usuario as _ids_casos_visiveis
 
 
 def _out(c: CentroCusto) -> dict:
@@ -133,8 +120,8 @@ async def listar_lancamentos(
     if pago is not None:
         q = q.where(CentroCusto.pago.is_(pago))
     q = q.order_by(CentroCusto.data_lancamento.desc())
-    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
-    items = (await db.execute(q.offset((page-1)*per_page).limit(per_page))).scalars().all()
+    total, items = await executar_pagina(db, q, page, per_page)
+    total = total or 0
     return {"total": total, "page": page, "per_page": per_page, "items": [_out(c) for c in items]}
 
 
@@ -213,6 +200,13 @@ async def criar_lancamento(
     return out
 
 
+def _totais_centro_custo():
+    return (
+        func.coalesce(func.sum(sa_case((CentroCusto.tipo == CentroCustoTipo.receita, CentroCusto.valor), else_=0)), 0).label('total_receitas'),
+        func.coalesce(func.sum(sa_case((CentroCusto.tipo == CentroCustoTipo.despesa, CentroCusto.valor), else_=0)), 0).label('total_despesas'),
+        func.coalesce(func.sum(sa_case(((CentroCusto.tipo == CentroCustoTipo.despesa) & CentroCusto.pago.is_(False), CentroCusto.valor), else_=0)), 0).label('pendente_pagar'),
+    )
+
 @router.get("/caso/{case_id}/resumo")
 async def resumo_caso(
     case_id: str,
@@ -229,16 +223,7 @@ async def resumo_caso(
 
     row = (await db.execute(
         select(
-            func.coalesce(func.sum(
-                sa_case((CentroCusto.tipo == CentroCustoTipo.receita, CentroCusto.valor), else_=0)
-            ), 0).label("total_receitas"),
-            func.coalesce(func.sum(
-                sa_case((CentroCusto.tipo == CentroCustoTipo.despesa, CentroCusto.valor), else_=0)
-            ), 0).label("total_despesas"),
-            func.coalesce(func.sum(
-                sa_case(((CentroCusto.tipo == CentroCustoTipo.despesa) & (CentroCusto.pago.is_(False)),
-                         CentroCusto.valor), else_=0)
-            ), 0).label("pendente_pagar"),
+            *_totais_centro_custo(),
         ).where(CentroCusto.case_id == case_id, CentroCusto.deleted_at.is_(None))
     )).one()
 
@@ -289,16 +274,7 @@ async def consolidado_geral(
     # Totais globais
     row = (await db.execute(
         select(
-            func.coalesce(func.sum(
-                sa_case((CentroCusto.tipo == CentroCustoTipo.receita, CentroCusto.valor), else_=0)
-            ), 0).label("total_receitas"),
-            func.coalesce(func.sum(
-                sa_case((CentroCusto.tipo == CentroCustoTipo.despesa, CentroCusto.valor), else_=0)
-            ), 0).label("total_despesas"),
-            func.coalesce(func.sum(
-                sa_case(((CentroCusto.tipo == CentroCustoTipo.despesa) & (CentroCusto.pago.is_(False)),
-                         CentroCusto.valor), else_=0)
-            ), 0).label("pendente_pagar"),
+            *_totais_centro_custo(),
         ).where(CentroCusto.deleted_at.is_(None))
     )).one()
 

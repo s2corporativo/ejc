@@ -5,6 +5,12 @@ scripts/inventory/qa_maintenance.py [reset_senhas|limpar_usuarios|status]
 Não versionar alterações reais; destina-se exclusivamente ao ambiente de
 homologação local (dados EJC_QA_*).
 """
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import os
 import sys
 import asyncio
@@ -19,22 +25,18 @@ from app.core.security import get_password_hash
 from sqlalchemy import text
 
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 SENHA_QA = _qa_pw('SENHA_QA')
 EMAILS_QA = [
-    "ejc_qa_auth_admin@golocal.ejc",
-    "ejc_qa_auth_socio@golocal.ejc",
-    "ejc_qa_auth_advogado@golocal.ejc",
-    "ejc_qa_auth_estagiario@golocal.ejc",
-    "ejc_qa_auth_financeiro@golocal.ejc",
-    "ejc_qa_auth_secretaria@golocal.ejc",
-    "ejc_qa_auth_cliente@golocal.ejc",
-    "ejc_qa_auth_inativo@golocal.ejc",
+    _shared.qa_email('admin'),
+    _shared.qa_email('socio'),
+    _shared.qa_email('advogado'),
+    _shared.qa_email('estagiario'),
+    _shared.qa_email('financeiro'),
+    _shared.qa_email('secretaria'),
+    _shared.qa_email('cliente'),
+    _shared.qa_email('inativo'),
 ]
 
 

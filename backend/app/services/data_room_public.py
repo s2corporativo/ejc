@@ -30,6 +30,8 @@ from app.services import google_drive as gd
 from app.services.document_format import ascii_seguro
 from app.services.security_service import obter_ip_real
 
+from app.services.document_metadata import hash_token_data_room, remote_path_documento
+
 settings = get_settings()
 _GRANT_TTL = timedelta(minutes=5)
 
@@ -43,8 +45,7 @@ class EntregaPublica:
 
 
 def _hash_token(token: str) -> str:
-    """Mesmo lookup determinístico da rota canônica de criação do link."""
-    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
+    return hash_token_data_room(token)
 
 
 def _arquivo_publicavel(arquivo: DataRoomArquivo, doc: Document) -> bool:
@@ -93,13 +94,7 @@ def grant_valido(
 
 
 def _remote_path_documento(document: Document) -> str | None:
-    filepath = str(document.filepath or "")
-    if not filepath.startswith("drive://"):
-        return None
-    candidato = filepath[len("drive://") :].strip()
-    if not candidato or candidato == str(document.drive_file_id or ""):
-        return None
-    return candidato
+    return remote_path_documento(document)
 
 
 def _local_path_seguro(document: Document) -> str:

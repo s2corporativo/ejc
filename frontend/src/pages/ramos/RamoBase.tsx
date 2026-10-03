@@ -1,3 +1,4 @@
+import { rotulo, paramsDaAba } from "../../lib/uiHelpers";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import {
@@ -76,10 +77,6 @@ const ICONES: Record<string, typeof Scale> = {
   Users,
   Car,
 };
-
-function rotulo(v: string) {
-  return v.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
 
 function carregarListaResposta(data: any): any[] {
   if (Array.isArray(data)) return data;
@@ -565,7 +562,9 @@ export default function RamoBase() {
     api
       .get(cfg.endpoint)
       .then((resposta) =>
-        setRegistros(filtrarRegistrosDoContexto(carregarListaResposta(resposta.data))),
+        setRegistros(
+          filtrarRegistrosDoContexto(carregarListaResposta(resposta.data)),
+        ),
       )
       .catch(() => setRegistros([]));
   };
@@ -602,10 +601,7 @@ export default function RamoBase() {
                 )
                 .filter(Boolean)
             : [];
-          const areasDoCaso = new Set([
-            String(caso.area || ""),
-            ...vinculadas,
-          ]);
+          const areasDoCaso = new Set([String(caso.area || ""), ...vinculadas]);
           const pertenceAoWorkspace = areas.some((area) =>
             areasDoCaso.has(area),
           );
@@ -680,13 +676,7 @@ export default function RamoBase() {
     return () => {
       ativo = false;
     };
-  }, [
-    slug,
-    podeAcessarArea,
-    cfg,
-    caseIdContexto,
-    filtrarRegistrosDoContexto,
-  ]);
+  }, [slug, podeAcessarArea, cfg, caseIdContexto, filtrarRegistrosDoContexto]);
 
   if (!cfg) return <Empty message="Área de atuação não encontrada" />;
   if (!podeAcessarArea) {
@@ -707,14 +697,7 @@ export default function RamoBase() {
     setAba(id);
     // Sincroniza a query com a aba exibida, preservando case_id (revisão P2
     // #1863): reload/compartilhamento reabre a aba visível, não "ferramentas".
-    setSearchParams(
-      (atuais) => {
-        const proximos = new URLSearchParams(atuais);
-        proximos.set("tab", id);
-        return proximos;
-      },
-      { replace: true },
-    );
+    setSearchParams((atuais) => paramsDaAba(atuais, id), { replace: true });
   };
 
   return (
@@ -853,9 +836,7 @@ export default function RamoBase() {
           <FerramentasDoRamo
             cfg={cfg}
             casos={casos}
-            caseContext={
-              caseIdContexto ? (casoContexto ?? null) : undefined
-            }
+            caseContext={caseIdContexto ? (casoContexto ?? null) : undefined}
           />
         </div>
       )}

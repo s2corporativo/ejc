@@ -59,6 +59,41 @@ EQUIPE_JURIDICA: frozenset[str] = frozenset({
 })
 
 
+def pertence_a_perfis(cu: "User", perfis: Collection[str]) -> bool:
+    """Pertencimento literal; nenhum perfil ganha acesso por hierarquia."""
+    role = getattr(cu, "role", None)
+    return getattr(role, "value", role) in perfis
+
+
+def eh_equipe_juridica(cu: "User") -> bool:
+    return pertence_a_perfis(cu, EQUIPE_JURIDICA)
+
+
+def pode_ato_juridico(cu: "User") -> bool:
+    """Piso hierárquico existente, distinto da allowlist de equipe jurídica."""
+    role = getattr(cu.role, "value", cu.role)
+    return ROLE_LEVEL.get(role, 0) >= ROLE_LEVEL["advogado"]
+
+
+def requer_perfis(cu: "User", perfis: Collection[str], detalhe: str) -> None:
+    if not pertence_a_perfis(cu, perfis):
+        raise HTTPException(status_code=403, detail=detalhe)
+
+
+def cliente_portal_id(cu: "User") -> str:
+    if not pertence_a_perfis(cu, {"cliente_externo"}) or not cu.client_id:
+        raise HTTPException(status_code=403, detail="Acesso exclusivo do Portal do Cliente")
+    return cu.client_id
+
+
+def bloquear_cliente_externo_ia(cu: "User") -> None:
+    if pertence_a_perfis(cu, {"cliente_externo"}):
+        raise HTTPException(
+            status_code=403,
+            detail="Funções de IA internas não estão disponíveis no portal do cliente.",
+        )
+
+
 def requer_equipe_juridica(cu: "User", detalhe: str = "Acesso negado") -> None:
     """Gate compartilhado (fonte única): superfície jurídica exige um papel de
     EQUIPE_JURIDICA — allowlist EXATA, sem fallback hierárquico (ver

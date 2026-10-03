@@ -12,6 +12,12 @@ default pendente/escopo por carteira, CSV, urgências, RBAC e auditoria.
 Dados sintéticos identificados por EJC_QA.
 """
 from __future__ import annotations
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import json
 import sys
 import time
@@ -19,13 +25,9 @@ from datetime import date
 
 import requests
 
-BASE = "http://127.0.0.1:8000"
+BASE = _shared.LOCAL_API
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 SENHA = _qa_pw('SENHA')
 PASSOS, FALHAS = [], 0
@@ -74,7 +76,7 @@ def _db(sql, params=()):
 
 def _adv_caso():
     """advogado QA + caso onde ele é responsável/auxiliar."""
-    adv = "ejc_qa_auth_advogado@golocal.ejc"
+    adv = _shared.qa_email('advogado')
     h = _h(adv)
     r = requests.get(f"{BASE}/api/cases", headers=h, params={"page_size": 5}, timeout=15)
     rows = r.json().get("data", []) if r.status_code == 200 else []
@@ -87,12 +89,12 @@ def _adv_caso():
     return adv, h, cid
 
 
-ADM = _h("ejc_qa_auth_admin@golocal.ejc")
+ADM = _h(_shared.qa_email('admin'))
 
 # ── 1. Calculadora de prazo ────────────────────────────────────────────────
 # 1a. Prazo processual 10 dias úteis sem atravessar recesso → vence em 14 dias
 #     corridos úteis.
-h = _h("ejc_qa_auth_advogado@golocal.ejc")
+h = _h(_shared.qa_email('advogado'))
 r = requests.post(f"{BASE}/api/deadlines/calcular", json={
     "data_inicio": "2026-09-01", "dias": 10, "dias_uteis": True,
     "tipo": "processual",
@@ -270,7 +272,7 @@ r = requests.delete(f"{BASE}/api/deadlines/00000000-0000-0000-0000-000000000099"
 chk("delete de inexistente → 404", r.status_code == 404,
     f"HTTP {r.status_code} {r.text[:60]}")
 # 6c. Piso por nível: estagiário não cancela.
-h_est = _h("ejc_qa_auth_estagiario@golocal.ejc")
+h_est = _h(_shared.qa_email('estagiario'))
 r = requests.delete(f"{BASE}/api/deadlines/{D1}", headers=h_est, timeout=15)
 chk("estagiário fora do piso (advogado+) não cancela",
     r.status_code in (401, 403), f"HTTP {r.status_code} {r.text[:60]}")
@@ -299,13 +301,13 @@ chk("export.csv 200 com BOM UTF-8 (﻿) e separador ';'",
     f"HTTP {r.status_code} {r.text[:50]}")
 # 7e. Fora da carteira: advogado de outro caso (advogado_auxiliar QA é outro
 #     usuário do mesmo case — usar cliente_externo que não é gestão nem dono).
-h_cli = _h("ejc_qa_auth_cliente@golocal.ejc")
+h_cli = _h(_shared.qa_email('cliente'))
 r = requests.get(f"{BASE}/api/deadlines", headers=h_cli, timeout=15)
 chk("cliente externo não gerencia prazos (401/403)",
     r.status_code in (401, 403, 404), f"HTTP {r.status_code} {r.text[:60]}")
 # 7f. Financeiro (gestão? role financeiro está abaixo de socio) — financeiro
 #     vê apenas prazos próprios/avulsos (sem caso) do próprio responsável.
-h_fin = _h("ejc_qa_auth_financeiro@golocal.ejc")
+h_fin = _h(_shared.qa_email('financeiro'))
 r = requests.get(f"{BASE}/api/deadlines", headers=h_fin, timeout=15)
 chk("financeiro fora da is_gestao vê apenas escopo próprio (total ≤ próprio)",
     r.status_code == 200, f"HTTP {r.status_code} total={r.json().get('total')}")

@@ -117,20 +117,7 @@ class ReceitaCNPJIn(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-async def _executar(db: AsyncSession, cu: User, caminho: str, parametros: dict) -> dict:
-    try:
-        return await infosimples_service.consultar(
-            db, caminho, parametros,
-            user_id=cu.id, user_role=getattr(cu.role, "value", str(cu.role)),
-        )
-    except (
-        infosimples_service.IntegracaoDesligadaError,
-        infosimples_service.LimiteDiarioAtingidoError,
-        infosimples_service.InfosimplesConsultaError,
-        infosimples_service.InfosimplesIndisponivelError,
-    ) as e:
-        status_code, detail = infosimples_service.http_status_para_erro(e)
-        raise HTTPException(status_code=status_code, detail=detail)
+from app.routers.infosimples_common import executar_consulta as _executar
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 # ── app/routers/jurisprudencia_interna.py ────────────────────────────────────
 # Repositório Interno de Jurisprudência — CRUD + classificação por IA.
 from __future__ import annotations
+from app.core.pagination import executar_pagina
 import logging
 from uuid import uuid4
 from datetime import datetime, timezone, date as _date
@@ -8,11 +9,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, or_, func
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user, ROLE_LEVEL, EQUIPE_JURIDICA
+from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.models.jurisprudencia_interna import JurisprudenciaInterna, JuriResultado
 from app.core.rate_limit import rate_limit
@@ -53,10 +54,7 @@ class JuriPatch(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _is_staff(u: User) -> bool:
-    # Issue #694: allowlist EXATA — financeiro não acessa o repositório interno
-    # de jurisprudência, mesmo com ROLE_LEVEL acima de estagiario.
-    return u.role.value in EQUIPE_JURIDICA
+from app.core.security import eh_equipe_juridica as _is_staff
 
 def _pode_editar(u: User) -> bool:
     return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["advogado"]
@@ -110,8 +108,8 @@ async def listar_jurisprudencias(
             JurisprudenciaInterna.numero_acordao.ilike(t),
         ))
     q = q.order_by(JurisprudenciaInterna.favorito.desc(), JurisprudenciaInterna.vezes_citada.desc())
-    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
-    items = (await db.execute(q.offset((page-1)*per_page).limit(per_page))).scalars().all()
+    total, items = await executar_pagina(db, q, page, per_page)
+    total = total or 0
     return {"total": total, "page": page, "per_page": per_page, "items": [_out(j) for j in items]}
 
 

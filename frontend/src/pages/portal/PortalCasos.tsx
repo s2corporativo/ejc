@@ -1,3 +1,4 @@
+import { STATUS_COR } from "./statusCor";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { ChevronRight, Scale, Search } from "lucide-react";
@@ -7,14 +8,6 @@ import { CASE_STATUS_LABEL, isCasoAtivo } from "../../types/caseStatus";
 
 /** Cor por status; o RÓTULO vem do vocabulário canônico (types/caseStatus.ts),
  * para o portal do cliente não divergir da área interna. */
-const STATUS_COR: Record<string, string> = {
-  aberto: "bg-warn-100 text-warn-700",
-  em_instrucao: "bg-primary-100 text-primary-700",
-  em_producao: "bg-primary-100 text-primary-700",
-  protocolado: "bg-primary-100 text-primary-700",
-  encerrado: "bg-success-100 text-success-700",
-  arquivado: "bg-slate-100 text-slate-500",
-};
 
 const AREA_ICON: Record<string, string> = {
   civel: "⚖️",

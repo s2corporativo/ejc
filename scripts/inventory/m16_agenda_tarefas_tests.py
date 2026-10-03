@@ -2,6 +2,12 @@
 # M16 — Agenda, Audiências, Eventos e Tarefas (bateria de homologação)
 # Provado por execução real contra o servidor local na porta 8000.
 from __future__ import annotations
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import os
 import sys
 import json
@@ -9,24 +15,14 @@ import subprocess
 import datetime as dt
 import requests
 
-BASE = "http://127.0.0.1:8000"
+BASE = _shared.LOCAL_API
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 SENHA = _qa_pw('SENHA')
 # Papéis: socio=gestão (cria p/ outro, vê agenda alheia); advogado não-gestão;
 # estagiario não-gestão; secretario não-gestão.
-EMAILS = {
-    "socio": "ejc_qa_auth_socio@golocal.ejc",
-    "advogado": "ejc_qa_auth_advogado@golocal.ejc",
-    "estagiario": "ejc_qa_auth_estagiario@golocal.ejc",
-    "secretaria": "ejc_qa_auth_secretaria@golocal.ejc",
-    "cliente": "ejc_qa_auth_cliente@golocal.ejc",
-}
+EMAILS = _shared.qa_emails(('socio', 'advogado', 'estagiario', 'secretaria', 'cliente'))
 
 IDS = {}   # ids por email (lazy)
 TOKENS = {}
@@ -34,40 +30,18 @@ FALHAS = 0
 TOTAL = 0
 
 
-def chk(desc, ok, extra=""):
+def chk(desc, ok, extra=''):
     global FALHAS, TOTAL
-    TOTAL += 1
-    if ok:
-        print(f"[PASS] {desc}")
-    else:
-        FALHAS += 1
-        print(f"[FAIL] {desc} — {extra}")
+    FALHAS, TOTAL = _shared.check_failures(desc, ok, extra, FALHAS=FALHAS, TOTAL=TOTAL)
 
 
 def db(sql):
-    env = dict(os.environ)
-    env["PGPASSWORD"] = "ejc"
-    o = subprocess.run(["psql", "-h", "localhost", "-U", "ejc", "-d", "ejc",
-                        "-t", "-A", "-c", sql], capture_output=True, text=True, env=env)
-    return o.stdout.strip()
+    return _shared.query_local(sql, runner=subprocess.run, environ=os.environ)
 
 
 def token(email):
-    if email in TOKENS:
-        return TOKENS[email]
-    for tent in range(4):
-        r = requests.post(f"{BASE}/api/auth/login",
-                          json={"email": email, "password": SENHA},
-                          headers={"X-Forwarded-For": "127.0.0.1"}, timeout=15)
-        if r.status_code == 200:
-            TOKENS[email] = r.json()["access_token"]
-            return TOKENS[email]
-        if r.status_code == 429:
-            import time
-            time.sleep(18 * (tent + 1))
-        else:
-            raise SystemExit(f"login {email}: {r.status_code} {r.text[:120]}")
-    raise SystemExit(f"login {email}: rate limit persistente")
+    import time
+    return _shared.cached_token(email, BASE=BASE, SENHA=SENHA, TOKENS=TOKENS, requests=requests, time=time)
 
 
 def H(role):

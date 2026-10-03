@@ -8,8 +8,6 @@ REGRAS (CLAUDE.md): nunca inventa item da tabela; nunca promete resultado; tudo
 é referência — o advogado define o valor final.
 """
 from __future__ import annotations
-import json
-import re
 from datetime import date
 from typing import Optional
 from uuid import uuid4
@@ -35,6 +33,8 @@ from app.models.case import Case
 from app.models.fee import Fee, FeeTipo, FeeStatus
 from decimal import ROUND_HALF_UP
 from sqlalchemy import text
+
+from app.utils.ai_json import parse_json_response
 
 router = APIRouter(prefix="/honorarios-oab", tags=["Honorários OAB"])
 
@@ -63,18 +63,7 @@ class EstimativaIn(BaseModel):
 
 
 def _parse_json(txt: str) -> Optional[dict]:
-    if not txt:
-        return None
-    try:
-        return json.loads(txt)
-    except Exception:
-        m = re.search(r"\{.*\}", txt, re.DOTALL)
-        if m:
-            try:
-                return json.loads(m.group(0))
-            except Exception:
-                return None
-    return None
+    return parse_json_response(txt)
 
 
 async def _contexto_oab(db, area: str, tipo_acao: str) -> tuple[str, bool]:

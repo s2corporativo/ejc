@@ -16,9 +16,7 @@ Fail-safe: se a IA estiver desabilitada (sem provedores/erro), retorna
 """
 from __future__ import annotations
 
-import json
 import logging
-import re
 from typing import Optional
 
 from sqlalchemy import select
@@ -27,6 +25,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services import ai_gateway
 from app.services.sanitizer import sanitizar_pii  # remoção de PII antes da IA (LGPD)
 from app.models.redesign import DocumentTypeMaster
+
+from app.utils.ai_json import parse_json_response
 
 logger = logging.getLogger("ejc.document_classifier")
 
@@ -38,20 +38,7 @@ _CONFIANCAS = {"alta", "media", "baixa"}
 
 
 def _parse_json(texto: str) -> dict:
-    """Extrai o primeiro objeto JSON da resposta da IA de forma robusta."""
-    if not texto:
-        return {}
-    try:
-        return json.loads(texto)
-    except Exception:
-        pass
-    m = re.search(r"\{.*\}", texto, re.DOTALL)
-    if m:
-        try:
-            return json.loads(m.group(0))
-        except Exception:
-            return {}
-    return {}
+    return parse_json_response(texto, empty="dict")
 
 
 async def _tipos_validos(db: AsyncSession) -> list[dict]:

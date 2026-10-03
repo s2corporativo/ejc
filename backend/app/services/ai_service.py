@@ -303,60 +303,78 @@ async def _escopo_cliente_do_caso(db: AsyncSession, case_id: str | None) -> str 
     return row[0] if row else None
 
 
+def _params_perna_rag(
+    consulta: str, limite: int, categorias: list[str] | None,
+    scope_client_id: str | None, incluir_historico: bool, scope_case_id: str | None,
+) -> tuple[dict, str]:
+    params = {"q": consulta[:300], "lim": max(limite * 3, 12),
+              "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or "",
+              "incl_hist": incluir_historico,
+              **_params_escopo_rag(scope_client_id, scope_case_id)}
+    filtro = ""
+    if categorias:
+        filtro = "AND kd.categoria = ANY(:cats)"
+        params["cats"] = categorias
+    return params, filtro
+
+
+def _sql_perna_rag(
+    expressao_score: str, predicado: str, nome_score: str, filtro: str, incluir_ficticio: bool,
+):
+    # Fragmentos SQL são constantes internas; consulta/categorias/escopo são binds.
+    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+    return text(f"""
+        SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
+               {_SQL_CONFIANCA},
+               {expressao_score} AS {nome_score}
+        FROM knowledge_chunks kc
+        JOIN knowledge_docs kd ON kd.id = kc.doc_id
+        WHERE kd.deleted_at IS NULL
+          AND {predicado}
+          {filtro}
+          {_FILTRO_ESCOPO_RAG}
+          {_FILTRO_VIGENTE_RAG}
+          {_filtros_gate_rag(incluir_ficticio)}
+        ORDER BY {nome_score} DESC
+        LIMIT :lim
+    """)
+
+
+def _acumular_rrf(fusion, meta, ranking, *, score_field=None):
+    """RRF k=60; preserva metadados semânticos quando a fonte reaparece."""
+    for rank, row in enumerate(ranking):
+        cid = row.get("chunk_id") if score_field is None else row.id
+        if score_field is None and cid is None:
+            continue
+        fusion[cid] = fusion.get(cid, 0.0) + 1.0 / (60 + rank + 1)
+        if score_field is None:
+            meta[cid] = row
+        elif cid not in meta:
+            meta[cid] = {"chunk_id": row.id, "doc_id": row.doc_id, "conteudo": row.conteudo,
+                         "titulo": row.titulo, "categoria": row.categoria, "fonte": row.fonte,
+                         "confianca": row.confianca, "versao": getattr(row, "versao", None),
+                         "score": round(float(getattr(row, score_field)), 4)}
+
+
 async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_client_id=None,
                           incluir_historico=False, incluir_ficticio=False,
                           scope_case_id=None):
     """Busca híbrida: funde ranking SEMÂNTICO (pgvector) + LEXICAL (pg_trgm) via
     Reciprocal Rank Fusion (RRF). Aditivo — se a parte lexical falhar, devolve o
     semântico intacto. k=60 é o padrão de RRF."""
-    from sqlalchemy import text as _text
-    K = 60
     fusion = {}
     meta = {}
-    for rank, r in enumerate(semanticos):
-        cid = r.get("chunk_id")
-        if cid is None:
-            continue
-        fusion[cid] = fusion.get(cid, 0.0) + 1.0 / (K + rank + 1)
-        meta[cid] = r
+    _acumular_rrf(fusion, meta, semanticos)
     try:
-        params = {"q": consulta[:300], "lim": max(limite * 3, 12),
-                  "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or "",
-                  "incl_hist": incluir_historico,
-                  **_params_escopo_rag(scope_client_id, scope_case_id)}
-        filtro = ""
-        if categorias:
-            filtro = "AND kd.categoria = ANY(:cats)"
-            params["cats"] = categorias
-        # SQL literal com bind params; a regra marca todo text(), sem olhar
-        # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
-        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-        sql = _text(f"""
-            SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
-                   {_SQL_CONFIANCA},
-                   similarity(kc.conteudo, :q) AS sim
-            FROM knowledge_chunks kc
-            JOIN knowledge_docs kd ON kd.id = kc.doc_id
-            WHERE kd.deleted_at IS NULL
-              AND similarity(kc.conteudo, :q) > 0.05
-              {filtro}
-              {_FILTRO_ESCOPO_RAG}
-              {_FILTRO_VIGENTE_RAG}
-              {_filtros_gate_rag(incluir_ficticio)}
-            ORDER BY sim DESC
-            LIMIT :lim
-        """)
+        params, filtro = _params_perna_rag(
+            consulta, limite, categorias, scope_client_id, incluir_historico, scope_case_id,
+        )
+        sql = _sql_perna_rag(
+            "similarity(kc.conteudo, :q)", "similarity(kc.conteudo, :q) > 0.05",
+            "sim", filtro, incluir_ficticio,
+        )
         rows = await db.execute(sql, params)
-        for rank, r in enumerate(rows):
-            cid = r.id
-            fusion[cid] = fusion.get(cid, 0.0) + 1.0 / (K + rank + 1)
-            if cid not in meta:
-                meta[cid] = {"chunk_id": r.id, "doc_id": r.doc_id, "conteudo": r.conteudo,
-                             "titulo": r.titulo,
-                             "categoria": r.categoria, "fonte": r.fonte,
-                             "confianca": r.confianca,
-                             "versao": getattr(r, "versao", None),
-                             "score": round(float(r.sim), 4)}
+        _acumular_rrf(fusion, meta, rows, score_field="sim")
     except Exception as _e:
         logger.warning("Fusao lexical (RRF) falhou, mantendo semantico: %s", descricao_tecnica_segura(_e))
         return semanticos
@@ -367,45 +385,16 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
     # Falha isolada não afeta as pernas semântica/trigram.
     if getattr(settings, "RAG_FTS_ENABLED", False):
         try:
-            params_f = {"q": consulta[:300], "lim": max(limite * 3, 12),
-                        "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or "",
-                        "incl_hist": incluir_historico,
-                        **_params_escopo_rag(scope_client_id, scope_case_id)}
-            filtro_f = ""
-            if categorias:
-                filtro_f = "AND kd.categoria = ANY(:cats)"
-                params_f["cats"] = categorias
-            # SQL literal com bind params; a regra marca todo text(), sem olhar
-            # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
-            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
-            sql_f = _text(f"""
-                SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
-                       {_SQL_CONFIANCA},
-                       ts_rank_cd(to_tsvector('portuguese', kc.conteudo),
-                                  plainto_tsquery('portuguese', :q)) AS rank
-                FROM knowledge_chunks kc
-                JOIN knowledge_docs kd ON kd.id = kc.doc_id
-                WHERE kd.deleted_at IS NULL
-                  AND to_tsvector('portuguese', kc.conteudo)
-                      @@ plainto_tsquery('portuguese', :q)
-                  {filtro_f}
-                  {_FILTRO_ESCOPO_RAG}
-                      {_FILTRO_VIGENTE_RAG}
-                  {_filtros_gate_rag(incluir_ficticio)}
-                ORDER BY rank DESC
-                LIMIT :lim
-            """)
+            params_f, filtro_f = _params_perna_rag(
+                consulta, limite, categorias, scope_client_id, incluir_historico, scope_case_id,
+            )
+            sql_f = _sql_perna_rag(
+                "ts_rank_cd(to_tsvector('portuguese', kc.conteudo), plainto_tsquery('portuguese', :q))",
+                "to_tsvector('portuguese', kc.conteudo) @@ plainto_tsquery('portuguese', :q)",
+                "rank", filtro_f, incluir_ficticio,
+            )
             rows_f = await db.execute(sql_f, params_f)
-            for rank, r in enumerate(rows_f):
-                cid = r.id
-                fusion[cid] = fusion.get(cid, 0.0) + 1.0 / (K + rank + 1)
-                if cid not in meta:
-                    meta[cid] = {"chunk_id": r.id, "doc_id": r.doc_id, "conteudo": r.conteudo,
-                                 "titulo": r.titulo,
-                                 "categoria": r.categoria, "fonte": r.fonte,
-                                 "confianca": r.confianca,
-                                 "versao": getattr(r, "versao", None),
-                                 "score": round(float(r.rank), 4)}
+            _acumular_rrf(fusion, meta, rows_f, score_field="rank")
         except Exception as _ef:
             logger.warning("Fusao FTS (RRF) falhou, ignorando esta perna: %s", descricao_tecnica_segura(_ef))
     ordenados = sorted(fusion.items(), key=lambda kv: kv[1], reverse=True)

@@ -1,3 +1,4 @@
+from app.core.pagination import executar_pagina
 # ── app/routers/clients.py ───────────────────────────────────────────────────
 # CRM de clientes + VERIFICAÇÃO DE CONFLITO DE INTERESSES (OAB obrigatório)
 import logging
@@ -485,12 +486,7 @@ async def listar(
 
     q = q.order_by(Client.created_at.desc(), Client.id.desc())
 
-    total = (await db.execute(
-        select(sqlfunc.count()).select_from(q.order_by(None).subquery())
-    )).scalar()
-    rows = (await db.execute(
-        q.offset((page - 1) * page_size).limit(page_size)
-    )).scalars().all()
+    total, rows = await executar_pagina(db, q, page, page_size, contar_sem_ordem=True)
     return {
         "data": [ClientResponse.model_validate(c) for c in rows],
         "total": total, "page": page, "page_size": page_size,
@@ -1093,23 +1089,10 @@ async def criar_acesso_portal(
     }
 
 
-@router.get("/{client_id}/relatorio-lgpd",
-            dependencies=[Depends(rate_limit("clients-relatorio-lgpd", 30))])
-async def relatorio_lgpd(
-    client_id: str,
-    db: AsyncSession = Depends(get_db),
-    cu: User = Depends(require_roles(["superadmin", "admin", "socio"])),
-):
-    """
-    Relatório do titular (LGPD art. 18, II) — PDF com todos os dados
-    mantidos sobre o cliente. Para atender pedidos de acesso.
-    """
+async def _dados_titular_lgpd(db: AsyncSession, client_id: str):
     from app.models.case import Case as _Case
     from app.models.document import Document as _Doc
     from app.models.fee import Fee as _Fee
-    from app.models.audit_log import AuditLog as _Audit
-    from app.services.pdf_service import relatorio_lgpd_pdf_async
-
     c = (await db.execute(select(Client).where(
         Client.id == client_id, Client.deleted_at.is_(None)
     ))).scalar_one_or_none()
@@ -1125,6 +1108,24 @@ async def relatorio_lgpd(
     fees = (await db.execute(select(_Fee).where(
         _Fee.client_id == client_id, _Fee.deleted_at.is_(None)
     ))).scalars().all()
+    return c, casos, docs, fees
+
+
+@router.get("/{client_id}/relatorio-lgpd",
+            dependencies=[Depends(rate_limit("clients-relatorio-lgpd", 30))])
+async def relatorio_lgpd(
+    client_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["superadmin", "admin", "socio"])),
+):
+    """
+    Relatório do titular (LGPD art. 18, II) — PDF com todos os dados
+    mantidos sobre o cliente. Para atender pedidos de acesso.
+    """
+    from app.models.audit_log import AuditLog as _Audit
+    from app.services.pdf_service import relatorio_lgpd_pdf_async
+
+    c, casos, docs, fees = await _dados_titular_lgpd(db, client_id)
     acessos = (await db.execute(
         select(_Audit).where(_Audit.registro_id == client_id)
         .order_by(_Audit.created_at.desc()).limit(50)
@@ -1176,25 +1177,8 @@ async def dados_lgpd_json(
     Portabilidade LGPD (art. 18, V) — dados do titular em JSON estruturado,
     machine-readable, para importação por outro sistema. Complementa o PDF (art. 18, II).
     """
-    from app.models.case import Case as _Case
-    from app.models.document import Document as _Doc
-    from app.models.fee import Fee as _Fee
 
-    c = (await db.execute(select(Client).where(
-        Client.id == client_id, Client.deleted_at.is_(None)
-    ))).scalar_one_or_none()
-    if not c:
-        raise HTTPException(status_code=404, detail="Cliente não encontrado")
-
-    casos = (await db.execute(select(_Case).where(
-        _Case.client_id == client_id, _Case.deleted_at.is_(None))
-    )).scalars().all()
-    docs = (await db.execute(select(_Doc).where(
-        _Doc.client_id == client_id, _Doc.deleted_at.is_(None)
-    ))).scalars().all()
-    fees = (await db.execute(select(_Fee).where(
-        _Fee.client_id == client_id, _Fee.deleted_at.is_(None)
-    ))).scalars().all()
+    c, casos, docs, fees = await _dados_titular_lgpd(db, client_id)
 
     payload = {
         "titular": {

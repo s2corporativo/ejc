@@ -239,6 +239,15 @@ function fixtureFor(requestUrl) {
   }
   if (pathname === "/ia/status") return { disponivel: true, mensagem: null };
   if (pathname === "/dashboard/") return FIXTURES.dashboard;
+  if (pathname === "/dashboard/hoje") {
+    return {
+      decisoes: [{
+        id: "at-prazo-hoje", tipo: "prazo", prioridade: 110,
+        titulo: "Prazo final — Contestação", case_id: "caso-1",
+        link: "/casos/caso-1",
+      }],
+    };
+  }
   if (pathname === "/atividades") return FIXTURES.activities;
   if (pathname === "/cases/") return FIXTURES.cases;
   if (pathname === "/documents/") return FIXTURES.documents;

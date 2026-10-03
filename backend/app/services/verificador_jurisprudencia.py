@@ -48,6 +48,8 @@ import logging
 import re
 import unicodedata
 
+from app.utils.values import mascara_cnj
+
 logger = logging.getLogger("ejc.verificador_juris")
 
 # ── Constantes documentadas ───────────────────────────────────────────────────
@@ -172,9 +174,8 @@ def decodificar_cnj(numero: str) -> dict:
 
 
 def formatar_cnj(numero: str) -> str:
-    """20 dígitos → NNNNNNN-DD.AAAA.J.TR.OOOO."""
     n = re.sub(r"\D", "", numero or "")
-    return f"{n[:7]}-{n[7:9]}.{n[9:13]}.{n[13]}.{n[14:16]}.{n[16:20]}"
+    return mascara_cnj(n)
 
 
 # ── Regexes de extração ───────────────────────────────────────────────────────

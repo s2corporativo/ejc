@@ -1,3 +1,6 @@
+import { downloadGeneratedPdf } from "../lib/download";
+import { nomeCliente } from "../lib/uiHelpers";
+import { apiDetailMessage as detalheErro } from "../lib/apiError";
 // ── src/components/LgpdRegistros.tsx ─────────────────────────────────────────
 // Vertical LGPD como produto: Registro de Operações de Tratamento (ROPA,
 // LGPD art. 37) por cliente + gerador de RIPD (art. 38) em PDF Visual Law.
@@ -118,14 +121,6 @@ function baseLabel(v: string) {
 function truncar(s: string, n = 90) {
   if (!s) return "—";
   return s.length > n ? `${s.slice(0, n).trimEnd()}…` : s;
-}
-
-function nomeCliente(c: Client) {
-  return c.nome || c.razao_social || c.cnpj || c.cpf || c.id;
-}
-
-function detalheErro(e: any, fallback: string) {
-  return e?.response?.data?.detail || fallback;
 }
 
 export default function LgpdRegistros() {
@@ -287,19 +282,11 @@ export default function LgpdRegistros() {
     if (!clientId) return;
     setGerandoRipd(true);
     try {
-      const r = await api.post(`/lgpd/registros/${clientId}/ripd`);
-      const downloadUrl: string | undefined = r.data?.download_url;
-      if (!downloadUrl) throw new Error("download_url ausente na resposta");
-      // baseURL do client é /api — remove o prefixo se o backend devolver a URL completa
-      const blob = await api.get(downloadUrl.replace(/^\/api/, ""), {
-        responseType: "blob",
-      });
-      const url = URL.createObjectURL(blob.data as Blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "ripd-relatorio-impacto.pdf";
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadGeneratedPdf(
+        `/lgpd/registros/${clientId}/ripd`,
+        "ripd-relatorio-impacto.pdf",
+        undefined,
+      );
       toast.success("RIPD (Visual Law) gerado.");
     } catch (e: any) {
       toast.error(detalheErro(e, "Falha ao gerar o RIPD em PDF."));

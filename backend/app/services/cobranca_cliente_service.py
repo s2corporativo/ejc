@@ -28,6 +28,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 
+from app.utils.format import formatar_brl
+
 logger = logging.getLogger("ejc.cobranca_cliente")
 settings = get_settings()
 
@@ -64,8 +66,7 @@ def degrau_aplicavel(
 
 
 def _brl(valor: float) -> str:
-    txt = f"{valor:,.2f}".replace(",", "@").replace(".", ",").replace("@", ".")
-    return f"R$ {txt}"
+    return formatar_brl(valor, coagir=False)
 
 
 def montar_email_cobranca(

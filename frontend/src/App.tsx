@@ -1,3 +1,4 @@
+import RouteFallback from "./components/RouteLoading";
 import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import {
   BrowserRouter,
@@ -7,7 +8,7 @@ import {
   useParams,
 } from "react-router";
 import { ToastContainer } from "./components/Toast";
-import { Spinner } from "./components/UI";
+
 import ErrorBoundary from "./components/ErrorBoundary";
 import EntradaUniversalGlobal from "./components/EntradaUniversalGlobal";
 import FlowEnhancements from "./components/FlowEnhancements";
@@ -55,14 +56,6 @@ function SalaDeGuerraLegacyRedirect() {
 function AreaAtuacaoLegacyRedirect() {
   const { slug } = useParams();
   return <Navigate to={`/areas-de-atuacao/${slug}`} replace />;
-}
-
-function RouteFallback() {
-  return (
-    <div className="min-h-screen grid place-items-center bg-canvas">
-      <Spinner />
-    </div>
-  );
 }
 
 function renderModuleRoute(module: ModuleRoute, element: ReactNode) {

@@ -4,6 +4,7 @@
 // MESMA lógica de token/refresh do cliente axios (api.ts): injeta o Bearer,
 // e num 401 renova o access via cookie httpOnly e repete a requisição uma vez.
 import { getAccessToken, refreshAccessToken, logout } from "./api";
+import { detailMessage } from "./apiError";
 
 function withAuth(init: RequestInit, token: string | null): RequestInit {
   const headers = new Headers(init.headers ?? {});
@@ -69,7 +70,15 @@ export async function streamSSE(
   {
     onEvent,
     signal,
-  }: { onEvent: (evt: SSEEvent) => void; signal?: AbortSignal },
+    onResponseError,
+    missingBodyMessage = "Stream indisponível",
+  }: {
+    onEvent: (evt: SSEEvent) => void;
+    signal?: AbortSignal;
+    /** Contratos próprios (ex.: 409/HITL) permanecem no chamador. */
+    onResponseError?: (response: Response) => Promise<void>;
+    missingBodyMessage?: string;
+  },
 ): Promise<void> {
   const res = await authFetch(url, {
     method: "POST",
@@ -79,17 +88,20 @@ export async function streamSSE(
   });
 
   if (!res.ok) {
+    if (onResponseError) {
+      await onResponseError(res);
+      return;
+    }
     const err = await res.json().catch(() => ({}));
     const raw = (err as Record<string, any>)?.detail;
-    const detail =
-      typeof raw === "string" ? raw : (raw?.mensagem ?? raw?.detail ?? null);
     throw new SSEHttpError(
       res.status,
-      detail ?? `Falha na requisição (HTTP ${res.status}).`,
+      detailMessage(raw, `Falha na requisição (HTTP ${res.status}).`),
     );
   }
 
-  const reader = res.body!.getReader();
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error(missingBodyMessage);
   const decoder = new TextDecoder();
   let buf = "";
 

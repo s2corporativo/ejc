@@ -1,3 +1,5 @@
+import { hojeISO as hojeLocalISO } from "../../utils/formato";
+import { legacyDetailMessage as errDetail } from "../../lib/apiError";
 // ── Aba Timeline/Andamentos do caso (extraída de CasoDetalhe.tsx — Tela C) ───
 // Composer inline no topo (Bloco 3): registra andamento via
 // POST /cases/{id}/movimentos (schema MovimentoCreate: tipo + descricao) e
@@ -9,22 +11,6 @@ import { toast } from "../../components/Toast";
 import { Empty, fmtDate } from "../../components/UI";
 import LinhaDoTempoProcessual from "../../components/visual/LinhaDoTempoProcessual";
 import { useAuth } from "../../stores/auth";
-
-function errDetail(e: any, fallback: string): string {
-  const d = e?.response?.data?.detail;
-  if (typeof d === "string" && d) return d;
-  if (d && typeof d === "object")
-    return d.mensagem ?? JSON.stringify(d).slice(0, 200);
-  return fallback;
-}
-
-function hojeLocalISO(): string {
-  const agora = new Date();
-  const ano = agora.getFullYear();
-  const mes = String(agora.getMonth() + 1).padStart(2, "0");
-  const dia = String(agora.getDate()).padStart(2, "0");
-  return `${ano}-${mes}-${dia}`;
-}
 
 function moeda(value: unknown): string {
   const n = Number(value ?? 0);

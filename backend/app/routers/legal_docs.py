@@ -771,6 +771,25 @@ async def revisar(
     return d
 
 
+async def _registrar_aprovacao(db: AsyncSession, d: LegalDoc, cu: User, doc_id: str, observacoes: str, *, detalhes: str) -> str:
+    novo_status = PecaStatus.aprovada.value
+    await _bloquear_sem_validacao(db, d, novo_status)
+    await _bloquear_jurisprudencia_nao_validada(db, d, novo_status)
+
+    status_antigo = _status_value(d.status)
+    d.human_reviewed = True
+    d.revisor_id = cu.id
+    d.revisado_em = datetime.now(timezone.utc)
+    d.notas_revisao = observacoes or d.notas_revisao
+    d.status = PecaStatus.aprovada
+
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "APROVAR_HITL", "legal_docs", doc_id,
+        detalhes=detalhes,
+    )
+    return status_antigo
+
+
 @router.patch("/{doc_id}/aprovar", response_model=LegalDocDetail)
 async def aprovar(
     doc_id: str, payload: LegalDocAprovacao,
@@ -837,20 +856,8 @@ async def aprovar(
             validacao_ap = await _ultima_validacao_peca(db, d)
 
     # Só depois da eventual transição HITL reavalia os gates de qualidade.
-    novo_status = PecaStatus.aprovada.value
-    await _bloquear_sem_validacao(db, d, novo_status)
-    await _bloquear_jurisprudencia_nao_validada(db, d, novo_status)
-
-    status_antigo = _status_value(d.status)
-    d.human_reviewed = True
-    d.revisor_id = cu.id
-    d.revisado_em = datetime.now(timezone.utc)
-    d.notas_revisao = observacoes or d.notas_revisao
-    d.status = PecaStatus.aprovada
-
-    await criar_audit_log(
-        db, cu.id, cu.role.value, "APROVAR_HITL", "legal_docs", doc_id,
-        detalhes=f"ai_generated={d.ai_generated}",
+    status_antigo = await _registrar_aprovacao(
+        db, d, cu, doc_id, observacoes, detalhes=f'ai_generated={d.ai_generated}',
     )
     await db.commit()
     await db.refresh(d)
@@ -1007,25 +1014,8 @@ async def conferir_e_assinar(
 
     # 3) Gates de qualidade — os MESMOS do /aprovar. Se a validação reprovar, a
     #    transação inteira é abortada: nada de peça meio-assinada.
-    novo_status = PecaStatus.aprovada.value
-    await _bloquear_sem_validacao(db, d, novo_status)
-    await _bloquear_jurisprudencia_nao_validada(db, d, novo_status)
-
-    # 4) Assinatura.
-    status_antigo = _status_value(d.status)
-    d.human_reviewed = True
-    d.revisor_id = cu.id
-    d.revisado_em = datetime.now(timezone.utc)
-    d.notas_revisao = observacoes or d.notas_revisao
-    d.status = PecaStatus.aprovada
-
-    await criar_audit_log(
-        db, cu.id, cu.role.value, "APROVAR_HITL", "legal_docs", doc_id,
-        detalhes=(
-            f"conferir-e-assinar; ai_generated={d.ai_generated}; "
-            f"validou_agora={validou_agora}; ai_log_id={ai_log_id}; "
-            f"override_citacoes={bool(payload.override_citacoes)}"
-        ),
+    status_antigo = await _registrar_aprovacao(
+        db, d, cu, doc_id, observacoes, detalhes=f'conferir-e-assinar; ai_generated={d.ai_generated}; validou_agora={validou_agora}; ai_log_id={ai_log_id}; override_citacoes={bool(payload.override_citacoes)}',
     )
     await db.commit()
     await db.refresh(d)

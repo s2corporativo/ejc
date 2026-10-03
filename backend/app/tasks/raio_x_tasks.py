@@ -42,14 +42,7 @@ def _mensagem_erro_segura(exc: BaseException) -> str:
     return f"Erro interno ({type(exc).__name__})"
 
 
-async def _com_engine_limpo(coro):
-    """Executa a corrotina e descarta o pool do engine no MESMO loop."""
-    from app.core.database import engine
-
-    try:
-        return await coro
-    finally:
-        await engine.dispose()
+from app.services.runtime_helpers import com_engine_limpo as _com_engine_limpo
 
 
 async def _marcar_erro(analise_id: str, mensagem: str, session_factory=None) -> None:

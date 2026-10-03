@@ -9,6 +9,14 @@ from pydantic import BaseModel, field_validator
 RegimeCalculo = Literal["civel", "trabalhista", "penal"]
 
 
+def _validar_tipo(v: str) -> str:
+    from app.models.deadline import DeadlineTipo
+    validos = {m.value for m in DeadlineTipo}
+    if v not in validos:
+        raise ValueError(f"tipo inválido: use um de {sorted(validos)}")
+    return v
+
+
 class DeadlineCreate(BaseModel):
     titulo: str
     tipo: str = "processual"
@@ -35,11 +43,7 @@ class DeadlineCreate(BaseModel):
     @field_validator("tipo")
     @classmethod
     def _tipo_valido(cls, v: str) -> str:
-        from app.models.deadline import DeadlineTipo
-        validos = {m.value for m in DeadlineTipo}
-        if v not in validos:
-            raise ValueError(f"tipo inválido: use um de {sorted(validos)}")
-        return v
+        return _validar_tipo(v)
 
     @field_validator("prioridade")
     @classmethod
@@ -118,8 +122,4 @@ class CalcularPrazoRequest(BaseModel):
     @field_validator("tipo")
     @classmethod
     def _tipo_valido(cls, v: str) -> str:
-        from app.models.deadline import DeadlineTipo
-        validos = {m.value for m in DeadlineTipo}
-        if v not in validos:
-            raise ValueError(f"tipo inválido: use um de {sorted(validos)}")
-        return v
+        return _validar_tipo(v)

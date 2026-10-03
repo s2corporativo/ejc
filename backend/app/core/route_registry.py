@@ -5,14 +5,9 @@ from collections import Counter
 from typing import Any
 
 from fastapi import FastAPI
-from fastapi.routing import APIRoute
 
 
-def _is_api_route(route: Any) -> bool:
-    """Aceita APIRoute tradicional e contexto efetivo dos routers lazy."""
-    if isinstance(route, APIRoute):
-        return True
-    return isinstance(getattr(route, "original_route", None), APIRoute)
+from app.core.fastapi_compat import is_api_route as _is_api_route
 
 
 def build_route_manifest(app: FastAPI) -> dict[str, Any]:

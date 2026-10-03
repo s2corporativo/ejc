@@ -1,3 +1,4 @@
+import { apiDetailMessage as apiErro } from "../lib/apiError";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams, Link } from "react-router";
 import {
@@ -154,8 +155,7 @@ export interface ResumoAtividades {
  *  autorizada (confirmado/ciencia_confirmada p/ prazo; hora/local p/ agenda). */
 export function mapAtividadeCursor(a: any): Activity {
   const bruto: string = a.tipo;
-  const fonte: Fonte =
-    bruto === "agenda" ? "agenda" : (bruto as Fonte);
+  const fonte: Fonte = bruto === "agenda" ? "agenda" : (bruto as Fonte);
   const origem =
     fonte === "prazo"
       ? "Prazos"
@@ -294,12 +294,6 @@ function tipoCfg(tipo: ItemType) {
 const PRAZOS_PAGE_SIZE = 200;
 /** Teto de páginas do enriquecimento de prazos (200 × 10 = 2.000 prazos). */
 const PRAZOS_MAX_PAGINAS = 10;
-
-function apiErro(e: unknown, fallback: string): string {
-  const detail = (e as { response?: { data?: { detail?: unknown } } })?.response
-    ?.data?.detail;
-  return typeof detail === "string" ? detail : fallback;
-}
 
 /** Metadados extras exibidos quando os endpoints já os fornecem. */
 function ActivityMeta({
@@ -1257,23 +1251,20 @@ export default function CentralAtividades() {
   }, [feedCursor, carregandoMais, contextCaseId]);
 
   // Navegação de período do calendário (janela mensal no servidor).
-  const trocarMesCalendario = useCallback(
-    (delta: number) => {
-      setMesCal((m) => {
-        const novo = m + delta;
-        if (novo < 0) {
-          setAnoCal((y) => y - 1);
-          return 11;
-        }
-        if (novo > 11) {
-          setAnoCal((y) => y + 1);
-          return 0;
-        }
-        return novo;
-      });
-    },
-    [],
-  );
+  const trocarMesCalendario = useCallback((delta: number) => {
+    setMesCal((m) => {
+      const novo = m + delta;
+      if (novo < 0) {
+        setAnoCal((y) => y - 1);
+        return 11;
+      }
+      if (novo > 11) {
+        setAnoCal((y) => y + 1);
+        return 0;
+      }
+      return novo;
+    });
+  }, []);
 
   useEffect(() => {
     load();

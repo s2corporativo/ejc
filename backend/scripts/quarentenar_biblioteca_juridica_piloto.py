@@ -12,8 +12,8 @@ embedding nem histórico e não altera documentos fora dos canonical_ids listado
 from __future__ import annotations
 
 import argparse
-import os
-import sys
+import os as os  # Alias mantido para imports e monkeypatch existentes.
+import sys as sys  # Alias mantido para imports e monkeypatch existentes.
 from datetime import datetime, timezone
 
 
@@ -50,17 +50,13 @@ def aplicar_quarentena_extra(extra: dict | None, *, quando: str) -> tuple[dict, 
 
 
 def _bootstrap_backend() -> None:
-    candidatos = [
-        "/app",
-        "/opt/ejc/backend",
-        "/home/ubuntu/ejc/backend",
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    ]
-    for c in candidatos:
-        if os.path.isdir(os.path.join(c, "app")):
-            if c not in sys.path:
-                sys.path.insert(0, c)
-            return
+    # Carrega o helper sem importar app antes de escolher o backend. Funciona
+    # também com execução direta e em imagens que contêm apenas backend/.
+    import runpy
+    from pathlib import Path
+
+    helper = Path(__file__).resolve().parents[1] / "app" / "seeds" / "_bootstrap.py"
+    runpy.run_path(str(helper))["bootstrap_backend"](__file__)
 
 
 def main() -> None:

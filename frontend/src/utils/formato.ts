@@ -9,7 +9,7 @@
  * travessão padrão de "sem valor" das telas. `casasMax` permite mais precisão
  * (ex.: custo de tokens de IA usa 4 casas) sem perder o mínimo de 2.
  */
-export function fmtMoney(v?: number | null, casasMax = 2): string {
+export function fmtMoney(v?: number | string | null, casasMax = 2): string {
   if (v == null || Number.isNaN(Number(v))) return "—";
   return Number(v).toLocaleString("pt-BR", {
     style: "currency",
@@ -17,6 +17,46 @@ export function fmtMoney(v?: number | null, casasMax = 2): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: casasMax,
   });
+}
+
+/** Calculadoras históricas exibem zero quando o valor está ausente. */
+export function fmtBRL(v?: number | null): string {
+  return Number(v ?? 0).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+}
+
+/** Campos textuais de moeda distinguem vazio de zero. */
+export function fmtMoneyInput(v?: number | string | null): string {
+  return v === "" ? "—" : fmtMoney(v == null ? v : Number(v));
+}
+
+/** Data ISO de cálculo: mantém o dia civil, sem conversão de fuso. */
+export function fmtDataISO(iso?: string | null): string {
+  if (!iso) return "—";
+  const [a, m, d] = String(iso).slice(0, 10).split("-");
+  return d && m && a ? `${d}/${m}/${a}` : String(iso);
+}
+
+/** Variante de cadastros: aceita três partes literais, inclusive vazias. */
+export function fmtDia(d?: string | null): string {
+  if (!d) return "—";
+  const [iso] = d.split("T");
+  const partes = iso.split("-");
+  return partes.length === 3 ? partes.reverse().join("/") : d;
+}
+
+export function hojeISO(agora = new Date()): string {
+  return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
+}
+
+/** Entrada monetária legada: ponto é milhar; vazio é null e zero é zero. */
+export function parseNum(s: string): number | null {
+  const n = parseFloat(String(s).trim().replace(/\./g, "").replace(",", "."));
+  if (!Number.isNaN(n)) return n;
+  const alternative = parseFloat(String(s).trim().replace(",", "."));
+  return Number.isNaN(alternative) ? null : alternative;
 }
 
 /**

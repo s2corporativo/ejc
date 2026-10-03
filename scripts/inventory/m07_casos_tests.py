@@ -6,41 +6,35 @@ histórico, kanban, busca, filtros, arquivamento, restauração.
 Persistência anti-phantom e permissões. Dados EJC_QA_*.
 Uso: scripts/inventory/env_shell.sh python3 scripts/inventory/m07_casos_tests.py
 """
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import json, os, random, sys, time, requests
 sys.path.insert(0, "/home/ubuntu/ejc_repo/backend")
 os.chdir("/home/ubuntu/ejc_repo/backend")
 DIR = "/home/ubuntu/ejc_repo/qa/homologacao/m07"
 os.makedirs(DIR, exist_ok=True)
-BASE = "http://127.0.0.1:8000"
+BASE = _shared.LOCAL_API
 S = requests.Session()
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 SENHA = _qa_pw('SENHA')
-ADMIN = "ejc_qa_auth_admin@golocal.ejc"
-SOCIO = "ejc_qa_auth_socio@golocal.ejc"
-FIN = "ejc_qa_auth_financeiro@golocal.ejc"
-ADV = "ejc_qa_auth_advogado@golocal.ejc"
-CLI = "ejc_qa_auth_cliente@golocal.ejc"
+ADMIN = _shared.qa_email('admin')
+SOCIO = _shared.qa_email('socio')
+FIN = _shared.qa_email('financeiro')
+ADV = _shared.qa_email('advogado')
+CLI = _shared.qa_email('cliente')
 CLIENT_ID = "9e6cd7cd-148c-49c9-95cb-d61de37fe520"  # EJC_QA M06
 ADV_UUID = "4701ecbf-cf9b-422f-b75a-b906814b8213"
-HEADERS = {"Content-Type": "application/json", "X-Forwarded-For": "127.0.0.1"}
+HEADERS = _shared.qa_headers(content_type=True)
 TOKENS = {}
 
 def cnj_valido():
-    """Gera CNJ válido pelo algoritmo da Res. CNJ 65/2008 (iso igual ao do
-    app — verificador_jurisprudencia.validar_dv_cnj): reordenando
-    NNNNNNN + AAAA + J + TR + OOOO + DD, o resto por 97 deve ser 1."""
-    n = f"{random.randint(1000000, 9999999)}"
-    ano = "2026"
-    j, tr, oo = "8", "01", "0001"
-    corpo = int(f"{n}{ano}{j}{tr}{oo}00")
-    dv = (1 - corpo) % 97
-    return f"{n}-{dv:02d}.{ano}.{j}.{tr}.{oo}"
+    return _shared.valid_cnj(random=random)
 
 def login(email):
     if email in TOKENS:

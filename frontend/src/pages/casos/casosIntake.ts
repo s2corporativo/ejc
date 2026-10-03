@@ -1,3 +1,4 @@
+import { caseCreationError } from "../../lib/apiError";
 // Regras e payloads do intake documental de Casos (auditoria §2.6 #10).
 //
 // Extraído do monólito Casos.tsx: helpers puros e de rede usados pela página —
@@ -121,22 +122,6 @@ export function montarResumoRevisao(
 // E02 (auditoria funcional): erros 422 do FastAPI/Pydantic chegam como
 // {detail: [{loc, msg}]} — extrair o nome do campo para o usuário corrigir
 // exatamente o ponto em vez de receber a string bruta do validador.
-export function classificarErroCriacao(e: any): string {
-  const resp = e?.response?.data;
-  const status = e?.response?.status;
-  const detail = resp?.detail;
-  if (Array.isArray(detail) && detail.length) {
-    return detail
-      .map((d: any) => {
-        const loc = Array.isArray(d?.loc) ? d.loc : [];
-        const campo = loc.length ? String(loc[loc.length - 1]) : null;
-        const rotulo = campo ? campo.replace(/_/g, " ") : null;
-        return rotulo ? `${rotulo}: ${String(d.msg ?? d)}` : String(d.msg ?? d);
-      })
-      .join("; ");
-  }
-  if (typeof detail === "string" && detail) return detail;
-  if (status === 422 || status === 400)
-    return "Algum campo está em formato inválido ou ausente. Revise os campos destacados e tente novamente.";
-  return e?.response?.data?.detail || "Erro ao salvar";
+export function classificarErroCriacao(e: unknown): string {
+  return caseCreationError(e, "Erro ao salvar");
 }

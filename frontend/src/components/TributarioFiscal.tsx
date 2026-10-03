@@ -1,3 +1,6 @@
+import { downloadGeneratedPdf } from "../lib/download";
+import { fmtBRL, fmtDataISO } from "../utils/formato";
+import { apiDetailMessage as apiDetail } from "../lib/apiError";
 // ── src/components/TributarioFiscal.tsx ──────────────────────────────────────
 // Vertical tributário — pré-auditoria documental por XML de NF-e.
 // O componente apresenta sinais técnicos e estimativas matemáticas para triagem;
@@ -16,31 +19,6 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "./Toast";
-
-function fmtBRL(v: number | null | undefined) {
-  return Number(v ?? 0).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
-
-function fmtDataISO(iso: string | null | undefined) {
-  if (!iso) return "—";
-  const [a, m, d] = String(iso).slice(0, 10).split("-");
-  return d && m && a ? `${d}/${m}/${a}` : String(iso);
-}
-
-function apiDetail(e: any, fallback: string): string {
-  const d = e?.response?.data?.detail;
-  if (typeof d === "string") return d;
-  if (Array.isArray(d)) {
-    return d
-      .map((x: any) => (typeof x === "string" ? x : x?.msg || ""))
-      .filter(Boolean)
-      .join("; ");
-  }
-  return fallback;
-}
 
 const MAX_ARQUIVOS = 50;
 type Regime = "simples" | "lucro_presumido" | "lucro_real";
@@ -228,18 +206,11 @@ export default function TributarioFiscal() {
     if (!res) return;
     setGerandoPdf(true);
     try {
-      const r = await api.post("/tributario/fiscal/relatorio-pdf", res);
-      const downloadUrl: string | undefined = r.data?.download_url;
-      if (!downloadUrl) throw new Error("download_url ausente na resposta");
-      const blob = await api.get(downloadUrl.replace(/^\/api/, ""), {
-        responseType: "blob",
-      });
-      const url = URL.createObjectURL(blob.data as Blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "pre-auditoria-tributaria.pdf";
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadGeneratedPdf(
+        "/tributario/fiscal/relatorio-pdf",
+        "pre-auditoria-tributaria.pdf",
+        res,
+      );
       toast.success("Pré-auditoria tributária em PDF gerada.");
     } catch (e: any) {
       toast.error(apiDetail(e, "Falha ao gerar o PDF da pré-auditoria."));

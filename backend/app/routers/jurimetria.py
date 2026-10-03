@@ -12,7 +12,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import EQUIPE_JURIDICA, ROLE_LEVEL, get_current_user
+from app.core.security import ROLE_LEVEL, get_current_user
 from app.models.case import Case
 from app.models.tese import Tese, TeseCasoLink, TeseStatus
 from app.models.user import User
@@ -45,10 +45,7 @@ router = APIRouter(prefix="/jurimetria", tags=["Jurimetria"])
 _RESULTADOS_DECIDIDOS = ("procedente", "improcedente")
 
 
-def _is_staff(user: User) -> bool:
-    # Issue #694: allowlist EXATA — financeiro não acessa métricas de
-    # jurimetria, mesmo com ROLE_LEVEL acima de estagiario.
-    return user.role.value in EQUIPE_JURIDICA
+from app.core.security import eh_equipe_juridica as _is_staff
 
 
 def _is_socio(user: User) -> bool:
@@ -66,6 +63,15 @@ def _taxa_decidida(venceu: int, perdeu: int) -> float | None:
     return round(int(venceu or 0) / decididos, 4) if decididos else None
 
 
+def _contagens_resultado():
+    return (
+        func.count(TeseCasoLink.id).label('total'),
+        func.count(sa_case((TeseCasoLink.resultado == 'procedente', 1))).label('venceu'),
+        func.count(sa_case((TeseCasoLink.resultado == 'improcedente', 1))).label('perdeu'),
+        func.count(sa_case((TeseCasoLink.resultado == 'acordo', 1))).label('acordo'),
+        func.count(sa_case((TeseCasoLink.resultado == 'pendente', 1))).label('pendente'),
+    )
+
 @router.get("/overview")
 async def overview(
     db: AsyncSession = Depends(get_db),
@@ -78,19 +84,7 @@ async def overview(
     tot_row = (
         await db.execute(
             select(
-                func.count(TeseCasoLink.id).label("total"),
-                func.count(
-                    sa_case((TeseCasoLink.resultado == "procedente", 1))
-                ).label("venceu"),
-                func.count(
-                    sa_case((TeseCasoLink.resultado == "improcedente", 1))
-                ).label("perdeu"),
-                func.count(sa_case((TeseCasoLink.resultado == "acordo", 1))).label(
-                    "acordo"
-                ),
-                func.count(sa_case((TeseCasoLink.resultado == "pendente", 1))).label(
-                    "pendente"
-                ),
+                *_contagens_resultado(),
             )
         )
     ).one()
@@ -144,19 +138,7 @@ async def por_area(
         await db.execute(
             select(
                 Tese.area_juridica,
-                func.count(TeseCasoLink.id).label("total"),
-                func.count(
-                    sa_case((TeseCasoLink.resultado == "procedente", 1))
-                ).label("venceu"),
-                func.count(
-                    sa_case((TeseCasoLink.resultado == "improcedente", 1))
-                ).label("perdeu"),
-                func.count(sa_case((TeseCasoLink.resultado == "acordo", 1))).label(
-                    "acordo"
-                ),
-                func.count(sa_case((TeseCasoLink.resultado == "pendente", 1))).label(
-                    "pendente"
-                ),
+                *_contagens_resultado(),
             )
             .join(Tese, Tese.id == TeseCasoLink.tese_id)
             .where(Tese.deleted_at.is_(None))
@@ -199,19 +181,7 @@ async def por_magistrado(
     q = (
         select(
             Tese.magistrado,
-            func.count(TeseCasoLink.id).label("total"),
-            func.count(
-                sa_case((TeseCasoLink.resultado == "procedente", 1))
-            ).label("venceu"),
-            func.count(
-                sa_case((TeseCasoLink.resultado == "improcedente", 1))
-            ).label("perdeu"),
-            func.count(sa_case((TeseCasoLink.resultado == "acordo", 1))).label(
-                "acordo"
-            ),
-            func.count(sa_case((TeseCasoLink.resultado == "pendente", 1))).label(
-                "pendente"
-            ),
+            *_contagens_resultado(),
         )
         .join(Tese, Tese.id == TeseCasoLink.tese_id)
         .where(Tese.deleted_at.is_(None), Tese.magistrado.isnot(None))
@@ -259,19 +229,7 @@ async def por_tribunal(
         await db.execute(
             select(
                 Tese.tribunal,
-                func.count(TeseCasoLink.id).label("total"),
-                func.count(
-                    sa_case((TeseCasoLink.resultado == "procedente", 1))
-                ).label("venceu"),
-                func.count(
-                    sa_case((TeseCasoLink.resultado == "improcedente", 1))
-                ).label("perdeu"),
-                func.count(sa_case((TeseCasoLink.resultado == "acordo", 1))).label(
-                    "acordo"
-                ),
-                func.count(sa_case((TeseCasoLink.resultado == "pendente", 1))).label(
-                    "pendente"
-                ),
+                *_contagens_resultado(),
             )
             .join(Tese, Tese.id == TeseCasoLink.tese_id)
             .where(Tese.deleted_at.is_(None), Tese.tribunal.isnot(None))

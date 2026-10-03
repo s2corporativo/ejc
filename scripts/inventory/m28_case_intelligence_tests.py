@@ -13,6 +13,12 @@ degradam com segurança; os snapshots são provados pelo caminho MANUAL
 (_snapshot_payload) — nenhum teste legítimo é removido.
 """
 from __future__ import annotations
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import sys
 import time
 
@@ -33,16 +39,12 @@ import requests
 
 
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 
 SENHA = _qa_pw('M28')
 
-API = "http://127.0.0.1:8000"
+API = _shared.LOCAL_API
 S = requests.Session()
 
 PASS = []
@@ -51,47 +53,23 @@ NA = []
 
 
 def _pass(msg):
-    PASS.append(msg)
-    print(f"[PASS] {msg}")
+    return _shared.record_pass(msg, PASS=PASS)
 
 
 def _fail(msg):
-    FAIL.append(msg)
-    print(f"[FAIL] {msg}")
+    return _shared.record_fail(msg, FAIL=FAIL)
 
 
 def _na(msg):
-    NA.append(msg)
-    print(f"[N/A-PROVADO] {msg}")
+    return _shared.record_unavailable(msg, NA=NA)
 
 
-CRED = {
-    "admin": ("ejc_qa_auth_admin@golocal.ejc", SENHA),
-    "socio": ("ejc_qa_auth_socio@golocal.ejc", SENHA),
-    "advogado": ("ejc_qa_auth_advogado@golocal.ejc", SENHA),
-    "estagiario": ("ejc_qa_auth_estagiario@golocal.ejc", SENHA),
-    "financeiro": ("ejc_qa_auth_financeiro@golocal.ejc", SENHA),
-    "cliente": ("ejc_qa_auth_cliente@golocal.ejc", SENHA),
-}
+CRED = _shared.qa_credentials(SENHA, ('admin', 'socio', 'advogado', 'estagiario', 'financeiro', 'cliente'))
 _TOKENS = {}
 
 
 def authed(role):
-    if role in _TOKENS:
-        return _TOKENS[role]
-    email, senha = CRED[role]
-    time.sleep(16)
-    r = S.post(f"{API}/api/auth/login", json={"email": email, "password": senha}, timeout=30)
-    if r.status_code == 429:
-        time.sleep(45)
-        r = S.post(f"{API}/api/auth/login", json={"email": email, "password": senha}, timeout=30)
-    if r.status_code != 200:
-        _fail(f"login {role}: HTTP {r.status_code}")
-        sys.exit(1)
-    tok = r.json()["access_token"]
-    S.headers["Authorization"] = f"Bearer {tok}"
-    _TOKENS[role] = tok
-    return tok
+    return _shared.authed_credentials(role, API=API, CRED=CRED, S=S, _TOKENS=_TOKENS, _fail=_fail, sys=sys, time=time)
 
 
 _CLIENTE_ID = [None]  # memo por corrida
@@ -99,20 +77,7 @@ _ADVOGADO_ID = "4701ecbf-cf9b-422f-b75a-b906814b8213"  # ejc_qa_auth_advogado (v
 
 
 def _cliente_id() -> str:
-    if _CLIENTE_ID[0]:
-        return _CLIENTE_ID[0]
-    authed("socio")
-    r = S.get(f"{API}/api/clients", timeout=30)
-    d = r.json() if r.status_code == 200 else {}
-    items = d if isinstance(d, list) else (d.get("data") or d.get("clientes") or d.get("items") or [])
-    for it in items:
-        cid = it.get("id")
-        nome = it.get("nome") or it.get("razao_social") or ""
-        if nome.startswith("EJC_QA"):
-            _CLIENTE_ID[0] = cid
-            return cid
-    _fail("nenhum cliente EJC_QA encontrado p/ criar casos")
-    return None
+    return _shared.qa_client_id(API=API, S=S, _CLIENTE_ID=_CLIENTE_ID, _fail=_fail, authed=authed)
 
 
 def criar_caso_qa(titulo: str, fatos: str) -> str | None:

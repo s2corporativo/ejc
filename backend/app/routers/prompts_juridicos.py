@@ -2,6 +2,7 @@
 # Biblioteca de Prompts Jurídicos — CRUD + execução via AI Gateway.
 # Prompts têm {{variavel}} como placeholders, substituídos na hora de executar.
 from __future__ import annotations
+from app.core.pagination import executar_pagina
 import json
 import logging
 import re
@@ -11,7 +12,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, or_, func
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -152,8 +153,8 @@ async def listar_prompts(
         ))
 
     q = q.order_by(PromptJuridico.favorito.desc(), PromptJuridico.vezes_executado.desc())
-    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
-    items = (await db.execute(q.offset((page - 1) * per_page).limit(per_page))).scalars().all()
+    total, items = await executar_pagina(db, q, page, per_page)
+    total = total or 0
     return {"total": total, "page": page, "per_page": per_page, "items": [_out(p) for p in items]}
 
 

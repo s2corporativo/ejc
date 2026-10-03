@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.ownership import verificar_acesso_caso
 from app.core.rate_limit import rate_limit
-from app.core.security import ROLE_LEVEL, get_current_user
+from app.core.security import get_current_user
 from app.models.user import User
 from app.services import legal_case_orchestrator as lco
 
@@ -33,10 +33,7 @@ router = APIRouter(prefix="/cases/{case_id}/orquestrador",
                    tags=["Orquestrador Jurídico"])
 
 
-def _pode_avancar(cu: User) -> bool:
-    """Mesmo limiar do Motor de Peça/intake: advogado+."""
-    role = getattr(cu.role, "value", cu.role)
-    return ROLE_LEVEL.get(role, 0) >= ROLE_LEVEL["advogado"]
+from app.core.security import pode_ato_juridico as _pode_avancar
 
 
 class AvancarIn(BaseModel):

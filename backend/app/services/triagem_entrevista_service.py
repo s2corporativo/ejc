@@ -10,15 +10,17 @@
 # para cá.
 from __future__ import annotations
 
-import json
 import logging
-import re
 from typing import Any, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai_log import AITipoUso
 from app.models.user import User
+
+from app.utils.ai_json import parse_json_response
+
+from app.utils.values import confianca_percentual
 
 logger = logging.getLogger("ejc.triagem.entrevista")
 
@@ -68,27 +70,11 @@ class TriagemIndisponivelError(RuntimeError):
 # ── Helpers de parse defensivo (mesmo padrão de intake.py) ────────────────────
 
 def _parse_json(txt: str) -> Optional[dict]:
-    """Extrai o primeiro objeto JSON da resposta da IA."""
-    if not txt:
-        return None
-    try:
-        return json.loads(txt)
-    except Exception:
-        m = re.search(r"\{.*\}", txt, re.DOTALL)
-        if m:
-            try:
-                return json.loads(m.group(0))
-            except Exception:
-                return None
-    return None
+    return parse_json_response(txt)
 
 
 def _conf(v: Any) -> Optional[int]:
-    """Confiança 0-100 ou None — nunca propaga lixo da IA."""
-    try:
-        return max(0, min(100, int(float(v))))
-    except (TypeError, ValueError):
-        return None
+    return confianca_percentual(v)
 
 
 def _item(bruto: Any, campos_extras: tuple[str, ...] = ()) -> dict:

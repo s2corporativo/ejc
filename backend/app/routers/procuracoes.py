@@ -1,11 +1,13 @@
 # ── app/routers/procuracoes.py ───────────────────────────────────────────────
 from __future__ import annotations
+from app.core.security import requer_perfis
+from app.core.pagination import executar_pagina
 from datetime import date
 from uuid import uuid4
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func as sqlfunc
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -30,9 +32,7 @@ _ADV = {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar"}
 
 
 def _req_adv(cu: User = Depends(get_current_user)) -> User:
-    # Emissão/revogação de procuração = ato jurídico: só equipe jurídica (advogado+).
-    if cu.role.value not in _ADV:
-        raise HTTPException(status_code=403, detail="Acesso restrito à equipe jurídica")
+    requer_perfis(cu, _ADV, "Acesso restrito à equipe jurídica")
     return cu
 
 
@@ -63,12 +63,7 @@ async def listar(
         )
     q = q.order_by(Procuracao.data_validade.asc().nullslast())
 
-    total = (await db.execute(
-        select(sqlfunc.count()).select_from(q.subquery())
-    )).scalar()
-    rows = (await db.execute(
-        q.offset((page - 1) * page_size).limit(page_size)
-    )).scalars().all()
+    total, rows = await executar_pagina(db, q, page, page_size)
     return {
         "data": [ProcuracaoResponse.model_validate(p) for p in rows],
         "total": total, "page": page, "page_size": page_size,

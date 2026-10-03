@@ -30,6 +30,8 @@ from app.services.processo_service import (
 )
 from app.services.validators_service import normalizar_cnj
 
+from app.core.ownership import role_str
+
 
 RESPONSAVEL_JURIDICO_ROLES: frozenset[str] = frozenset(
     {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar"}
@@ -39,8 +41,7 @@ _UNSET = object()
 
 
 def _role_value(user: User) -> str:
-    role = getattr(user, "role", "")
-    return role.value if hasattr(role, "value") else str(role)
+    return role_str(user) if hasattr(user, "role") else ""
 
 
 async def resolver_responsavel_juridico(

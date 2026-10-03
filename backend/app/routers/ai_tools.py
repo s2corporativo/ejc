@@ -72,15 +72,7 @@ def _ai_enabled() -> bool:
     return bool(get_settings().AI_ENABLED)
 
 
-def _bloquear_cliente_externo(cu: User) -> None:
-    """IA interna não é exposta ao portal do cliente (mesma regra do núcleo)."""
-    # `UserRole` é `(str, Enum)` sem `__str__`: em Python 3.11 `str(role)` vira
-    # "UserRole.cliente_externo" e o gate nunca disparava (só o middleware
-    # segurava). Compara pelo valor — funciona para enum e para string.
-    role = getattr(cu, "role", "")
-    if getattr(role, "value", role) == "cliente_externo":
-        raise HTTPException(status.HTTP_403_FORBIDDEN,
-                            "Funções de IA internas não estão disponíveis no portal do cliente.")
+from app.core.security import bloquear_cliente_externo_ia as _bloquear_cliente_externo
 
 
 @router.get("/status")

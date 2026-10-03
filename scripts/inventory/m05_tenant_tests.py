@@ -9,6 +9,12 @@ cliente. Também verifica visibilidade cruzada no portal do cliente.
 Uso: scripts/inventory/env_shell.sh python3 scripts/inventory/m05_tenant_tests.py
 Executar com o uvicorn LOCAL rodando (reiniciar antes para limpar rate limits).
 """
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import os
 import sys
 import time
@@ -16,30 +22,19 @@ import random
 import requests
 
 def _cpf_valido() -> str:
-    """Gera CPF aleatório com dígitos verificadores válidos."""
-    n = [random.randint(0, 9) for _ in range(9)]
-    s = sum((10 - i) * d for i, d in enumerate(n))
-    n.append(0 if s % 11 < 2 else 11 - s % 11)
-    s = sum((11 - i) * d for i, d in enumerate(n))
-    n.append(0 if s % 11 < 2 else 11 - s % 11)
-    d = "".join(str(x) for x in n)
-    return f"{d[:3]}.{d[3:6]}.{d[6:9]}-{d[9:]}"
+    return _shared.valid_cpf(random=random)
 
 sys.path.insert(0, "/home/ubuntu/ejc_repo/backend")
 os.chdir("/home/ubuntu/ejc_repo/backend")
 DIR = "/home/ubuntu/ejc_repo/qa/homologacao/m05"
 os.makedirs(DIR, exist_ok=True)
-BASE = "http://127.0.0.1:8000"
+BASE = _shared.LOCAL_API
 S = requests.Session()
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 SENHA = _qa_pw('SENHA')
-HDR = {"Content-Type": "application/json", "X-Forwarded-For": "127.0.0.1"}
+HDR = _shared.qa_headers(content_type=True)
 RESULTADOS = []
 
 
@@ -89,13 +84,13 @@ def criar_cliente(email, nome):
         "nome": nome, "tipo": "PF", "cpf": _cpf_valido(),
         "email": email, "telefone": "(31) 0000-0000",
         "status": "ativo",
-    }, headers=hdr("ejc_qa_auth_admin@golocal.ejc"), timeout=15)
+    }, headers=hdr(_shared.qa_email('admin')), timeout=15)
     if r.status_code not in (200, 201, 409):
         print("criar_cliente:", r.status_code, r.text[:200])
         return None
     if r.status_code == 409:
         r2 = S.get(f"{BASE}/api/clients/", params={"q": email},
-                   headers=hdr("ejc_qa_auth_admin@golocal.ejc"), timeout=10)
+                   headers=hdr(_shared.qa_email('admin')), timeout=10)
         for c in r2.json().get("data", r2.json().get("items", [])):
             if (c.get("email") or "") == email or \
                (c.get("nome") or "") == nome:
@@ -119,7 +114,7 @@ def criar_caso(email_admin, client_id, titulo):
 
 
 def limpar(nome_pat):
-    h = hdr("ejc_qa_auth_admin@golocal.ejc")
+    h = hdr(_shared.qa_email('admin'))
     for t in ("refresh_tokens", "audit_logs", "notifications"):
         try:
             S.delete(f"{BASE}/api/debug/purge-qa", headers=h,
@@ -189,18 +184,18 @@ if __name__ == "__main__":
     print("C1:", c1, "C2:", c2)
 
     print("== cria caso só em C1 ==")
-    caso_c1 = criar_caso("ejc_qa_auth_admin@golocal.ejc", c1, "Caso isolado C1 M05")
+    caso_c1 = criar_caso(_shared.qa_email('admin'), c1, "Caso isolado C1 M05")
     assert caso_c1, "caso C1 não criado"
 
     # advogado comum só enxerga casos em que é responsável/auxiliar
     # (desenho _filtro_visibilidade). Atribui o advogado QA ao caso C1 para a
     # prova de visibilidade correta.
     print("== atribui advogado ao caso C1 ==")
-    ADVOGADO = "ejc_qa_auth_advogado@golocal.ejc"
-    CLIENTE = "ejc_qa_auth_cliente@golocal.ejc"
+    ADVOGADO = _shared.qa_email('advogado')
+    CLIENTE = _shared.qa_email('cliente')
     ADVOGADO_ID = None
     r = S.get(f"{BASE}/api/users/", params={"page_size": 100},
-              headers=hdr("ejc_qa_auth_admin@golocal.ejc"), timeout=10)
+              headers=hdr(_shared.qa_email('admin')), timeout=10)
     for u in r.json().get("data", r.json().get("users", [])):
         if u.get("email") == ADVOGADO:
             ADVOGADO_ID = u["id"]
@@ -208,7 +203,7 @@ if __name__ == "__main__":
     assert ADVOGADO_ID, "advogado QA não encontrado"
     r = S.patch(f"{BASE}/api/cases/{caso_c1}",
                 json={"advogado_responsavel_id": ADVOGADO_ID},
-                headers=hdr("ejc_qa_auth_admin@golocal.ejc"), timeout=10)
+                headers=hdr(_shared.qa_email('admin')), timeout=10)
     print("atribuicao:", r.status_code, r.text[:120])
     assert r.status_code == 200, "atribuição falhou"
 

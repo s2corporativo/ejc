@@ -1,18 +1,20 @@
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import time, json, requests
 
 
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 
 SENHA = _qa_pw('_probe_cases')
-B = "http://127.0.0.1:8000"
+B = _shared.LOCAL_API
 S = requests.Session()
-for email in ("ejc_qa_auth_socio@golocal.ejc", "ejc_qa_auth_advogado@golocal.ejc"):
+for email in (_shared.qa_email('socio'), _shared.qa_email('advogado')):
     time.sleep(18)
     r = S.post(f"{B}/api/auth/login", json={"email": email, "password": SENHA}, timeout=30)
     if r.status_code == 429:

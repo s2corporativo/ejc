@@ -1,3 +1,6 @@
+import { downloadGeneratedPdf } from "../lib/download";
+import { fmtBRL, fmtDataISO } from "../utils/formato";
+import { apiDetailMessage as apiDetail } from "../lib/apiError";
 // ── src/components/LiquidacaoTrabalhista.tsx ─────────────────────────────────
 // Vertical Trabalhista — Liquidação de sentença. Editor de verbas + parâmetros
 // → consolidação determinística (ADC 58/59, Selic real do BCB) devolvida pelo
@@ -24,18 +27,7 @@ import api from "../lib/api";
 import { toast } from "./Toast";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
-function fmtBRL(v: number | null | undefined) {
-  return Number(v ?? 0).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
 // "2024-03-01" → "01/03/2024" (sem Date para evitar drift de fuso)
-function fmtDataISO(iso: string | null | undefined) {
-  if (!iso) return "—";
-  const [a, m, d] = String(iso).slice(0, 10).split("-");
-  return d && m && a ? `${d}/${m}/${a}` : String(iso);
-}
 function fmtFator(v: number | null | undefined) {
   return v == null
     ? "—"
@@ -43,16 +35,6 @@ function fmtFator(v: number | null | undefined) {
         minimumFractionDigits: 4,
         maximumFractionDigits: 6,
       });
-}
-function apiDetail(e: any, fallback: string): string {
-  const d = e?.response?.data?.detail;
-  if (typeof d === "string") return d;
-  if (Array.isArray(d))
-    return d
-      .map((x: any) => (typeof x === "string" ? x : x?.msg || ""))
-      .filter(Boolean)
-      .join("; ");
-  return fallback;
 }
 
 const MAX_VERBAS = 100;
@@ -317,19 +299,11 @@ export default function LiquidacaoTrabalhista() {
     if (!res) return;
     setGerandoPdf(true);
     try {
-      const r = await api.post("/trabalhista/liquidacao/planilha-pdf", res);
-      const downloadUrl: string | undefined = r.data?.download_url;
-      if (!downloadUrl) throw new Error("download_url ausente na resposta");
-      // baseURL do client é /api — remove o prefixo se o backend devolver a URL completa
-      const blob = await api.get(downloadUrl.replace(/^\/api/, ""), {
-        responseType: "blob",
-      });
-      const url = URL.createObjectURL(blob.data as Blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "planilha-liquidacao-trabalhista.pdf";
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadGeneratedPdf(
+        "/trabalhista/liquidacao/planilha-pdf",
+        "planilha-liquidacao-trabalhista.pdf",
+        res,
+      );
       toast.success("Planilha de liquidação (Visual Law) gerada.");
     } catch (e: any) {
       toast.error(apiDetail(e, "Falha ao gerar a planilha em PDF."));

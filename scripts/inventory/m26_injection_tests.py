@@ -15,13 +15,15 @@ não esteja no texto" + sanitização na entrada).
 """
 from __future__ import annotations
 
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
+
 
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 
 SENHA = _qa_pw('M26')
@@ -33,7 +35,7 @@ sys.path.insert(0, "/home/ubuntu/ejc_repo")
 
 import requests
 
-API = "http://127.0.0.1:8000"
+API = _shared.LOCAL_API
 S = requests.Session()
 
 PASS = []
@@ -41,21 +43,15 @@ FAIL = []
 
 
 def _pass(msg):
-    PASS.append(msg)
-    print(f"[PASS] {msg}")
+    return _shared.record_pass(msg, PASS=PASS)
 
 
 def _fail(msg):
-    FAIL.append(msg)
-    print(f"[FAIL] {msg}")
+    return _shared.record_fail(msg, FAIL=FAIL)
 
 
 # ──────────────────────────── Credenciais QA ─────────────────────────────────
-CRED = {
-    "admin": ("ejc_qa_auth_admin@golocal.ejc", SENHA),
-    "advogado": ("ejc_qa_auth_advogado@golocal.ejc", SENHA),
-    "cliente": ("ejc_qa_auth_cliente@golocal.ejc", SENHA),
-}
+CRED = _shared.qa_credentials(SENHA, ('admin', 'advogado', 'cliente'))
 _TOKENS = {}
 
 

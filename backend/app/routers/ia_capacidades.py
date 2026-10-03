@@ -33,15 +33,7 @@ from app.services.ai.core import capacidades
 router = APIRouter(prefix="/ia", tags=["IA — Capacidades"])
 
 
-def _bloquear_cliente_externo(cu: User) -> None:
-    """`UserRole` é `(str, Enum)` sem `__str__`: `str(role)` devolve
-    "UserRole.cliente_externo" e o gate nunca dispara. Compara pelo VALOR."""
-    role = getattr(cu, "role", "")
-    if getattr(role, "value", role) == "cliente_externo":
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN,
-            "Funções de IA internas não estão disponíveis no portal do cliente.",
-        )
+from app.core.security import bloquear_cliente_externo_ia as _bloquear_cliente_externo
 
 
 def _kill_switch() -> None:

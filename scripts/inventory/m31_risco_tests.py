@@ -11,17 +11,19 @@ limites (clamp/techo), explicabilidade (fatores auditáveis), persistência
 Nenhum teste exige LLM.
 """
 from __future__ import annotations
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import json
 import time
 import requests
 
-API = "http://127.0.0.1:8000"
+API = _shared.LOCAL_API
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 PASSWORD = _qa_pw('PASSWORD')
 S = requests.Session()

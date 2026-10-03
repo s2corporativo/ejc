@@ -31,6 +31,8 @@ from app.services.ingestion_service import upsert_documento
 from app.services.legal_base import BASE_ESTRUTURADA
 from app.services.sanitizer import sanitizar_pii
 
+from app.utils.ai_json import parse_json_response
+
 logger = logging.getLogger("ejc.case_intel")
 settings = get_settings()
 
@@ -58,20 +60,7 @@ SYS_TRIAGEM = (
 
 
 def _parse_json(txt: str) -> dict | None:
-    """Extrai o primeiro objeto JSON do texto (tolerante a cercas/ruído)."""
-    if not txt:
-        return None
-    s = txt.strip()
-    if s.startswith("```"):
-        s = s.split("```")[1] if "```" in s[3:] else s[3:]
-        s = s.lstrip("json").strip()
-    i, j = s.find("{"), s.rfind("}")
-    if i == -1 or j == -1:
-        return None
-    try:
-        return json.loads(s[i:j + 1])
-    except Exception:
-        return None
+    return parse_json_response(txt, direct=False, fences="first")
 
 
 

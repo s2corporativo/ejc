@@ -12,3 +12,10 @@ export function asList<T = unknown>(resp: unknown): T[] {
   }
   return [];
 }
+
+/** Entrada Única aceita somente envelope data (items tem outro contrato). */
+export function asDataList<T = unknown>(resp: unknown): T[] {
+  if (Array.isArray(resp)) return resp as T[];
+  const data = (resp as { data?: unknown })?.data;
+  return Array.isArray(data) ? (data as T[]) : [];
+}

@@ -777,38 +777,16 @@ export default function CommandPalette({
                 Ações rápidas
               </div>
               <div className="grid gap-1 sm:grid-cols-2">
-                {displayedQuickActions.map(
-                  ({ path, label, description, icon: Icon }, index) => {
-                    const isActive = index === activeIndex;
-                    return (
-                      <button
-                        key={path}
-                        id={OPTION_ID(index)}
-                        data-index={index}
-                        role="option"
-                        aria-selected={isActive}
-                        type="button"
-                        onMouseEnter={() => setActiveIndex(index)}
-                        onClick={() => go(path)}
-                        className={`flex items-start gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
-                          isActive
-                            ? "bg-primary-50 text-slate-900"
-                            : "text-slate-600 hover:bg-primary-50/60 hover:text-slate-900"
-                        }`}
-                      >
-                        <Icon className="mt-0.5 h-4 w-4 shrink-0 text-primary-600" />
-                        <span className="min-w-0">
-                          <span className="block truncate text-sm font-medium">
-                            {label}
-                          </span>
-                          <span className="block line-clamp-2 text-xs text-slate-400">
-                            {description}
-                          </span>
-                        </span>
-                      </button>
-                    );
-                  },
-                )}
+                {displayedQuickActions.map((item, index) => (
+                  <CommandPaletteRow
+                    key={item.path}
+                    item={item}
+                    index={index}
+                    activeIndex={activeIndex}
+                    onActivate={setActiveIndex}
+                    onSelect={go}
+                  />
+                ))}
               </div>
             </div>
           )}
@@ -818,39 +796,16 @@ export default function CommandPalette({
                 Módulos
               </div>
               <div className="grid gap-1 sm:grid-cols-2">
-                {matchingModules.map(
-                  ({ key, path, label, description, icon: Icon }, index) => {
-                    const itemIndex = displayedQuickActions.length + index;
-                    const isActive = itemIndex === activeIndex;
-                    return (
-                      <button
-                        key={key}
-                        id={OPTION_ID(itemIndex)}
-                        data-index={itemIndex}
-                        role="option"
-                        aria-selected={isActive}
-                        type="button"
-                        onMouseEnter={() => setActiveIndex(itemIndex)}
-                        onClick={() => go(path)}
-                        className={`flex items-start gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
-                          isActive
-                            ? "bg-primary-50 text-slate-900"
-                            : "text-slate-600 hover:bg-primary-50/60 hover:text-slate-900"
-                        }`}
-                      >
-                        <Icon className="mt-0.5 h-4 w-4 shrink-0 text-primary-600" />
-                        <span className="min-w-0">
-                          <span className="block truncate text-sm font-medium">
-                            {label}
-                          </span>
-                          <span className="block line-clamp-2 text-xs text-slate-400">
-                            {description}
-                          </span>
-                        </span>
-                      </button>
-                    );
-                  },
-                )}
+                {matchingModules.map((item, index) => (
+                  <CommandPaletteRow
+                    key={item.key}
+                    item={item}
+                    index={displayedQuickActions.length + index}
+                    activeIndex={activeIndex}
+                    onActivate={setActiveIndex}
+                    onSelect={go}
+                  />
+                ))}
               </div>
             </div>
           )}
@@ -930,5 +885,45 @@ export default function CommandPalette({
         </div>
       </div>
     </div>
+  );
+}
+
+function CommandPaletteRow({
+  item: { path, label, description, icon: Icon },
+  index,
+  activeIndex,
+  onActivate,
+  onSelect,
+}: {
+  item: QuickAction;
+  index: number;
+  activeIndex: number;
+  onActivate: (index: number) => void;
+  onSelect: (path: string) => void;
+}) {
+  const isActive = index === activeIndex;
+  return (
+    <button
+      id={OPTION_ID(index)}
+      data-index={index}
+      role="option"
+      aria-selected={isActive}
+      type="button"
+      onMouseEnter={() => onActivate(index)}
+      onClick={() => onSelect(path)}
+      className={`flex items-start gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
+        isActive
+          ? "bg-primary-50 text-slate-900"
+          : "text-slate-600 hover:bg-primary-50/60 hover:text-slate-900"
+      }`}
+    >
+      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-primary-600" />
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-medium">{label}</span>
+        <span className="block line-clamp-2 text-xs text-slate-400">
+          {description}
+        </span>
+      </span>
+    </button>
   );
 }

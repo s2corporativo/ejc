@@ -18,6 +18,12 @@ Nenhum teste é removido; itens não executáveis sem LLM são classificados com
 N/A-PROVADO (prova da defesa/graceful degradation em vez da resposta do LLM).
 """
 from __future__ import annotations
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import asyncio
 import sys
 import time
@@ -27,7 +33,7 @@ sys.path.insert(0, "/home/ubuntu/ejc_repo")
 
 import requests
 
-API = "http://127.0.0.1:8000"
+API = _shared.LOCAL_API
 S = requests.Session()
 
 PASS = []
@@ -36,58 +42,29 @@ NA = []
 
 
 def _pass(msg):
-    PASS.append(msg)
-    print(f"[PASS] {msg}")
+    return _shared.record_pass(msg, PASS=PASS)
 
 
 def _fail(msg):
-    FAIL.append(msg)
-    print(f"[FAIL] {msg}")
+    return _shared.record_fail(msg, FAIL=FAIL)
 
 
 def _na(msg):
-    NA.append(msg)
-    print(f"[N/A-PROVADO] {msg}")
+    return _shared.record_unavailable(msg, NA=NA)
 
 
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 
 SENHA = _qa_pw('M27')
 
-CRED = {
-    "admin": ("ejc_qa_auth_admin@golocal.ejc", SENHA),
-    "socio": ("ejc_qa_auth_socio@golocal.ejc", SENHA),
-    "advogado": ("ejc_qa_auth_advogado@golocal.ejc", SENHA),
-    "estagiario": ("ejc_qa_auth_estagiario@golocal.ejc", SENHA),
-    "financeiro": ("ejc_qa_auth_financeiro@golocal.ejc", SENHA),
-    "secretaria": ("ejc_qa_auth_secretaria@golocal.ejc", SENHA),
-    "cliente": ("ejc_qa_auth_cliente@golocal.ejc", SENHA),
-}
+CRED = _shared.qa_credentials(SENHA, ('admin', 'socio', 'advogado', 'estagiario', 'financeiro', 'secretaria', 'cliente'))
 _TOKENS = {}
 
 
 def authed(role):
-    if role in _TOKENS:
-        return _TOKENS[role]
-    email, senha = CRED[role]
-    time.sleep(16)
-    r = S.post(f"{API}/api/auth/login", json={"email": email, "password": senha}, timeout=30)
-    if r.status_code == 429:
-        time.sleep(45)
-        r = S.post(f"{API}/api/auth/login", json={"email": email, "password": senha}, timeout=30)
-    if r.status_code != 200:
-        _fail(f"login {role}: HTTP {r.status_code}")
-        sys.exit(1)
-    tok = r.json()["access_token"]
-    S.headers["Authorization"] = f"Bearer {tok}"
-    _TOKENS[role] = tok
-    return tok
+    return _shared.authed_credentials(role, API=API, CRED=CRED, S=S, _TOKENS=_TOKENS, _fail=_fail, sys=sys, time=time)
 
 
 def ai_chat(role: str, mensagem: str, case_id: str | None = None,

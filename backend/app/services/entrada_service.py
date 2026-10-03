@@ -65,6 +65,10 @@ from app.services.conflito_service import (
 from app.services.status_transicao import avancar_status_por_evento
 from app.services.validators_service import normalizar_cnj, validar_cnj
 
+from app.services.conversion_helpers import deduplicar_alertas
+
+from app.services.conversion_helpers import casos_ativos_do_cliente as consultar_casos_ativos
+
 logger = logging.getLogger("ejc.entrada_unica")
 
 #: Guarda G1 (mesma doutrina de cases.py/converter_em_caso): caso nunca nasce
@@ -423,45 +427,14 @@ async def analisar_conflito(
             })
 
     # Dedup sem depender de ids protegidos (mesma chave do preview da Sala).
-    unicos: list[dict[str, Any]] = []
-    vistos: set[tuple[str, str, str]] = set()
-    for a in alertas:
-        k = (str(a.get("tipo") or ""), str(a.get("nome") or ""),
-             str(a.get("mensagem") or ""))
-        if k not in vistos:
-            vistos.add(k)
-            unicos.append(a)
+    unicos = deduplicar_alertas(alertas)
     return unicos
 
 
 async def casos_ativos_do_cliente(
     db: AsyncSession, user: User, client_id: str,
 ) -> list[dict[str, Any]]:
-    """Casos ATIVOS do cliente — sinal de caso possivelmente duplicado (mesmo
-    bloco de preview_conversao; protegidos colapsam numa única entrada)."""
-    rows = (await db.execute(
-        select(Case).where(
-            Case.client_id == client_id,
-            Case.deleted_at.is_(None),
-            Case.status.notin_([CaseStatus.encerrado, CaseStatus.arquivado]),
-        ).limit(10)
-    )).scalars().all()
-    ativos: list[dict[str, Any]] = []
-    houve_protegido = False
-    for caso in rows:
-        if pode_ver_caso_resumido(user, caso):
-            ativos.append({
-                "id": caso.id, "titulo": caso.titulo,
-                "numero_interno": caso.numero_interno, "protegido": False,
-            })
-        else:
-            houve_protegido = True
-    if houve_protegido:
-        ativos.append({
-            "id": None, "titulo": "Caso protegido",
-            "numero_interno": None, "protegido": True,
-        })
-    return ativos
+    return await consultar_casos_ativos(db, user, client_id, can_view=pode_ver_caso_resumido)
 
 
 # ── POST /entrada/analisar — orquestração ────────────────────────────────────

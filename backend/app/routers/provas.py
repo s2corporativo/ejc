@@ -62,6 +62,8 @@ router = APIRouter(prefix="/casos/{case_id}/provas", tags=["Provas"])
 PDF_TTL_SEGUNDOS = 3600  # 1h
 from app.services import visual_law_files as _vlf  # #27: arnês único
 
+from app.services.proof_context import contexto_provas
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -315,25 +317,9 @@ def _contexto_sugestao(case: Case, provas: list[Prova]) -> str:
     """Contexto DETERMINÍSTICO do caso (sem texto livre além dos campos do
     próprio caso): área, título, tipo de ação, tese principal e o acervo
     existente com fato probando. É o ÚNICO insumo fático dado à IA."""
+    linhas = contexto_provas(case, provas, limite_fato=500).split("\n")
     area = case.area.value if hasattr(case.area, "value") else str(case.area or "—")
-    tipo_acao = (case.tipo_acao_prescricao
-                 or case.extrajudicial_type
-                 or case.case_type
-                 or "não informado")
-    linhas = [
-        f"Área do direito: {area}",
-        f"Título do caso: {case.titulo or '—'}",
-        f"Tipo de ação: {tipo_acao}",
-        f"Tese principal: {(case.tese_principal or 'não informada').strip()[:2000]}",
-        "",
-        "Provas JÁ EXISTENTES no caso:",
-    ]
-    if provas:
-        for p in provas:
-            fato = (p.fato_probando or "não informado").strip()[:500]
-            linhas.append(f"- [{p.tipo}] {p.titulo} — fato probando: {fato}")
-    else:
-        linhas.append("- (nenhuma prova cadastrada ainda)")
+    tipo_acao = case.tipo_acao_prescricao or case.extrajudicial_type or case.case_type or "não informado"
 
     # ── Âncora determinística: matriz tese×prova (Fase C) ──────────────────────
     # Piso mínimo por área/tese, sem IA. Se nada casar, não injeta nada (o

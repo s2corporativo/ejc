@@ -1,0 +1,28 @@
+"""Chaves do estado jurídico consolidado compartilhadas por schema e extração."""
+
+CHAVES_ESTADO = frozenset({
+    'competencia',
+    'contradicoes',
+    'cronologia',
+    'datas_relevantes',
+    'documentos',
+    'enderecos',
+    'fatos',
+    'fontes',
+    'identificacao_processual',
+    'natureza_acao',
+    'partes',
+    'pedidos',
+    'pendencias',
+    'prescricao_decadencia',
+    'procedimento_rito',
+    'provas',
+    'proximas_acoes',
+    'questoes',
+    'ramo_direito',
+    'riscos',
+    'teses',
+    'testemunhas',
+    'urgencia',
+    'valores',
+})

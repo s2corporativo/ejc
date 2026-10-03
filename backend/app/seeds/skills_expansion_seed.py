@@ -10,9 +10,9 @@ Seed idempotente por ``name``. Executado por ``backend/seeds/seed_all.py``.
 from __future__ import annotations
 
 import json
-import os
+import os as os  # Alias mantido para imports e monkeypatch existentes.
 import pathlib
-import sys
+import sys as sys  # Alias mantido para imports e monkeypatch existentes.
 from datetime import datetime
 from uuid import uuid4
 
@@ -736,19 +736,15 @@ def _persistir_backup(backups: list[dict], quando: datetime) -> str:
 
 
 def seed() -> None:
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import text
     from sqlalchemy.orm import Session
 
-    url = os.getenv("DATABASE_URL_SYNC") or os.getenv("DATABASE_URL", "")
-    if "+asyncpg" in url:
-        url = url.replace("+asyncpg", "+psycopg2")
-    elif url.startswith("postgresql://"):
-        url = url.replace("postgresql://", "postgresql+psycopg2://")
-    if not url:
-        print("❌ DATABASE_URL(_SYNC) não configurada.")
-        sys.exit(1)
+    if __package__:
+        from ._bootstrap import create_sync_engine, insert_skill
+    else:  # Execução direta do arquivo de seed.
+        from _bootstrap import create_sync_engine, insert_skill
 
-    engine = create_engine(url)
+    engine = create_sync_engine()
     inserted = skipped = updated = 0
     now = datetime.utcnow()
     backups: list[dict] = []
@@ -803,21 +799,7 @@ def seed() -> None:
                     print(f"  ⏭️  Já existe: {skill['name']}")
                     skipped += 1
                 continue
-            session.execute(
-                text("""
-                    INSERT INTO ejc_skills (
-                        id, name, display_name, description, system_prompt,
-                        engine, area, active, requires_case,
-                        requires_human_review, oab_restricted,
-                        version, created_at, updated_at
-                    ) VALUES (
-                        :id, :name, :display_name, :description, :system_prompt,
-                        'groq', :area, true, false, true, true,
-                        1, :now, :now
-                    )
-                """),
-                {"id": str(uuid4()), "now": now, **skill},
-            )
+            insert_skill(session, skill, now, uuid_factory=uuid4)
             inserted += 1
             print(f"  ✅ Inserida: {skill['name']} — {skill['display_name']}")
         # O backup é gravado ANTES do commit e sua falha ABORTA a transação:

@@ -179,21 +179,10 @@ async def _tipos_master_ativos(db: AsyncSession) -> list[DocumentTypeMaster]:
     return list(rows)
 
 
-def _nome_original_seguro(filename: str | None, fallback: str) -> str:
-    """Normaliza somente para metadado; o nome nunca participa do path físico."""
-    nome = (filename or fallback).replace("\\", "/").rsplit("/", 1)[-1].strip()
-    return (nome or fallback)[:255]
+from app.services.document_metadata import normalizar_nome_original as _nome_original_seguro
 
 
-def _remote_path_documento(document: Document) -> str | None:
-    """Extrai path remoto novo; marcador legado ``drive://<file_id>`` cai em fallback."""
-    filepath = str(document.filepath or "")
-    if not filepath.startswith("drive://"):
-        return None
-    candidato = filepath[len("drive://") :].strip()
-    if not candidato or candidato == str(document.drive_file_id or ""):
-        return None
-    return candidato
+from app.services.document_metadata import remote_path_documento as _remote_path_documento
 
 
 def _serializar_documento(document: Document) -> dict:
@@ -700,13 +689,7 @@ async def detalhar(
     return _serializar_documento(document)
 
 
-@router.get("/{doc_id}/download",
-            dependencies=[Depends(rate_limit("doc-download", 60))])
-async def download(
-    doc_id: str,
-    db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
-):
+async def _documento_autorizado(db: AsyncSession, cu: User, doc_id: str):
     document = (
         await db.execute(
             select(Document).where(
@@ -721,6 +704,17 @@ async def download(
     await _verificar_acesso_documento(db, cu, document)
     if not _pode_acessar_confidencial(cu, document.confidencialidade.value):
         raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
+    return document
+
+
+@router.get("/{doc_id}/download",
+            dependencies=[Depends(rate_limit("doc-download", 60))])
+async def download(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    document = await _documento_autorizado(db, cu, doc_id)
 
     if document.drive_file_id:
         try:
@@ -1058,19 +1052,7 @@ async def classificar_tipo_documento(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    document = (
-        await db.execute(
-            select(Document).where(
-                Document.id == doc_id,
-                Document.deleted_at.is_(None),
-            )
-        )
-    ).scalar_one_or_none()
-    if not document:
-        raise HTTPException(status_code=404, detail="Documento não encontrado")
-    await _verificar_acesso_documento(db, cu, document)
-    if not _pode_acessar_confidencial(cu, document.confidencialidade.value):
-        raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
+    document = await _documento_autorizado(db, cu, doc_id)
 
     from app.services.document_classifier import classificar_documento
 

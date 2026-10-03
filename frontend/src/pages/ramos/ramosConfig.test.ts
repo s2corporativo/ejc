@@ -3,7 +3,7 @@
 // homologação; as demais foram corrigidas no backend e perderam o selo.
 // A EIRELI (extinta pela Lei 14.195/2021) não pode ser opção de registro novo.
 import { describe, expect, it } from "vitest";
-import { RAMOS } from "./ramosConfig";
+import { RAMOS, ferramentaPorId } from "./ramosConfig";
 
 // Matriz de não homologação — estado FINAL: exatamente 1 ferramenta.
 const MATRIZ_P0: Record<string, string[]> = {
@@ -60,7 +60,7 @@ describe("ramosConfig — homologação", () => {
   for (const [ramo, ids] of Object.entries(LIBERADAS)) {
     it(`ferramentas corrigidas do ramo "${ramo}" não carregam mais o selo`, () => {
       for (const id of ids) {
-        const ferramenta = RAMOS[ramo].ferramentas.find((f) => f.id === id);
+        const ferramenta = ferramentaPorId(RAMOS[ramo], id);
         expect(
           ferramenta,
           `ferramenta "${id}" deve existir no ramo "${ramo}"`,

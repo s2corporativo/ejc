@@ -153,6 +153,13 @@ async def test_advogado_preenche_minuta_sem_mutar_ledger():
 async def test_socio_cria_entrada_parcelas_e_exito(monkeypatch):
     db = _FakeDB([[]])
 
+    class DataFixa(date):
+        @classmethod
+        def today(cls):
+            return date(2026, 10, 2)
+
+    monkeypatch.setattr(gdc, "date", DataFixa)
+
     async def _audit(*_args, **_kwargs):
         return None
 

@@ -2,6 +2,7 @@
 # IA: análise de caso (sugestão de teses), resumo de documento, status HITL.
 # Pipeline LGPD/OAB já enforçado em ai_service.py.
 from __future__ import annotations
+from app.core.pagination import executar_pagina
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -11,13 +12,13 @@ from sqlalchemy import select, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ai_errors import http_erro_ia
+from app.core.ownership import verificar_acesso_caso
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.core.security import (
     get_current_user, requer_advogado, requer_equipe_juridica, ROLE_LEVEL,
 )
 from app.models.user import User
-from app.models.case import Case
 from app.models.ai_log import AILog, AIStatusHITL
 from app.models.legal_doc import LegalDoc
 from app.services.ai import juridico_guardrails
@@ -300,12 +301,7 @@ async def listar_logs(
         q = q.where(AILog.case_id == case_id)
     q = q.order_by(AILog.created_at.desc())
 
-    total = (await db.execute(
-        select(sqlfunc.count()).select_from(q.subquery())
-    )).scalar()
-    rows = (await db.execute(
-        q.offset((page - 1) * page_size).limit(page_size)
-    )).scalars().all()
+    total, rows = await executar_pagina(db, q, page, page_size)
     # Guardrail jurídico determinístico (Issue #554), aplicado NA LEITURA: o
     # AILog não distingue qual skill gerou a resposta (não há coluna
     # skill_name — fora do escopo desta Issue, que não autoriza migration de
@@ -811,14 +807,7 @@ async def assistente_estrategico(
     requer_equipe_juridica(cu, "Acesso restrito à equipe jurídica")
 
     # Verifica acesso ao caso
-    caso = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
-    )).scalar_one_or_none()
-    if not caso:
-        raise HTTPException(404, "Caso não encontrado")
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
-        if caso.advogado_responsavel_id != cu.id and getattr(caso, "advogado_auxiliar_id", None) != cu.id:
-            raise HTTPException(403, "Sem permissão para este caso")
+    caso = await verificar_acesso_caso(db, cu, case_id)
 
     # PISO DE SIGILO (achado da auditoria do módulo de minutas): esta rota é
     # vinculada a um caso e monta o DOSSIÊ COMPLETO, mas nunca lia
@@ -954,14 +943,7 @@ async def dual_ia(
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["advogado"]:
         raise HTTPException(403, "Apenas advogados podem usar o Modo Dual-IA")
 
-    caso = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
-    )).scalar_one_or_none()
-    if not caso:
-        raise HTTPException(404, "Caso não encontrado")
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
-        if caso.advogado_responsavel_id != cu.id and getattr(caso, "advogado_auxiliar_id", None) != cu.id:
-            raise HTTPException(403, "Sem permissão para este caso")
+    caso = await verificar_acesso_caso(db, cu, case_id)
 
     # PISO DE SIGILO (achado da auditoria do módulo de minutas): esta rota é
     # vinculada a um caso e monta o DOSSIÊ COMPLETO, mas nunca lia
@@ -1144,15 +1126,7 @@ async def motor_estrategia(
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["advogado"]:
         raise HTTPException(403)
 
-    caso = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
-    )).scalar_one_or_none()
-    if not caso:
-        raise HTTPException(404, "Caso não encontrado")
-
-    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
-        if caso.advogado_responsavel_id != cu.id and getattr(caso, "advogado_auxiliar_id", None) != cu.id:
-            raise HTTPException(403, "Sem permissão para este caso")
+    caso = await verificar_acesso_caso(db, cu, case_id)
 
     # PISO DE SIGILO (achado da auditoria do módulo de minutas): esta rota é
     # vinculada a um caso e monta o DOSSIÊ COMPLETO, mas nunca lia

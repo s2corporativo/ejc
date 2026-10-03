@@ -1,6 +1,7 @@
 # ── app/routers/atendimentos.py ────────────────────────────────────────────────
 # Histórico de atendimentos ao cliente — CRM básico jurídico.
 from __future__ import annotations
+from app.core.pagination import executar_pagina
 
 import logging
 from datetime import datetime, timedelta, timezone
@@ -498,10 +499,8 @@ async def listar_atendimentos(
     ).one()
 
     q = q.order_by(Atendimento.data_atendimento.desc())
-    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
-    items = (
-        await db.execute(q.offset((page - 1) * per_page).limit(per_page))
-    ).scalars().all()
+    total, items = await executar_pagina(db, q, page, per_page)
+    total = total or 0
     privado = _pode_ver_privado(cu)
     return {
         "total": total,
@@ -770,10 +769,8 @@ async def meus_atendimentos(
         .where(Atendimento.advogado_responsavel_id == cu.id)
         .order_by(Atendimento.data_atendimento.desc())
     )
-    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
-    items = (
-        await db.execute(q.offset((page - 1) * per_page).limit(per_page))
-    ).scalars().all()
+    total, items = await executar_pagina(db, q, page, per_page)
+    total = total or 0
     return {
         "total": total,
         "page": page,
@@ -805,10 +802,8 @@ async def por_advogado(
         .where(Atendimento.advogado_responsavel_id == advogado_id)
         .order_by(Atendimento.data_atendimento.desc())
     )
-    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
-    items = (
-        await db.execute(q.offset((page - 1) * per_page).limit(per_page))
-    ).scalars().all()
+    total, items = await executar_pagina(db, q, page, per_page)
+    total = total or 0
     return {
         "total": total,
         "page": page,

@@ -15,6 +15,29 @@ _STATUS_VALIDOS = {s.value for s in ClientStatus}
 _TIPOS_VALIDOS = {t.value for t in ClientTipo}
 _ORIGENS_VALIDAS = {o.value for o in ClientOrigem}
 
+def _normalizar_nascimento(v):
+    # Aceita "" / espaços vindos do formulário como ausência de data (None),
+    # em vez de estourar validação. Strings ISO válidas seguem para o parser
+    # padrão do Pydantic; inválidas viram 422 (não 500).
+    if isinstance(v, str) and not v.strip():
+        return None
+    return v
+
+
+def _validar_etapa(v: Optional[str]) -> Optional[str]:
+    if v is not None and v not in ETAPAS_FUNIL:
+        raise ValueError(f"etapa_funil inválida; use uma de: {sorted(ETAPAS_FUNIL)}")
+    return v
+
+
+def _validar_origem(v: Optional[str]) -> Optional[str]:
+    # Coluna SAEnum(ClientOrigem), nullable — vazio/None viram None (não "").
+    if v is None or str(v).strip() == "":
+        return None
+    if v not in _ORIGENS_VALIDAS:
+        raise ValueError(f"origem inválida; use uma de: {sorted(_ORIGENS_VALIDAS)}")
+    return v
+
 class ClientBase(BaseModel):
     tipo: str = "PF"
     nome: Optional[str] = None
@@ -52,9 +75,7 @@ class ClientBase(BaseModel):
         # Aceita "" / espaços vindos do formulário como ausência de data (None),
         # em vez de estourar validação. Strings ISO válidas seguem para o parser
         # padrão do Pydantic; inválidas viram 422 (não 500).
-        if isinstance(v, str) and not v.strip():
-            return None
-        return v
+        return _normalizar_nascimento(v)
 
 
 def _email_normaliza(v):
@@ -101,9 +122,7 @@ class ClientCreate(ClientBase):
     @field_validator("etapa_funil")
     @classmethod
     def _valida_etapa(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and v not in ETAPAS_FUNIL:
-            raise ValueError(f"etapa_funil inválida; use uma de: {sorted(ETAPAS_FUNIL)}")
-        return v
+        return _validar_etapa(v)
 
     @field_validator("tipo")
     @classmethod
@@ -118,11 +137,7 @@ class ClientCreate(ClientBase):
     @classmethod
     def _valida_origem(cls, v: Optional[str]) -> Optional[str]:
         # Coluna SAEnum(ClientOrigem), nullable — vazio/None viram None (não "").
-        if v is None or str(v).strip() == "":
-            return None
-        if v not in _ORIGENS_VALIDAS:
-            raise ValueError(f"origem inválida; use uma de: {sorted(_ORIGENS_VALIDAS)}")
-        return v
+        return _validar_origem(v)
 
 class ClientUpdate(BaseModel):
     nome: Optional[str] = None
@@ -154,9 +169,7 @@ class ClientUpdate(BaseModel):
     @field_validator("data_nascimento", mode="before")
     @classmethod
     def _data_nascimento_vazio_para_none(cls, v):
-        if isinstance(v, str) and not v.strip():
-            return None
-        return v
+        return _normalizar_nascimento(v)
 
     @field_validator("email", mode="before")
     @classmethod
@@ -173,18 +186,12 @@ class ClientUpdate(BaseModel):
     @field_validator("etapa_funil")
     @classmethod
     def _valida_etapa(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and v not in ETAPAS_FUNIL:
-            raise ValueError(f"etapa_funil inválida; use uma de: {sorted(ETAPAS_FUNIL)}")
-        return v
+        return _validar_etapa(v)
 
     @field_validator("origem")
     @classmethod
     def _valida_origem(cls, v: Optional[str]) -> Optional[str]:
-        if v is None or str(v).strip() == "":
-            return None
-        if v not in _ORIGENS_VALIDAS:
-            raise ValueError(f"origem inválida; use uma de: {sorted(_ORIGENS_VALIDAS)}")
-        return v
+        return _validar_origem(v)
 
 class ClientResponse(ClientBase):
     id: str

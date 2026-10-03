@@ -1,3 +1,4 @@
+import { TemplateFormFields } from "../components/FormFields";
 import { useEffect, useState } from "react";
 import { toast } from "../components/Toast";
 import { mensagemErroHttp } from "../lib/iaErro";
@@ -125,34 +126,11 @@ export default function Workflow() {
 
       {show && (
         <form onSubmit={criar} className="card p-5 space-y-3 max-w-2xl">
-          <div className="grid md:grid-cols-2 gap-3">
-            <div>
-              <label className="label">Nome *</label>
-              <input
-                className="input w-full"
-                value={f.nome}
-                onChange={(e) => setF({ ...f, nome: e.target.value })}
-                placeholder="Ex.: Fluxo — Ação Trabalhista"
-              />
-            </div>
-            <div>
-              <label className="label">Área jurídica</label>
-              <input
-                className="input w-full"
-                value={f.area_juridica}
-                onChange={(e) => setF({ ...f, area_juridica: e.target.value })}
-                placeholder="trabalhista, cível…"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="label">Descrição</label>
-            <input
-              className="input w-full"
-              value={f.descricao}
-              onChange={(e) => setF({ ...f, descricao: e.target.value })}
-            />
-          </div>
+          <TemplateFormFields
+            value={f}
+            onChange={(patch) => setF({ ...f, ...patch })}
+            namePlaceholder="Ex.: Fluxo — Ação Trabalhista"
+          />
           <div>
             <label className="label">
               Etapas (uma por linha — opcional "| dias de SLA")

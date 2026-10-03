@@ -24,6 +24,9 @@ def _cenario(tmp_path: Path):
     repo = tmp_path / "repo"
     corpus = repo / "backend" / "app" / "eval"
     corpus.mkdir(parents=True)
+    # Marca a raiz do checkout fictício; ambientes gerenciados também podem
+    # conter .git em /tmp ou /workspace, acima da árvore temporária.
+    (repo / ".git").mkdir()
     gold = corpus / "gold_set_real.jsonl"
     gold.write_text('{"id":"real-1","ficticio":false}\n', encoding="utf-8")
 

@@ -24,7 +24,6 @@ from app.core.pagination_cursor import (
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, requer_advogado
 from app.models.audit_log import criar_audit_log
-from app.models.case import Case
 from app.models.deadline import Deadline, DeadlineStatus
 from app.models.user import User
 from app.schemas.common import MsgResponse
@@ -48,18 +47,7 @@ logger = logging.getLogger("ejc.deadlines")
 _MAX_EXPORT = 5000
 
 
-def _ids_casos_do_usuario(user: User):
-    return (
-        select(Case.id)
-        .where(
-            Case.deleted_at.is_(None),
-            or_(
-                Case.advogado_responsavel_id == user.id,
-                Case.advogado_auxiliar_id == user.id,
-            ),
-        )
-        .scalar_subquery()
-    )
+from app.core.ownership import ids_casos_do_usuario as _ids_casos_do_usuario
 
 
 def _filtro_escopo_prazos(q, cu: User):

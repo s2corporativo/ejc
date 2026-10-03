@@ -7,6 +7,12 @@ exportações. Recalcula amostras diretamente no banco.
 Executar: PYTHONPATH=backend env_shell.sh python3 scripts/inventory/m32_*.py
 """
 from __future__ import annotations
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import sys
 import os
 import json
@@ -16,13 +22,9 @@ sys.path.insert(0, "/home/ubuntu/ejc_repo/backend")
 os.environ.setdefault("DATABASE_URL",
                       "postgresql+asyncpg://ejc:ejc@localhost:5432/ejc")
 
-API = "http://127.0.0.1:8000"
+API = _shared.LOCAL_API
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 CRED = _qa_pw('CRED')
 S = requests.Session()

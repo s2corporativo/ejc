@@ -1,3 +1,4 @@
+import { useEscape } from "../lib/useEscape";
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { cn } from "../lib/cn";
@@ -728,14 +729,7 @@ export function Modal({
   footer?: ReactNode;
   placement?: "center" | "right";
 }) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  useEscape(open, onClose);
 
   if (!open) return null;
   const sizeClass = size
@@ -918,14 +912,7 @@ export function Drawer({
   width?: DrawerWidth;
   footer?: ReactNode;
 }) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  useEscape(open, onClose);
 
   if (!open) return null;
   return (

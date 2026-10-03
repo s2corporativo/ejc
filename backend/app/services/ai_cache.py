@@ -21,6 +21,8 @@ import logging
 
 from app.core.config import get_settings
 
+from app.services.runtime_helpers import cliente_redis
+
 logger = logging.getLogger("ejc.ai.cache")
 
 _PREFIXO = "ai:resp:"
@@ -78,16 +80,7 @@ def _nao_cacheavel(chave_req: str) -> bool:
 
 
 async def _cliente():
-    """Cliente Redis assíncrono (curto timeout). None em qualquer falha."""
-    try:
-        import redis.asyncio as aioredis
-        s = get_settings()
-        return aioredis.from_url(
-            s.REDIS_URL, socket_connect_timeout=1.0, socket_timeout=1.0,
-            decode_responses=True,
-        )
-    except Exception:
-        return None
+    return await cliente_redis(get_settings)
 
 
 async def obter(chave_req: str) -> dict | None:

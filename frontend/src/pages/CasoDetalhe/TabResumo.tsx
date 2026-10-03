@@ -1,3 +1,4 @@
+import { apiDetailMessage as detalheErro } from "../../lib/apiError";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Sparkles, RefreshCw, ArchiveRestore } from "lucide-react";
@@ -54,20 +55,6 @@ interface DiagnosticoFechamento {
     ultima_sincronizacao: string | null;
     erro_sincronizacao: string | null;
   };
-}
-
-function detalheErro(e: unknown, fallback: string): string {
-  const detail = (e as { response?: { data?: { detail?: unknown } } })?.response
-    ?.data?.detail;
-  if (typeof detail === "string") return detail;
-  if (
-    detail &&
-    typeof detail === "object" &&
-    typeof (detail as { mensagem?: unknown }).mensagem === "string"
-  ) {
-    return (detail as { mensagem: string }).mensagem;
-  }
-  return fallback;
 }
 
 function ExtratoCaso({ caso }: { caso: Case }) {

@@ -1,3 +1,7 @@
+import {
+  detailMessage,
+  legacyDetailMessage as errDetail,
+} from "../../lib/apiError";
 // Catálogo e regras do fluxo de Peças Jurídicas (auditoria §2.6 #10).
 //
 // Extraído do monólito Pecas.tsx: taxonomia de fases, tipos manuais, erros
@@ -15,17 +19,9 @@ export async function blobErrorDetail(e: any): Promise<string | undefined> {
       return undefined;
     }
   }
-  return typeof detail === "object" && detail !== null
-    ? (detail.mensagem ?? JSON.stringify(detail).slice(0, 200))
-    : detail;
-}
-
-export function errDetail(e: any, fallback: string): string {
-  const d = e?.response?.data?.detail;
-  if (typeof d === "string" && d) return d;
-  if (d && typeof d === "object")
-    return d.mensagem ?? JSON.stringify(d).slice(0, 200);
-  return fallback;
+  return detail == null
+    ? undefined
+    : detailMessage(detail, "", { objectFallback: true });
 }
 
 export const TIPOS_MANUAIS = [
@@ -133,3 +129,5 @@ export function pecaValidacaoLabel(doc: LegalDoc): {
     };
   return { label: `Bloqueada ${v.score ?? ""}/100`, tone: "red" as const };
 }
+
+export { errDetail };

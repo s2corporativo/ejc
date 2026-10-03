@@ -22,22 +22,24 @@ os MOTORES LOCAIS DE VERACIDADE que blindam o sistema:
 Resultado quantitativo: acerto = motor flagga corretamente o falso OU
 confirma corretamente o verdadeiro.
 """
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import asyncio
 import json
 import os
 import sys
 import time
 
-BASE = "http://127.0.0.1:8000"
+BASE = _shared.LOCAL_API
 LOGIN = f"{BASE}/api/auth/login"
-E_ADV = "ejc_qa_auth_advogado@golocal.ejc"
-E_SOCI = "ejc_qa_auth_socio@golocal.ejc"
+E_ADV = _shared.qa_email('advogado')
+E_SOCI = _shared.qa_email('socio')
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 SENHA = _qa_pw('SENHA')
 PASS = FAIL = 0

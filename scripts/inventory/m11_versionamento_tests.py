@@ -4,21 +4,23 @@
 # comparação, recuperação, conflito de edição, integridade, exclusão,
 # restauração. "Não aceite perda silenciosa de versão."
 # Dados sintéticos EJC_QA_*. Servidor local uvicorn :8000.
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import hashlib, io, os, random, sys, tempfile, threading, time, zipfile
 import requests as S_
 
-BASE = "http://127.0.0.1:8000"
-ADM_E = "ejc_qa_auth_admin@golocal.ejc"
-ADV_E = "ejc_qa_auth_advogado@golocal.ejc"
-EST_E = "ejc_qa_auth_estagiario@golocal.ejc"
-FIN_E = "ejc_qa_auth_financeiro@golocal.ejc"
-CLI_E = "ejc_qa_auth_cliente@golocal.ejc"
+BASE = _shared.LOCAL_API
+ADM_E = _shared.qa_email('admin')
+ADV_E = _shared.qa_email('advogado')
+EST_E = _shared.qa_email('estagiario')
+FIN_E = _shared.qa_email('financeiro')
+CLI_E = _shared.qa_email('cliente')
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 PWD = _qa_pw('PWD')
 # ── carteira: garantir que o advogado QA tenha acesso aos casos QA ────────
@@ -84,27 +86,15 @@ def criar_recursos_qa():
 _TOKENS = {}
 
 def _h(email):
-    if email in _TOKENS:
-        return _TOKENS[email]
-    time.sleep(18)
-    for _ in range(6):
-        r = S.post(f"{BASE}/api/auth/login", json={"email": email, "password": PWD}, timeout=10)
-        if r.status_code == 200:
-            _TOKENS[email] = {"Authorization": f"Bearer {r.json()['access_token']}"}
-            return _TOKENS[email]
-        time.sleep(45)
-    raise SystemExit(f"login falhou para {email}")
+    return _shared.cached_auth_headers(email, BASE=BASE, PWD=PWD, S=S, _TOKENS=_TOKENS, time=time)
 
 def h(e): return _h(e)
 
 total, ok_total = 0, 0
-def chk(nome, ok, motivo=""):
-    global total, ok_total
-    total += 1
-    ok = bool(ok)
-    ok_total += ok
-    print(("PASS" if ok else "FAIL"), f"{nome} — {motivo or ''}")
-    return ok
+def chk(nome, ok, motivo=''):
+    global ok_total, total
+    ok_total, total, result = _shared.check_totals(nome, ok, motivo, ok_total=ok_total, total=total)
+    return result
 
 PDF_GEN = "/home/ubuntu/ejc_repo/scripts/inventory/gen_test_files.py"
 

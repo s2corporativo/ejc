@@ -12,6 +12,12 @@ determinísticos replicáveis, fail-soft e imutabilidade de regras.
 """
 from __future__ import annotations
 
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
+
 import json
 import re
 import sys
@@ -22,21 +28,17 @@ import requests
 
 sys.path.insert(0, "/home/ubuntu/ejc_repo/backend")
 
-API = "http://127.0.0.1:8000"
+API = _shared.LOCAL_API
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 CRED = _qa_pw('CRED')
 EMAILS = {
-    "socio": "ejc_qa_auth_socio@golocal.ejc",
-    "advogado": "ejc_qa_auth_advogado@golocal.ejc",
-    "estagiario": "ejc_qa_auth_estagiario@golocal.ejc",
-    "financeiro": "ejc_qa_auth_financeiro@golocal.ejc",
-    "cliente_externo": "ejc_qa_auth_cliente@golocal.ejc",
+    "socio": _shared.qa_email('socio'),
+    "advogado": _shared.qa_email('advogado'),
+    "estagiario": _shared.qa_email('estagiario'),
+    "financeiro": _shared.qa_email('financeiro'),
+    "cliente_externo": _shared.qa_email('cliente'),
 }
 S = requests.Session()
 _tokens = {}

@@ -1,10 +1,15 @@
+import {
+  GuiaSecEmpresarial as Sec,
+  GuiaShell,
+  useGuiaChecks,
+} from "./GuiaPrimitivas";
+import type React from "react";
 // ── src/components/GuiaEmpresarial.tsx ───────────────────────────────────────
 // Guia Operacional do ramo Empresarial (padrão GuiaCivil/GuiaTributario):
 // os três pilares de atuação do escritório — consultivo estrutural, operacional
 // recorrente e contencioso especializado — com referência às ferramentas reais
 // do sistema (Sociedades do Cliente, análise IA de contrato, contratos com
 // alerta de vencimento) e checklist de Due Diligence persistido localmente.
-import React, { useEffect, useState } from "react";
 import { Link } from "react-router";
 import {
   BookOpen,
@@ -22,43 +27,6 @@ import {
 } from "lucide-react";
 import { canRoleAccessPath } from "../config/moduleRegistry";
 import { useAuth } from "../stores/auth";
-
-// ── Seção colapsável (mesmo padrão dos demais guias, com badge de valor) ─────
-function Sec({
-  title,
-  icon,
-  badge,
-  children,
-  open = false,
-}: {
-  title: string;
-  icon: React.ReactNode;
-  badge?: React.ReactNode;
-  children: React.ReactNode;
-  open?: boolean;
-}) {
-  const [isOpen, setIsOpen] = useState(open);
-  return (
-    <div className="border border-bronze-pale rounded-lg overflow-hidden">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between gap-2 p-4 bg-white hover:bg-slate-50 text-left"
-      >
-        <span className="flex flex-wrap items-center gap-2 font-semibold text-slate-800">
-          {icon}
-          {title}
-          {badge}
-        </span>
-        <span className="text-slate-400">{isOpen ? "▲" : "▼"}</span>
-      </button>
-      {isOpen && (
-        <div className="p-4 border-t border-slate-100 bg-slate-50 space-y-3">
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ── Badge de proposta de valor do pilar ──────────────────────────────────────
 function Badge({
@@ -138,28 +106,17 @@ export function podeAcessarDpt360(role?: string | null): boolean {
 export default function GuiaEmpresarial() {
   const { user } = useAuth();
   const podeAbrirDpt360 = podeAcessarDpt360(user?.role);
-  const [checks, setChecks] = useState<boolean[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(CHK_KEY) || "[]");
-    } catch {
-      return [];
-    }
-  });
-  useEffect(() => {
-    localStorage.setItem(CHK_KEY, JSON.stringify(checks));
-  }, [checks]);
-  const toggle = (i: number) =>
-    setChecks((prev) => {
-      const n = [...prev];
-      n[i] = !n[i];
-      return n;
-    });
+  const { checks, toggle } = useGuiaChecks(CHK_KEY);
 
   return (
-    <div className="space-y-3 p-4">
-      <h2 className="text-xl font-bold text-primary-700 flex items-center gap-2">
-        <BookOpen size={20} /> Guia Operacional — Direito Empresarial
-      </h2>
+    <GuiaShell
+      titleClassName="text-xl font-bold text-primary-700 flex items-center gap-2"
+      title={
+        <>
+          <BookOpen size={20} /> Guia Operacional — Direito Empresarial
+        </>
+      }
+    >
       <p className="text-sm text-slate-500">
         A atuação empresarial do escritório se organiza em três pilares: o
         consultivo estrutural (alto valor agregado), o operacional rotineiro
@@ -328,6 +285,6 @@ export default function GuiaEmpresarial() {
           </p>
         </div>
       </Sec>
-    </div>
+    </GuiaShell>
   );
 }

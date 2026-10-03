@@ -11,7 +11,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func as sqlfunc
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -55,19 +55,7 @@ def _req_financeiro_mutacao(cu: User = Depends(get_current_user)) -> User:
     return cu
 
 
-def _ids_casos_do_usuario(user: User):
-    """IDs dos casos em que o usuário atua como responsável ou auxiliar."""
-    return (
-        select(Case.id)
-        .where(
-            Case.deleted_at.is_(None),
-            or_(
-                Case.advogado_responsavel_id == user.id,
-                Case.advogado_auxiliar_id == user.id,
-            ),
-        )
-        .scalar_subquery()
-    )
+from app.core.ownership import ids_casos_do_usuario as _ids_casos_do_usuario
 
 
 def _filtro_fees_lista(q, user: User):

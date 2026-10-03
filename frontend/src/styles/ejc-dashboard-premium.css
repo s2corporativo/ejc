@@ -1,3 +1,4 @@
+/* Tokens globais --ejc-* e aliases: fonte canônica em ejc-tokens.css. */
 /* ══════════════════════════════════════════════════════════════════════════
    EJC — Identidade Premium DPT (referência aprovada pelo Titular 18/09/2026)
    Camada de composição do Início (DashboardUltra) e acabamentos do shell.
@@ -10,15 +11,7 @@
    ══════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  --ejc-dash-green: #0a4132;
-  --ejc-dash-green-deep: #04291f;
   --ejc-dash-green-soft: rgba(255, 255, 255, 0.08);
-  --ejc-dash-gold: #cfa961;
-  --ejc-dash-gold-bright: #eaca7f;
-  --ejc-dash-gold-deep: #a8873c;
-  --ejc-dash-ink: #10382c;
-  --ejc-dash-muted: #6d7f78;
-  --ejc-dash-serif: "Playfair Display", Georgia, "Times New Roman", serif;
 }
 
 /* ───────────────────────────────────────────────────────────────────────── */

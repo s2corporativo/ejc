@@ -25,7 +25,7 @@ from app.core.client_ownership import (
 )
 from app.core.config import get_settings
 from app.core.security import ROLE_LEVEL
-from app.models.case import Case, CaseArea, CaseStatus
+from app.models.case import Case, CaseArea
 from app.models.case_parte import CaseParte
 from app.models.case_intelligence import CaseIntelligenceSnapshot
 from app.models.client import Client
@@ -48,6 +48,14 @@ from app.services.conflito_service import (
     _clientes_por_nome,
 )
 from app.services.sanitizer import sanitizar_pii
+
+from app.utils.legal_state import CHAVES_ESTADO
+
+from app.services.conversion_helpers import alerta_protegido
+
+from app.services.conversion_helpers import deduplicar_alertas
+
+from app.services.conversion_helpers import casos_ativos_do_cliente as consultar_casos_ativos
 
 # Modo do seletor → task_type do gateway. "chat_rapido" NÃO consta no mapa do
 # intent_classifier de propósito: a conversa livre cai no fallback por
@@ -550,13 +558,7 @@ async def enviar_mensagem(
     }
 
 
-_CHAVES_ESTADO = {
-    "fatos", "partes", "testemunhas", "enderecos", "identificacao_processual", "provas", "documentos",
-    "contradicoes", "questoes", "teses", "pedidos", "riscos", "pendencias",
-    "cronologia", "datas_relevantes", "valores", "competencia", "ramo_direito",
-    "natureza_acao", "procedimento_rito", "prescricao_decadencia", "urgencia",
-    "proximas_acoes", "fontes",
-}
+_CHAVES_ESTADO = CHAVES_ESTADO
 
 _PROMPT_EXTRACAO = """Você é o extrator de estado jurídico da Sala Jurídica.
 Atualize o ESTADO CONSOLIDADO abaixo com base na última interação e nos documentos
@@ -653,13 +655,7 @@ async def _extrair_estado_automatico(
 # correspondência em carteira não autorizada vira alerta "protegido").
 
 def _alerta_protegido(tipo: str, mensagem: str) -> dict[str, Any]:
-    return {
-        "tipo": tipo,
-        "nome": "Correspondência protegida na base do escritório",
-        "mensagem": mensagem,
-        "protegido": True,
-        "confirmado": False,
-    }
+    return alerta_protegido(tipo, mensagem)
 
 
 def _nomes_partes_anexos(anexos: list[LegalChatAttachment]) -> list[str]:
@@ -764,13 +760,7 @@ async def preview_conversao(
                     "Correspondência em caso protegido. Solicite revisão de conflito à gestão antes de prosseguir.",
                 ))
     # Dedup sem depender de ids protegidos (mesma chave do Raio-X).
-    unicos: list[dict[str, Any]] = []
-    vistos: set[tuple[str, str, str]] = set()
-    for a in alertas:
-        k = (str(a.get("tipo") or ""), str(a.get("nome") or ""), str(a.get("mensagem") or ""))
-        if k not in vistos:
-            vistos.add(k)
-            unicos.append(a)
+    unicos = deduplicar_alertas(alertas)
 
     # Clientes possivelmente duplicados (só relevante ao CRIAR cliente novo).
     # Os protegidos colapsam numa ÚNICA entrada: a contagem de correspondências
@@ -797,29 +787,7 @@ async def preview_conversao(
     # protegidos colapsam numa entrada para não vazar a contagem.
     casos_ativos: list[dict[str, Any]] = []
     if client_id:
-        rows = (await db.execute(
-            select(Case).where(
-                Case.client_id == client_id,
-                Case.deleted_at.is_(None),
-                Case.status.notin_([CaseStatus.encerrado, CaseStatus.arquivado]),
-            ).limit(10)
-        )).scalars().all()
-        houve_protegido = False
-        for caso in rows:
-            if pode_ver_caso_resumido(user, caso):
-                casos_ativos.append({
-                    "id": caso.id,
-                    "titulo": caso.titulo,
-                    "numero_interno": caso.numero_interno,
-                    "protegido": False,
-                })
-            else:
-                houve_protegido = True
-        if houve_protegido:
-            casos_ativos.append({
-                "id": None, "titulo": "Caso protegido", "numero_interno": None,
-                "protegido": True,
-            })
+        casos_ativos = await consultar_casos_ativos(db, user, client_id, can_view=pode_ver_caso_resumido)
 
     return {
         "session_id": sessao.id,

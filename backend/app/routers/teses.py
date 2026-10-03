@@ -13,7 +13,7 @@ from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user, ROLE_LEVEL, EQUIPE_JURIDICA
+from app.core.security import get_current_user, ROLE_LEVEL
 from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.case import Case
@@ -78,10 +78,7 @@ class SugestaoIARequest(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _is_staff(user: User) -> bool:
-    # Issue #694: allowlist EXATA — financeiro não acessa o banco de teses
-    # jurídicas, mesmo com ROLE_LEVEL acima de estagiario.
-    return user.role.value in EQUIPE_JURIDICA
+from app.core.security import eh_equipe_juridica as _is_staff
 
 def _pode_editar(user: User) -> bool:
     return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["advogado"]
@@ -144,8 +141,8 @@ async def listar_teses(
     else:
         q = q.order_by(Tese.created_at.desc())
 
-    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
-    teses = (await db.execute(q.offset((page-1)*per_page).limit(per_page))).scalars().all()
+    total, teses = await executar_pagina(db, q, page, per_page)
+    total = total or 0
 
     return {
         "total": total, "page": page, "per_page": per_page,
@@ -640,20 +637,7 @@ class MotorTesesRequest(_BM):
 
 
 def _parse_json_motor(txt: str):
-    import json as _j
-    import re as _re
-    if not txt:
-        return None
-    try:
-        return _j.loads(txt)
-    except Exception:
-        m = _re.search(r"\{.*\}", txt, _re.DOTALL)
-        if m:
-            try:
-                return _j.loads(m.group(0))
-            except Exception:
-                return None
-    return None
+    return parse_json_response(txt)
 
 
 async def _gerar_teses(
@@ -798,6 +782,9 @@ async def motor_teses(
 # ── P2.2b — Geração assíncrona com polling (E04) ────────────────────────────
 import secrets as _secrets
 import threading as _threading
+
+from app.core.pagination import executar_pagina
+from app.utils.ai_json import parse_json_response
 
 _motor_tasks: dict[str, dict] = {}
 _motor_lock = _threading.Lock()

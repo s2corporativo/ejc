@@ -1,3 +1,5 @@
+import { uploadCaseDocument } from "../lib/caseDocuments";
+import { apiDetailNonemptyMessage as detalheErro } from "../lib/apiError";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import {
@@ -23,20 +25,6 @@ type CaseAreaLink = {
   area: string;
   principal?: boolean;
 };
-
-function detalheErro(error: unknown, fallback: string): string {
-  const detail = (error as { response?: { data?: { detail?: unknown } } })
-    ?.response?.data?.detail;
-  if (typeof detail === "string" && detail) return detail;
-  if (
-    detail &&
-    typeof detail === "object" &&
-    typeof (detail as { mensagem?: unknown }).mensagem === "string"
-  ) {
-    return (detail as { mensagem: string }).mensagem;
-  }
-  return fallback;
-}
 
 export default function CaseCommandDock({ caseId }: { caseId: string }) {
   const navigate = useNavigate();
@@ -135,14 +123,7 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
     }
     setEnviando(true);
     try {
-      const body = new FormData();
-      body.append("file", arquivo);
-      body.append("titulo", titulo.trim() || arquivo.name);
-      body.append("tipo", tipo);
-      body.append("case_id", caseId);
-      await api.post("/documents/upload", body, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      await uploadCaseDocument(caseId, arquivo, titulo, tipo);
       toast.success("Documento anexado ao caso.");
       limparUpload();
       setView(null);

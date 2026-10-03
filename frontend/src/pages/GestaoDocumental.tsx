@@ -1,3 +1,4 @@
+import { paramsDaAba } from "../lib/uiHelpers";
 import { useSearchParams } from "react-router";
 import { FolderOpen, Lock } from "lucide-react";
 import Documentos from "./Documentos";
@@ -18,9 +19,7 @@ export default function GestaoDocumental() {
   const tab: Tab = raw === "dataroom" ? "dataroom" : "docs";
 
   const selectTab = (next: Tab) => {
-    const params = new URLSearchParams(searchParams);
-    params.set("tab", next);
-    setSearchParams(params, { replace: true });
+    setSearchParams(paramsDaAba(searchParams, next), { replace: true });
   };
 
   return (

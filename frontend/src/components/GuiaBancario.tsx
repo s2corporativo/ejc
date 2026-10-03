@@ -1,10 +1,14 @@
+import {
+  GuiaSecCompacta as Sec,
+  GuiaTabCompacta as Tab,
+  GuiaShell,
+  useGuiaMarcados,
+} from "./GuiaPrimitivas";
 // ── src/components/GuiaBancario.tsx ──────────────────────────────────────────
 // Guia Operacional de Direito Bancário (De Paula Teixeira). Referência interna
 // em accordions + checklist interativo. O mesmo conteúdo está no RAG, então o
 // Assistente/Motor de Teses também o usa. Tudo exige revisão do advogado.
-import { useEffect, useState } from "react";
 import {
-  BookOpen,
   Scale,
   Calculator,
   MessageSquareWarning,
@@ -12,54 +16,6 @@ import {
   ListChecks,
   AlertTriangle,
 } from "lucide-react";
-
-function Sec({ icon: Icon, titulo, children, aberto = false }: any) {
-  return (
-    <details
-      open={aberto}
-      className="group border border-bronze-pale rounded-lg overflow-hidden"
-    >
-      <summary className="flex items-center gap-2 px-4 py-2.5 cursor-pointer bg-bronze-50/40 hover:bg-bronze-50 text-sm font-medium text-navy-900 select-none">
-        <Icon size={15} className="text-bronze" /> {titulo}
-        <span className="ml-auto text-slate-400 group-open:rotate-180 transition-transform">
-          ▾
-        </span>
-      </summary>
-      <div className="px-4 py-3 text-xs text-slate-700 space-y-2 leading-relaxed">
-        {children}
-      </div>
-    </details>
-  );
-}
-
-function Tab({ head, rows }: { head: string[]; rows: string[][] }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-[11px]">
-        <thead>
-          <tr className="text-left text-ink-light">
-            {head.map((h) => (
-              <th key={h} className="py-1 pr-3 font-semibold">
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i} className="border-t border-bronze-50">
-              {r.map((c, j) => (
-                <td key={j} className="py-1 pr-3 align-top">
-                  {c}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 
 const CHECKLIST = [
   "Identificar o produto (cartão / cheque especial / consignado / CDC / financiamento)",
@@ -80,27 +36,15 @@ const CHECKLIST = [
 ];
 
 export default function GuiaBancario() {
-  const [marcados, setMarcados] = useState<Record<number, boolean>>({});
-  useEffect(() => {
-    try {
-      setMarcados(JSON.parse(localStorage.getItem("guia_banc_chk") || "{}"));
-    } catch {}
-  }, []);
-  const toggle = (i: number) => {
-    const novo = { ...marcados, [i]: !marcados[i] };
-    setMarcados(novo);
-    localStorage.setItem("guia_banc_chk", JSON.stringify(novo));
-  };
+  const { marcados, toggle } = useGuiaMarcados("guia_banc_chk");
   const feitos = Object.values(marcados).filter(Boolean).length;
 
   return (
-    <div className="card p-4 mb-4 border-l-4 border-yellow-500">
-      <div className="flex items-center gap-2 mb-1">
-        <BookOpen size={16} className="text-bronze" />
-        <h2 className="font-serif font-semibold text-navy text-sm">
-          Guia Operacional de Direito Bancário
-        </h2>
-      </div>
+    <GuiaShell
+      compacta
+      className="card p-4 mb-4 border-l-4 border-yellow-500"
+      title={<>Guia Operacional de Direito Bancário</>}
+    >
       <p className="text-xs text-slate-500 mb-3">
         Referência interna (súmulas, teses, cálculos, defesas, checklist). O
         mesmo acervo alimenta o Assistente IA e o Motor de Teses. Toda aplicação
@@ -336,6 +280,6 @@ export default function GuiaBancario() {
         Instrumento de trabalho interno. Jurisprudência sujeita a atualização —
         confirmar a data e eventual superação antes de aplicar.
       </p>
-    </div>
+    </GuiaShell>
   );
 }

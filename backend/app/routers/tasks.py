@@ -50,18 +50,7 @@ class TaskPatch(BaseModel):
     responsavel_id: Optional[str] = None
 
 
-def _ids_casos_do_usuario(cu: User):
-    return (
-        select(Case.id)
-        .where(
-            Case.deleted_at.is_(None),
-            or_(
-                Case.advogado_responsavel_id == cu.id,
-                Case.advogado_auxiliar_id == cu.id,
-            ),
-        )
-        .scalar_subquery()
-    )
+from app.core.ownership import ids_casos_do_usuario as _ids_casos_do_usuario
 
 
 async def _carregar_responsavel_ativo(db: AsyncSession, responsavel_id: str) -> User:

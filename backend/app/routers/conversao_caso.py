@@ -29,7 +29,6 @@ from app.models.audit_log import AuditLog, criar_audit_log
 from app.models.case import Case
 from app.models.caso_area import CasoArea
 from app.models.checklist import CaseChecklist, CaseChecklistItem, ChecklistStatus
-from app.models.client import Client
 from app.models.deadline import Deadline, DeadlineStatus
 from app.models.fee import Fee, FeeStatus
 from app.models.procuracao import Procuracao
@@ -39,6 +38,8 @@ from app.schemas.redesign import ConversaoChecklistResponse
 from app.schemas.process import ProcessCreate
 from app.services.conflito_service import detectar_conflito
 from app.services.processo_service import ProcessConflict, criar_processo
+
+from app.services.client_qualification import carregar_qualificacao_cliente
 
 logger = logging.getLogger(__name__)
 
@@ -68,25 +69,7 @@ async def _computar_checklist(db: AsyncSession, case: Case) -> tuple[list[dict],
     itens: list[dict] = []
     hoje = date.today()
 
-    client = (await db.execute(
-        select(Client).where(Client.id == case.client_id, Client.deleted_at.is_(None))
-    )).scalar_one_or_none()
-
-    # 1. qualificacao_completa — nome + CPF/CNPJ + endereço do cliente
-    faltas: list[str] = []
-    if client is None:
-        faltas.append("cliente do caso não encontrado (ou excluído)")
-    else:
-        if not (client.nome or client.razao_social):
-            faltas.append("nome/razão social")
-        if not (client.cpf_enc or client.cnpj_enc):
-            faltas.append("CPF/CNPJ")
-        end_faltas = [rotulo for rotulo, valor in (
-            ("logradouro", client.logradouro), ("número", client.numero),
-            ("cidade", client.cidade), ("UF", client.estado),
-        ) if not valor]
-        if end_faltas:
-            faltas.append("endereço: " + ", ".join(end_faltas))
+    client, faltas = await carregar_qualificacao_cliente(db, case.client_id, incluir_endereco=True)
     itens.append({
         "key": "qualificacao_completa",
         "titulo": "Qualificação completa do cliente",

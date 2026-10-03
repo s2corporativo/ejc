@@ -1,0 +1,11 @@
+/* Entrada global única. A ordem reproduz main.tsx na base 049fd6c;
+   ejc-tokens.css permanece a última folha e governa os aliases legados. */
+@import "./fonts.css";
+@import "../index.css";
+@import "./site-system.css";
+@import "./workspace-executive.css";
+@import "./saas-ultra-v2.css";
+@import "./ejc-reference-2026.css";
+@import "./ejc-reference-systemwide.css";
+@import "./ejc-dashboard-premium.css";
+@import "./ejc-tokens.css";

@@ -8,13 +8,15 @@ detalhe claro, NUNCA 500 com stacktrace), endpoints que funcionam sem IA
 Sempre executado com PYTHONPATH=backend e env_shell.sh.
 """
 
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
+
 
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 
 SENHA = _qa_pw('M23')
@@ -27,7 +29,7 @@ import subprocess
 
 import requests
 
-BASE = "http://127.0.0.1:8000"
+BASE = _shared.LOCAL_API
 PASS = FAIL = 0
 
 
@@ -65,12 +67,12 @@ def H(email):
     return {"Authorization": f"Bearer {tok(email)}"}
 
 
-E_SOCIO = "ejc_qa_auth_socio@golocal.ejc"
-E_ADV = "ejc_qa_auth_advogado@golocal.ejc"
-E_EST = "ejc_qa_auth_estagiario@golocal.ejc"
-E_FIN = "ejc_qa_auth_financeiro@golocal.ejc"
-E_CLI = "ejc_qa_auth_cliente@golocal.ejc"
-E_ADMIN = "ejc_qa_auth_admin@golocal.ejc"
+E_SOCIO = _shared.qa_email('socio')
+E_ADV = _shared.qa_email('advogado')
+E_EST = _shared.qa_email('estagiario')
+E_FIN = _shared.qa_email('financeiro')
+E_CLI = _shared.qa_email('cliente')
+E_ADMIN = _shared.qa_email('admin')
 
 print(f"[M23] IA Jurídica Central — {BASE}", flush=True)
 

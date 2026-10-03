@@ -1,3 +1,6 @@
+import { downloadGeneratedPdf } from "../lib/download";
+import { fmtBRL, parseNum } from "../utils/formato";
+import { apiDetailMessage as apiDetail } from "../lib/apiError";
 // ── src/components/PrevidenciarioSimulacao.tsx ───────────────────────────────
 // Simulação de Aposentadoria (EC 103/2019) — vertical previdenciária.
 // Compara as 5 regras de transição (pontos, idade progressiva, pedágio 50%,
@@ -20,33 +23,9 @@ import api from "../lib/api";
 import { toast } from "./Toast";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
-function fmtBRL(v: number | null | undefined) {
-  return Number(v ?? 0).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
 function fmtPct(coef: number | null | undefined) {
   if (coef == null) return "—";
   return `${(coef * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
-}
-function parseNum(s: string): number | null {
-  const n = parseFloat(String(s).trim().replace(/\./g, "").replace(",", "."));
-  if (isNaN(n)) {
-    const n2 = parseFloat(String(s).trim().replace(",", "."));
-    return isNaN(n2) ? null : n2;
-  }
-  return n;
-}
-function apiDetail(e: any, fallback: string): string {
-  const d = e?.response?.data?.detail;
-  if (typeof d === "string") return d;
-  if (Array.isArray(d))
-    return d
-      .map((x: any) => (typeof x === "string" ? x : x?.msg || ""))
-      .filter(Boolean)
-      .join("; ");
-  return fallback;
 }
 
 // ── Tipos (contrato SimulacaoPrevidOut) ──────────────────────────────────────
@@ -257,19 +236,11 @@ export default function PrevidenciarioSimulacao() {
     if (!res) return;
     setGerandoPdf(true);
     try {
-      const r = await api.post("/previdenciario/ferramentas/parecer-pdf", res);
-      const downloadUrl: string | undefined = r.data?.download_url;
-      if (!downloadUrl) throw new Error("download_url ausente na resposta");
-      // baseURL do client é /api — remove o prefixo se o backend devolver a URL completa
-      const blob = await api.get(downloadUrl.replace(/^\/api/, ""), {
-        responseType: "blob",
-      });
-      const url = URL.createObjectURL(blob.data as Blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "simulacao-aposentadoria.pdf";
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadGeneratedPdf(
+        "/previdenciario/ferramentas/parecer-pdf",
+        "simulacao-aposentadoria.pdf",
+        res,
+      );
       toast.success("Parecer de simulação (Visual Law) gerado.");
     } catch (e: any) {
       toast.error(apiDetail(e, "Falha ao gerar o parecer em PDF."));

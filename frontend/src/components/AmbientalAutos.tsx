@@ -1,3 +1,4 @@
+import { fmtDia, fmtMoney as fmtBRL } from "../utils/formato";
 // ── src/components/AmbientalAutos.tsx ────────────────────────────────────────
 // Seção especial do ramo Ambiental (padrão AnaliseExtratos/ComparadorBacen):
 // autos de infração ambiental via backend /environmental. Registrar a ciência
@@ -34,18 +35,6 @@ const FORM_VAZIO = {
 };
 
 /** Datas do backend vêm como "YYYY-MM-DD" — formata sem shift de timezone. */
-function fmtDia(d: string | null | undefined) {
-  if (!d) return "—";
-  const [iso] = d.split("T");
-  const partes = iso.split("-");
-  return partes.length === 3 ? partes.reverse().join("/") : d;
-}
-
-function fmtBRL(v: number | string | null) {
-  const n = Number(v);
-  if (v == null || isNaN(n)) return "—";
-  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
 
 function diasRestantes(prazo: string | null): number | null {
   if (!prazo) return null;

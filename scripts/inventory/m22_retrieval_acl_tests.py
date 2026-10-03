@@ -6,13 +6,15 @@ top-k, tenant, cliente, processo, permissões, exclusão, reindexação).
 Dependências: requests. Dados sintéticos identificados por EJC_QA.
 """
 
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
+
 
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 
 SENHA = _qa_pw('M22')
@@ -54,50 +56,31 @@ def busca_rag(params: dict, email: str, timeout: int = 60) -> requests.Response:
         return S.get(f"{BASE}/api/rag/buscar", params=params, headers=H(email),
                      timeout=timeout)
 
-BASE = "http://127.0.0.1:8000"
+BASE = _shared.LOCAL_API
 S = requests.Session()
 TOKENS = {}
 
 def login(email: str) -> str:
-    if email in TOKENS:
-        return TOKENS[email]
-    for _ in range(2):
-        r = S.post(f"{BASE}/api/auth/login", json={
-            "email": email,
-            "password": SENHA,
-        }, headers={"X-Forwarded-For": "127.0.0.1"}, timeout=15)
-        if r.status_code == 429:
-            time.sleep(45)
-            continue
-        r.raise_for_status()
-        TOKENS[email] = r.json()["access_token"]
-        return TOKENS[email]
-    raise SystemExit("login falhou (rate limit persistente)")
+    return _shared.login_rag(email, BASE=BASE, S=S, SENHA=SENHA, TOKENS=TOKENS, time=time)
 
 def H(email: str) -> dict:
-    return {"Authorization": f"Bearer {login(email)}",
-            "X-Forwarded-For": "127.0.0.1"}
+    return _shared.email_headers(email, login=login)
 
 def db(msg: str) -> None:
     print(f"[M22] {msg}")
 
 PASS = FAIL = 0
-def chk(nome: str, cond: bool, extra: str = "") -> None:
-    global PASS, FAIL
-    if cond:
-        PASS += 1
-        print(f"[PASS] {nome}")
-    else:
-        FAIL += 1
-        print(f"[FAIL] {nome} — {extra}")
+def chk(nome: str, cond: bool, extra: str='') -> None:
+    global FAIL, PASS
+    FAIL, PASS = _shared.check_pass_fail(nome, cond, extra, FAIL=FAIL, PASS=PASS)
 
 # ═══════════════════ 0. PREPARAÇÃO ════════════════════════════════════════
 db("preparação: tokens")
 
-E_ADV = "ejc_qa_auth_advogado@golocal.ejc"
-E_SOC = "ejc_qa_auth_socio@golocal.ejc"
-E_CLI = "ejc_qa_auth_cliente@golocal.ejc"
-E_FIN = "ejc_qa_auth_financeiro@golocal.ejc"
+E_ADV = _shared.qa_email('advogado')
+E_SOC = _shared.qa_email('socio')
+E_CLI = _shared.qa_email('cliente')
+E_FIN = _shared.qa_email('financeiro')
 
 # documentos QA criados pelo M21 (ingest texto manual com chave estável)
 doc_revisao_id = None

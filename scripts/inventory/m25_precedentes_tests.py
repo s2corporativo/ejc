@@ -20,6 +20,12 @@ Rotas corretas (confirmdas no app):
   /api/teses, /api/cases/{id}/teses-sugeridas
 """
 from __future__ import annotations
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import os
 import sys
 import time
@@ -27,27 +33,21 @@ import requests
 
 
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 
 SENHA = _qa_pw('M25')
 
-API = "http://127.0.0.1:8000"
+API = _shared.LOCAL_API
 S = requests.Session()  # SEM Content-Type no header da sessão
 PASS = []
 FAIL = []
 
 def _pass(msg):
-    PASS.append(msg)
-    print(f"[PASS] {msg}")
+    return _shared.record_pass(msg, PASS=PASS)
 
 def _fail(msg):
-    FAIL.append(msg)
-    print(f"[FAIL] {msg}")
+    return _shared.record_fail(msg, FAIL=FAIL)
 
 TOKENS = {}
 
@@ -69,14 +69,7 @@ def _token(email):
 def authed(role):
     S.headers["Authorization"] = f"Bearer {_token(EMAILS[role])}"
 
-EMAILS = {
-    "admin": "ejc_qa_auth_admin@golocal.ejc",
-    "socio": "ejc_qa_auth_socio@golocal.ejc",
-    "advogado": "ejc_qa_auth_advogado@golocal.ejc",
-    "estagiario": "ejc_qa_auth_estagiario@golocal.ejc",
-    "financeiro": "ejc_qa_auth_financeiro@golocal.ejc",
-    "cliente": "ejc_qa_auth_cliente@golocal.ejc",
-}
+EMAILS = _shared.qa_emails(('admin', 'socio', 'advogado', 'estagiario', 'financeiro', 'cliente'))
 
 CNJ_VALIDO = "1234567-11.2026.8.13.0001"   # DV módulo 97 correto
 CNJ_DV_ERRADO = "1234567-61.2026.8.13.0001"  # DV adulterado

@@ -1,3 +1,4 @@
+import { apiDetailMessage as msgErro } from "../lib/apiError";
 import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, XCircle, RefreshCw, Scale } from "lucide-react";
 import api from "../lib/api";
@@ -24,20 +25,6 @@ interface ChecklistItem {
 interface ChecklistResponse {
   itens: ChecklistItem[];
   pronto: boolean;
-}
-
-function msgErro(e: unknown, fallback: string): string {
-  const detail = (e as { response?: { data?: { detail?: unknown } } })?.response
-    ?.data?.detail;
-  if (typeof detail === "string") return detail;
-  if (
-    detail &&
-    typeof detail === "object" &&
-    typeof (detail as { mensagem?: unknown }).mensagem === "string"
-  ) {
-    return (detail as { mensagem: string }).mensagem;
-  }
-  return fallback;
 }
 
 export default function ConversaoChecklist({

@@ -8,6 +8,8 @@ from __future__ import annotations
 import logging
 import re
 
+from app.utils.values import nome_local_xml
+
 logger = logging.getLogger("ejc.ocr")
 
 # Imports lazy/opcionais — sistema funciona sem OCR de imagem
@@ -289,8 +291,7 @@ def _xml_root(bruto: str):
 
 
 def _local(tag) -> str:
-    """Nome local do elemento, ignorando namespace ({ns}Tag → Tag)."""
-    return tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
+    return nome_local_xml(tag)
 
 
 def _extrair_nfe(root, bruto: str) -> dict | None:

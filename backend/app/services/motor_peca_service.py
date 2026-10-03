@@ -30,7 +30,6 @@ from app.core.config import get_settings
 from app.models.ai_log import AILog, AIStatusHITL, AITipoUso
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case
-from app.models.client import Client
 from app.models.deadline import (
     Deadline,
     DeadlinePrioridade,
@@ -41,6 +40,8 @@ from app.models.document import Document
 from app.models.procuracao import Procuracao
 from app.services.deadline_calculator import prazo_dias_corridos, prazo_dias_uteis
 from app.services.sanitizer import sanitizar_pii
+
+from app.services.client_qualification import carregar_qualificacao_cliente
 
 logger = logging.getLogger("ejc.motor_peca")
 
@@ -433,17 +434,7 @@ async def montar_checklist(
     hoje = date.today()
 
     # 1. qualificacao_cliente
-    client = (await db.execute(
-        select(Client).where(Client.id == case.client_id, Client.deleted_at.is_(None))
-    )).scalar_one_or_none()
-    faltas: list[str] = []
-    if client is None:
-        faltas.append("cliente do caso não encontrado (ou excluído)")
-    else:
-        if not (client.nome or client.razao_social):
-            faltas.append("nome/razão social")
-        if not (client.cpf_enc or client.cnpj_enc):
-            faltas.append("CPF/CNPJ")
+    _client, faltas = await carregar_qualificacao_cliente(db, case.client_id)
     itens.append({
         "key": "qualificacao_cliente",
         "titulo": "Qualificação do cliente",

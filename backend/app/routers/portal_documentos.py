@@ -38,7 +38,7 @@ from app.models.solicitacao_documento import (
     SolicitacaoDocumento,
     SolicitacaoDocumentoItem,
 )
-from app.models.user import User, UserRole
+from app.models.user import User
 # Reuso EXATO das validações de upload do GED (não duplicar regra de negócio).
 from app.services.document_content_policy import (
     exigir_extensao_permitida,
@@ -51,14 +51,7 @@ logger = logging.getLogger("ejc.portal_documentos")
 router = APIRouter(prefix="/portal", tags=["Portal do Cliente"])
 
 
-def _exigir_cliente(cu: User) -> str:
-    """Garante perfil cliente_externo com vínculo; retorna client_id (mesma
-    checagem de portal.py)."""
-    if cu.role != UserRole.cliente_externo or not cu.client_id:
-        raise HTTPException(
-            status_code=403, detail="Acesso exclusivo do Portal do Cliente"
-        )
-    return cu.client_id
+from app.core.security import cliente_portal_id as _exigir_cliente
 
 
 @router.get("/solicitacoes-documentos",

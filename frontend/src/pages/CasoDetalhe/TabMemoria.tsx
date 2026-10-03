@@ -1,3 +1,8 @@
+import {
+  FormInput,
+  FormSelect,
+  FormTextarea,
+} from "../../components/FormFields";
 import React, { useState } from "react";
 import api from "../../lib/api";
 import { asList } from "../../lib/list";
@@ -104,22 +109,13 @@ export default function TabMemoria({ caseId }: { caseId: string }) {
       {showForm && (
         <form onSubmit={salvar} className="card p-4 space-y-3">
           <div className="grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <label className="label">Tipo</label>
-              <select
-                value={form.tipo}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, tipo: e.target.value }))
-                }
-                className="input w-full"
-              >
-                {Object.entries(TIPOS).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <FormSelect
+              label="Tipo"
+              options={TIPOS}
+              value={form.tipo}
+              onChange={(e) => setForm((f) => ({ ...f, tipo: e.target.value }))}
+              className="input w-full"
+            />
             <div>
               <label className="label">Resultado</label>
               <select
@@ -136,39 +132,35 @@ export default function TabMemoria({ caseId }: { caseId: string }) {
                 ))}
               </select>
             </div>
-            <div className="col-span-2">
-              <label className="label">Título *</label>
-              <input
-                required
-                value={form.titulo}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, titulo: e.target.value }))
-                }
-                className="input w-full"
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="label">Conteúdo *</label>
-              <textarea
-                required
-                rows={3}
-                value={form.conteudo}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, conteudo: e.target.value }))
-                }
-                className="input w-full"
-              />
-            </div>
-            <div>
-              <label className="label">Área do Direito</label>
-              <input
-                value={form.area_direito}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, area_direito: e.target.value }))
-                }
-                className="input w-full"
-              />
-            </div>
+            <FormInput
+              label="Título *"
+              containerClassName="col-span-2"
+              required
+              value={form.titulo}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, titulo: e.target.value }))
+              }
+              className="input w-full"
+            />
+            <FormTextarea
+              label="Conteúdo *"
+              containerClassName="col-span-2"
+              required
+              rows={3}
+              value={form.conteudo}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, conteudo: e.target.value }))
+              }
+              className="input w-full"
+            />
+            <FormInput
+              label="Área do Direito"
+              value={form.area_direito}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, area_direito: e.target.value }))
+              }
+              className="input w-full"
+            />
           </div>
           <div className="flex gap-2">
             <button type="submit" className="btn-primary text-sm">

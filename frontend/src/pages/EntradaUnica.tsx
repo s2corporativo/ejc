@@ -1,3 +1,4 @@
+import { asDataList as asLista } from "../lib/list";
 // Entrada Única (/entrada) — porta de entrada principal de casos.
 // Fluxo canônico:
 //   A) relato + documentos → análise preliminar;
@@ -38,12 +39,6 @@ type ClienteContexto = {
 };
 
 const PAPEIS_ENTRADA_IA = new Set(["superadmin", "admin", "socio", "advogado"]);
-
-function asLista<T>(payload: unknown): T[] {
-  if (Array.isArray(payload)) return payload as T[];
-  const data = (payload as { data?: unknown })?.data;
-  return Array.isArray(data) ? (data as T[]) : [];
-}
 
 /** Mensagem humana a partir de um detail de erro HTTP (nunca objeto cru). */
 function mensagemDeErro(err: unknown, fallback: string): string {

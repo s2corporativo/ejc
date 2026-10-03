@@ -1,3 +1,4 @@
+import { AREA_CATALOG } from "../../lib/areaCatalog";
 import { RAMOS, type FerramentaConfig, type RamoConfig } from "./ramosConfig";
 
 export type AreaResumo = {
@@ -25,37 +26,13 @@ export type ResultadoFerramentaBusca = {
  * Os slugs continuam sendo os do backend; este catálogo é fallback de UX e
  * não substitui a taxonomia persistida.
  */
-export const AREAS_CANONICAS: AreaResumo[] = [
-  ["empresarial", "Direito Empresarial"],
-  ["civil", "Direito Cível"],
-  ["criminal", "Direito Penal"],
-  ["trabalhista", "Direito Trabalhista"],
-  ["administrativo", "Direito Administrativo"],
-  ["bancario", "Direito Bancário"],
-  ["tributario", "Direito Tributário"],
-  ["ambiental", "Direito Ambiental"],
-  ["consumidor", "Direito do Consumidor"],
-  ["familia", "Direito de Família"],
-  ["sucessoes", "Direito das Sucessões"],
-  ["imobiliario", "Direito Imobiliário"],
-  ["previdenciario", "Direito Previdenciário"],
-  ["saude", "Direito da Saúde"],
-  ["medico", "Direito Médico"],
-  ["digital_lgpd", "Direito Digital e LGPD"],
-  ["transito", "Direito de Trânsito"],
-  ["constitucional", "Direito Constitucional"],
-  ["agrario", "Direito Agrário"],
-  ["agronegocio", "Direito do Agronegócio"],
-  ["eleitoral", "Direito Eleitoral"],
-  ["internacional", "Direito Internacional"],
-  ["contratual", "Direito Contratual"],
-  ["societario", "Direito Societário"],
-  ["licitacoes", "Licitações"],
-].map(([slug, nome], index) => ({
-  slug,
-  nome,
-  ordem: (index + 1) * 10,
-}));
+export const AREAS_CANONICAS: AreaResumo[] = [...AREA_CATALOG]
+  .sort((a, b) => a.ordemWorkspace - b.ordemWorkspace)
+  .map(({ slug, nomeWorkspace: nome, ordemWorkspace: ordem }) => ({
+    slug,
+    nome,
+    ordem,
+  }));
 
 /**
  * Somente aliases técnicos em que a taxonomia de casos e o slug histórico do

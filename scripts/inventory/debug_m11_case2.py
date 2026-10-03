@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """Debug: segunda criação de caso na bateria M11."""
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import os, time
 import requests as S_
 import subprocess
 
-BASE = "http://127.0.0.1:8000"
-ADM_E = "ejc_qa_auth_admin@golocal.ejc"
+BASE = _shared.LOCAL_API
+ADM_E = _shared.qa_email('admin')
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 PWD = _qa_pw('PWD')
 def db(sql):

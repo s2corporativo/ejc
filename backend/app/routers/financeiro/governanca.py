@@ -1,8 +1,8 @@
 """Rotas internas do módulo Financeiro. URLs públicas preservadas."""
+from app.routers.financeiro.fechamento_comum import persistir_fechamento
 from fastapi import Depends
 from app.core.security import get_current_user
 from app.core.database import get_db
-import json
 from fastapi import Query
 from uuid import uuid4
 
@@ -441,23 +441,8 @@ async def fechar_competencia_financeira(
     }
     cid = str(uuid4())
     agora = datetime.now(timezone.utc)
-    await db.execute(
-        text(
-            """
-            INSERT INTO finance_month_closings
-                (id,competencia,snapshot_json,closed_by,closed_at,created_at)
-            VALUES
-                (:id,:competencia,CAST(:snapshot AS jsonb),:closed_by,:closed_at,NOW())
-            """
-        ),
-        {
-            "id": cid,
-            "competencia": body.competencia,
-            "snapshot": json.dumps(snapshot, default=str, ensure_ascii=False),
-            "closed_by": cu.id,
-            "closed_at": agora,
-        },
-    )
+    await persistir_fechamento(db, tipo="financeiro", cid=cid, competencia=body.competencia,
+                              snapshot=snapshot, closed_by=cu.id, closed_at=agora)
     from app.models.audit_log import criar_audit_log
     await criar_audit_log(
         db,

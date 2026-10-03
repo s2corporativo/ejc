@@ -2,8 +2,6 @@
    Áreas: bancario, consumidor, trabalhista, empresarial, default. Usa o gateway de IA.
    Respeita: NUNCA inventa lei/jurisprudência, NUNCA promete resultado.
 """
-import json
-import re
 from datetime import date
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
@@ -16,6 +14,8 @@ from app.services import ai_gateway, abusividade_service
 from app.services.calc import cet as cet_calc
 from app.core.rate_limit import rate_limit
 from app.core.upload_guard import validar_upload
+
+from app.utils.ai_json import parse_json_response
 
 router = APIRouter(prefix="/analise-bancaria", tags=["Análise de Documento"])
 
@@ -87,15 +87,7 @@ FORMATO = (
 
 
 def _parse_json(txt: str) -> Optional[dict]:
-    if not txt:
-        return None
-    m = re.search(r"\{.*\}", txt, re.S)
-    if not m:
-        return None
-    try:
-        return json.loads(m.group(0))
-    except Exception:
-        return None
+    return parse_json_response(txt, direct=False)
 
 
 async def _analisar(texto: str, area: str = "default", *, db=None,

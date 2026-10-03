@@ -1,0 +1,2 @@
+# Fonte histórica versionável; o ignore global de *.gz continua para os demais arquivos.
+!apply_architecture_refactor_wave1.py.gz

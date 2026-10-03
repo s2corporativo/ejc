@@ -41,18 +41,7 @@ def _escopo_clientes(stmt, cu: User):
     return stmt.where(Client.id.in_(ids_clientes_visiveis(cu)))
 
 
-def _ids_casos_do_usuario(user: User):
-    return (
-        select(Case.id)
-        .where(
-            Case.deleted_at.is_(None),
-            or_(
-                Case.advogado_responsavel_id == user.id,
-                Case.advogado_auxiliar_id == user.id,
-            ),
-        )
-        .scalar_subquery()
-    )
+from app.core.ownership import ids_casos_do_usuario as _ids_casos_do_usuario
 
 
 def _ids_clientes_dos_casos_do_usuario(user: User):

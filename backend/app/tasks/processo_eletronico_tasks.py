@@ -20,12 +20,7 @@ from app.core.celery_app import celery_app
 logger = logging.getLogger("ejc.tasks.processo_eletronico")
 
 
-async def _com_engine_limpo(coro):
-    from app.core.database import engine
-    try:
-        return await coro
-    finally:
-        await engine.dispose()
+from app.services.runtime_helpers import com_engine_limpo as _com_engine_limpo
 
 
 async def _sincronizar_processo(case_id: str, numero_cnj: str) -> dict:

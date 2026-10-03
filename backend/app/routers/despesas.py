@@ -1,3 +1,4 @@
+from app.core.security import requer_perfis
 import csv
 import io
 import calendar
@@ -32,8 +33,7 @@ _FIN = {"superadmin", "admin", "socio", "financeiro"}
 
 
 def _req_fin(cu: User = Depends(get_current_user)) -> User:
-    if cu.role.value not in _FIN:
-        raise HTTPException(status_code=403, detail="Acesso restrito a gestão/financeiro")
+    requer_perfis(cu, _FIN, "Acesso restrito a gestão/financeiro")
     return cu
 
 
@@ -485,13 +485,7 @@ async def create_despesa(
     return row
 
 
-@router.patch("/{despesa_id}")
-async def update_despesa(
-    despesa_id: str,
-    body: DespesaUpdate,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
+async def _despesa_existente(db: AsyncSession, despesa_id: str):
     atual = await db.execute(
         text(
             """
@@ -507,6 +501,17 @@ async def update_despesa(
     antes = atual.mappings().first()
     if not antes:
         raise HTTPException(status_code=404, detail="Despesa não encontrada")
+    return antes
+
+
+@router.patch("/{despesa_id}")
+async def update_despesa(
+    despesa_id: str,
+    body: DespesaUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    antes = await _despesa_existente(db, despesa_id)
 
     updates = body.model_dump(exclude_unset=True)
     motivo_correcao = (updates.pop("motivo_correcao", None) or "").strip() or None
@@ -628,21 +633,7 @@ async def delete_despesa(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    atual = await db.execute(
-        text(
-            """
-            SELECT id, categoria, subcategoria, tipo, descricao, valor,
-                   vencimento, pago_em, recorrente, recorrencia, status,
-                   competencia, comprovante_doc_id, created_at, updated_at
-            FROM office_expenses
-            WHERE id=:id AND deleted_at IS NULL
-            """
-        ),
-        {"id": despesa_id},
-    )
-    antes = atual.mappings().first()
-    if not antes:
-        raise HTTPException(status_code=404, detail="Despesa não encontrada")
+    antes = await _despesa_existente(db, despesa_id)
     competencia_atual = (
         antes["competencia"]
         or competencia_de_data(antes["pago_em"] or antes["vencimento"])

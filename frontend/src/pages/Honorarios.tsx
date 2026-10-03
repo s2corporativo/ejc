@@ -1,3 +1,4 @@
+import { hojeISO } from "../utils/formato";
 import { exportCsv } from "../utils/exportCsv";
 import { toast } from "../components/Toast";
 import { exportPdf } from "../utils/exportPdf";
@@ -44,14 +45,6 @@ import {
 const STATUS_VALIDOS = FEE_STATUSES.filter((status) => status !== "cancelado");
 type FeeRow = Fee & { client_nome?: string | null; saldo?: number };
 const TIPOS_COM_PERCENTUAL = ["exito", "misto"];
-
-function hojeISO(): string {
-  const agora = new Date();
-  const ano = agora.getFullYear();
-  const mes = String(agora.getMonth() + 1).padStart(2, "0");
-  const dia = String(agora.getDate()).padStart(2, "0");
-  return `${ano}-${mes}-${dia}`;
-}
 
 export function quantoCobrar(f: Fee): string {
   const partes: string[] = [];

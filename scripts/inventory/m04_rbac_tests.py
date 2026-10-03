@@ -6,6 +6,12 @@ por login (TestClient contra servidor vivo). Verifica autorização vertical
 (cada perfil só alcança o que lhe cabe) e pontos de escalada indevida.
 Resultados em qa/homologacao/m04/resultado_rbac_tests.txt
 """
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import os
 import sys
 
@@ -16,14 +22,10 @@ import requests
 from app.core.config import get_settings
 settings = get_settings()
 
-BASE = "http://127.0.0.1:8000"
+BASE = _shared.LOCAL_API
 S = requests.Session()
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 SENHA = _qa_pw('SENHA')
 # Rotaciona IP via X-Forwarded-For para não atingir o rate limit de login
@@ -47,15 +49,7 @@ RESULTADOS = []
 DIR = "/home/ubuntu/ejc_repo/qa/homologacao/m04"
 os.makedirs(DIR, exist_ok=True)
 
-USERS = {
-    "admin": "ejc_qa_auth_admin@golocal.ejc",
-    "socio": "ejc_qa_auth_socio@golocal.ejc",
-    "advogado": "ejc_qa_auth_advogado@golocal.ejc",
-    "estagiario": "ejc_qa_auth_estagiario@golocal.ejc",
-    "financeiro": "ejc_qa_auth_financeiro@golocal.ejc",
-    "secretaria": "ejc_qa_auth_secretaria@golocal.ejc",
-    "cliente": "ejc_qa_auth_cliente@golocal.ejc",
-}
+USERS = _shared.qa_emails(('admin', 'socio', 'advogado', 'estagiario', 'financeiro', 'secretaria', 'cliente'))
 
 
 def login(email):

@@ -226,17 +226,7 @@ async def buscar_lote_paginado(
     return coletados[:maximo]
 
 
-async def buscar_documento_saneamento(
-    numero_cnj: str, tribunal_alias: str | None = None,
-) -> dict | None:
-    """Documento completo (`_source`) para o painel de reconciliação.
-
-    Diferente de ``consultar_processo`` (que já normaliza para
-    classe/orgao/movimentos, uso do card de andamentos), devolve o `_source`
-    cru — o módulo de saneamento precisa de campos que aquele normalizador
-    descarta: ``dataAjuizamento``, ``tribunal``, ``grau``, ``formato``,
-    ``sistema`` e sobretudo ``nivelSigilo`` (tratamento restrito).
-    """
+def _preparar_consulta(numero_cnj: str, tribunal_alias: str | None):
     s = get_settings()
     if not s.DATAJUD_ENABLED or not s.DATAJUD_API_KEY:
         raise DataJudDesabilitadoError(
@@ -255,6 +245,21 @@ async def buscar_documento_saneamento(
         "Authorization": f"APIKey {s.DATAJUD_API_KEY}",
         "Content-Type": "application/json",
     }
+    return alias, n, payload, headers
+
+
+async def buscar_documento_saneamento(
+    numero_cnj: str, tribunal_alias: str | None = None,
+) -> dict | None:
+    """Documento completo (`_source`) para o painel de reconciliação.
+
+    Diferente de ``consultar_processo`` (que já normaliza para
+    classe/orgao/movimentos, uso do card de andamentos), devolve o `_source`
+    cru — o módulo de saneamento precisa de campos que aquele normalizador
+    descarta: ``dataAjuizamento``, ``tribunal``, ``grau``, ``formato``,
+    ``sistema`` e sobretudo ``nivelSigilo`` (tratamento restrito).
+    """
+    alias, _n, payload, headers = _preparar_consulta(numero_cnj, tribunal_alias)
     data = await _datajud_search(alias, payload, headers)
     hits = (data.get("hits") or {}).get("hits") or []
     if not hits:
@@ -567,25 +572,7 @@ async def consultar_movimentos(
       • TribunalNaoMapeadoError — segmento J.TR sem alias no mapa;
       • httpx.* — falha de rede/HTTP após os retries (mensagens sem a chave).
     """
-    s = get_settings()
-    if not s.DATAJUD_ENABLED or not s.DATAJUD_API_KEY:
-        raise DataJudDesabilitadoError(
-            "Integração DataJud desativada ou sem chave configurada "
-            "(DATAJUD_ENABLED/DATAJUD_API_KEY)."
-        )
-    alias = (tribunal_alias or "").strip() or alias_do_numero(numero_cnj)
-    if not alias:
-        raise TribunalNaoMapeadoError(
-            "Tribunal não mapeado para consulta ao DataJud (segmento J.TR do "
-            "número CNJ fora do mapa atualmente suportado)."
-        )
-
-    n = re.sub(r"\D", "", numero_cnj or "")
-    payload = {"query": {"match": {"numeroProcesso": n}}, "size": 1}
-    headers = {
-        "Authorization": f"APIKey {s.DATAJUD_API_KEY}",
-        "Content-Type": "application/json",
-    }
+    alias, n, payload, headers = _preparar_consulta(numero_cnj, tribunal_alias)
     # OPS-04 (Auditoria 2026-09-20): cache compartilhado entre os N workers do
     # uvicorn (o cache em memória é por processo — 3 workers = 3 fetches por
     # mesmo nº CNJ). Opt-in via DATAJUD_CACHE_REDIS_ENABLED; default OFF porque

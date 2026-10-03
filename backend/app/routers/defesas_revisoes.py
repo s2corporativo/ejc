@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -20,6 +19,12 @@ from app.models.user import User
 from app.services.ai.core.orchestrator import orchestrator
 from app.services.entrada_universal_service import expandir_arquivo, extrair_paginas, montar_dossie
 from app.services.motor_peca_service import CATALOGO_PECAS
+
+from app.utils.ai_json import parse_json_response
+
+from app.utils.values import como_lista
+
+from app.core.ownership import role_str
 
 router = APIRouter(prefix="/defesas-revisoes", tags=["Defesas e Revisões"])
 
@@ -92,8 +97,7 @@ Responda APENAS com JSON válido:
 
 
 def _role_value(user: User) -> str:
-    role = getattr(user, "role", "")
-    return role.value if hasattr(role, "value") else str(role)
+    return role_str(user) if hasattr(user, "role") else ""
 
 
 def _exigir_juridico(user: User) -> None:
@@ -102,24 +106,11 @@ def _exigir_juridico(user: User) -> None:
 
 
 def _parse_json(texto: str) -> Optional[dict]:
-    if not texto:
-        return None
-    try:
-        obj = json.loads(texto)
-        return obj if isinstance(obj, dict) else None
-    except Exception:
-        match = re.search(r"\{.*\}", texto, re.DOTALL)
-        if not match:
-            return None
-        try:
-            obj = json.loads(match.group(0))
-            return obj if isinstance(obj, dict) else None
-        except Exception:
-            return None
+    return parse_json_response(texto, require_dict=True)
 
 
 def _lista(value: Any) -> list:
-    return value if isinstance(value, list) else []
+    return como_lista(value)
 
 
 def _fallback_peca(modalidade: str, resultado: dict) -> str:

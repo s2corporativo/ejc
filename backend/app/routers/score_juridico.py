@@ -1,9 +1,10 @@
 # ── app/routers/score_juridico.py ────────────────────────────────────────────
 from __future__ import annotations
+from app.core.security import requer_perfis
 import json
 import logging
 import re
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
@@ -21,9 +22,7 @@ _ADV = {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar"}
 
 
 def _req_adv(cu: User = Depends(get_current_user)) -> User:
-    # Cálculo de score dispara IA + grava no caso: só equipe jurídica.
-    if cu.role.value not in _ADV:
-        raise HTTPException(status_code=403, detail="Acesso restrito à equipe jurídica")
+    requer_perfis(cu, _ADV, "Acesso restrito à equipe jurídica")
     return cu
 
 DIMS = {

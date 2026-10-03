@@ -3,12 +3,13 @@
 # calcula prazo de defesa (Decreto 6.514/08 art. 113) e cria
 # AUTOMATICAMENTE uma deadline crítica vinculada ao caso.
 from __future__ import annotations
+from app.core.pagination import executar_pagina
 from datetime import datetime, timezone
 from uuid import uuid4
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func as sqlfunc, or_
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -85,12 +86,7 @@ async def listar(
         q = q.where(EnvironmentalCase.status_defesa == status_f)
     q = q.order_by(EnvironmentalCase.data_prazo_defesa.asc().nullslast())
 
-    total = (await db.execute(
-        select(sqlfunc.count()).select_from(q.subquery())
-    )).scalar()
-    rows = (await db.execute(
-        q.offset((page - 1) * page_size).limit(page_size)
-    )).scalars().all()
+    total, rows = await executar_pagina(db, q, page, page_size)
     return {
         "data": [EnvCaseResponse.model_validate(e) for e in rows],
         "total": total, "page": page, "page_size": page_size,

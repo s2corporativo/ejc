@@ -26,6 +26,8 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP, localcontext
 
+from app.utils.values import decimal_exato
+
 _CENT = Decimal("0.01")
 _DIAS_ANO = Decimal("365")
 _TOL_I = Decimal("1e-12")       # tolerância no passo da taxa
@@ -51,9 +53,7 @@ AVISOS_HITL = [
 
 
 def _dec(v) -> Decimal:
-    if isinstance(v, Decimal):
-        return v
-    return Decimal(str(v))
+    return decimal_exato(v)
 
 
 def _q(v: Decimal) -> Decimal:

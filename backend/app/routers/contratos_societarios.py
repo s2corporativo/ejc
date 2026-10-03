@@ -1,20 +1,20 @@
 # ── app/routers/contratos_societarios.py ─────────────────────────────────────
 # Gestão de Contratos Societários — CRUD + ciclo de vida + alertas.
 from __future__ import annotations
+from app.core.pagination import executar_pagina
 from uuid import uuid4
 from datetime import datetime, timezone, date as _date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func, or_, and_
+from sqlalchemy import select, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.models.user import User
-from app.models.case import Case
 from app.models.client import Client
 from app.models.contrato_societario import (
     ContratoSocietario, ContratoHistorico,
@@ -80,39 +80,10 @@ def _pode_editar(u: User) -> bool:
     return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["advogado"]
 
 
-def _ids_casos_do_usuario(cu: User):
-    """Casos em que o usuário é responsável/auxiliar (espelha fees/clients)."""
-    return (
-        select(Case.id).where(
-            Case.deleted_at.is_(None),
-            or_(
-                Case.advogado_responsavel_id == cu.id,
-                Case.advogado_auxiliar_id == cu.id,
-            ),
-        ).scalar_subquery()
-    )
+from app.core.ownership import ids_casos_do_usuario as _ids_casos_do_usuario
 
 
-def _ids_clientes_do_usuario(cu: User):
-    """Clientes da carteira do usuário: onde é responsável OU tem caso próprio
-    vinculado (mesma regra de titularidade de clients._filtro_visibilidade_cliente)."""
-    casos_com_cliente = select(Case.client_id).where(
-        Case.client_id.is_not(None),
-        Case.deleted_at.is_(None),
-        or_(
-            Case.advogado_responsavel_id == cu.id,
-            Case.advogado_auxiliar_id == cu.id,
-        ),
-    )
-    return (
-        select(Client.id).where(
-            Client.deleted_at.is_(None),
-            or_(
-                Client.responsavel_id == cu.id,
-                Client.id.in_(casos_com_cliente),
-            ),
-        ).scalar_subquery()
-    )
+from app.core.client_ownership import ids_clientes_visiveis as _ids_clientes_do_usuario
 
 
 def _filtro_escopo_contratos(q, cu: User):
@@ -207,8 +178,8 @@ async def listar_contratos(
         limite = _date_cls.today() + timedelta(days=vencendo)
         q = q.where(ContratoSocietario.data_fim <= limite, ContratoSocietario.data_fim >= _date_cls.today())
     q = q.order_by(ContratoSocietario.data_fim.asc().nullslast())
-    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
-    items = (await db.execute(q.offset((page-1)*per_page).limit(per_page))).scalars().all()
+    total, items = await executar_pagina(db, q, page, per_page)
+    total = total or 0
     return {"total": total, "page": page, "per_page": per_page, "items": [_out(c) for c in items]}
 
 

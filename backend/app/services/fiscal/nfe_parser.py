@@ -17,12 +17,13 @@ from decimal import Decimal, InvalidOperation
 
 from defusedxml import ElementTree as ET
 
+from app.utils.values import nome_local_xml
+
 _ZERO = Decimal("0")
 
 
 def _local(tag) -> str:
-    """Nome local do elemento, ignorando namespace ({ns}Tag → Tag)."""
-    return tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
+    return nome_local_xml(tag)
 
 
 def _find(el, nome_local: str):

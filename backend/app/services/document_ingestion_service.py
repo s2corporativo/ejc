@@ -28,16 +28,15 @@ from app.services.malware_scan_service import (
     escanear_se_solicitado,
 )
 
+from app.services.document_metadata import normalizar_nome_original as _normalizar_nome_original
+
 
 class MalwareDetectadoError(RuntimeError):
     """Arquivo bloqueado por veredito antimalware; não expõe assinatura."""
 
 
 def normalizar_nome_original(filename: str | None, fallback: str) -> str:
-    """Normaliza somente metadado; nunca usa o nome do cliente no path físico."""
-
-    nome = (filename or fallback).replace("\\", "/").rsplit("/", 1)[-1].strip()
-    return (nome or fallback)[:255]
+    return _normalizar_nome_original(filename, fallback)
 
 
 def _destino_confinado(root: Path, rel: Path) -> Path:

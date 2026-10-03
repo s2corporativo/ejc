@@ -26,6 +26,8 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from app.services.deadline_calculator import prazo_defesa_ambiental
 
+from app.utils.values import decimal_exato
+
 _CENT = Decimal("0.01")
 
 # Constantes legais (as MESMAS já vetadas em amb_auto_infracao):
@@ -51,9 +53,7 @@ AVISO_HITL = (
 
 
 def _dec(v) -> Decimal:
-    if isinstance(v, Decimal):
-        return v
-    return Decimal(str(v))
+    return decimal_exato(v)
 
 
 def _q(v: Decimal) -> Decimal:

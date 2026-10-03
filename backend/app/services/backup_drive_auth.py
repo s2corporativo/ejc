@@ -19,6 +19,8 @@ from google.oauth2 import credentials as user_credentials
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
+from app.services.runtime_helpers import refresh_oauth_if_needed
+
 DRIVE_WRITE_SCOPE = "https://www.googleapis.com/auth/drive"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
@@ -109,9 +111,7 @@ def auth_status() -> dict[str, Any]:
 
 
 def _refresh_if_needed(creds):
-    if not creds.valid and getattr(creds, "refresh_token", None):
-        creds.refresh(Request())
-    return creds
+    return refresh_oauth_if_needed(creds, Request)
 
 
 def _service_account_dedicated():

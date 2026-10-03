@@ -1,3 +1,4 @@
+/* Tokens globais --ejc-* e aliases: fonte canônica em ejc-tokens.css. */
 /*
  * EJC — Institutional Petroleum & Gold 2026
  * Camada visual FINAL do sistema, baseada na referência aprovada em 17/09/2026.
@@ -7,31 +8,6 @@
  * A camada é deliberadamente mais forte no tema claro; o dark mode permanece
  * funcional com seus tokens atuais para reduzir risco de regressão.
  */
-
-:root {
-  --ejc-system-canvas: #f5f4ef;
-  --ejc-system-surface: #fefefe;
-  --ejc-system-surface-soft: #faf9f5;
-  --ejc-system-border: #e2ded2;
-  --ejc-system-border-strong: #cfc9ba;
-  --ejc-system-navy: #0c3a2d;
-  --ejc-system-navy-hover: #062e24;
-  --ejc-system-blue: #cfa961;
-  --ejc-system-blue-soft: #f6eed9;
-  --ejc-system-ink: #1d2b26;
-  --ejc-system-muted: #66766f;
-  --ejc-system-subtle: #93a29b;
-  --ejc-system-success: #17985a;
-  --ejc-system-warning: #e89a1b;
-  --ejc-system-danger: #df3f49;
-  --ejc-system-radius-xs: 10px;
-  --ejc-system-radius-sm: 14px;
-  --ejc-system-radius-md: 18px;
-  --ejc-system-radius-lg: 22px;
-  --ejc-system-shadow:
-    0 1px 2px rgba(15, 35, 60, 0.025), 0 8px 24px -22px rgba(15, 35, 60, 0.32);
-  --ejc-system-shadow-float: 0 18px 48px -34px rgba(15, 35, 60, 0.42);
-}
 
 /* -------------------------------------------------------------------------- */
 /* Base, tipografia e densidade                                                */
@@ -553,22 +529,6 @@ html:not(.dark)
 /* ========================================================================== */
 /* EJC Institutional Petroleum & Gold — referência visual 17/09/2026         */
 /* ========================================================================== */
-
-:root {
-  --ejc-petroleum: #0c3a2d;
-  --ejc-petroleum-deep: #062e24;
-  --ejc-petroleum-soft: #14503f;
-  --ejc-ice: #f5f4ef;
-  --ejc-ice-soft: #faf9f5;
-  --ejc-paper: #fefefe;
-  --ejc-gold: #cfa961;
-  --ejc-gold-deep: #a8873c;
-  --ejc-ink: #1d2b26;
-  --ejc-muted: #66766f;
-  --ejc-hairline: rgba(12, 58, 45, 0.13);
-  --ejc-soft-shadow: 0 14px 36px rgba(23, 48, 39, 0.075);
-  --ejc-float-shadow: 0 24px 58px rgba(18, 42, 34, 0.12);
-}
 
 html:not(.dark) body,
 html:not(.dark) #root,

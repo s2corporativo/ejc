@@ -15,6 +15,7 @@
  */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
+import { inspectCssEntry } from "./auditar-css-imports.mjs";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -81,7 +82,8 @@ function mapearComentariosEStrings(css) {
   for (let i = 0; i < css.length; i += 1) {
     const c = css[i];
     if (emString) {
-      if (c === "\\") i += 1; // consome escape (\" ou \\\\)
+      if (c === "\\")
+        i += 1; // consome escape (\" ou \\\\)
       else if (c === emString) {
         strings.push({ inicio: stringsInicio, fim: i + 1 });
         emString = null;
@@ -143,12 +145,19 @@ function newlinesEscapados(css) {
     if (dentroDe(comentarios, i) || dentroDe(strings, i)) continue;
     const inicioLinha = css.lastIndexOf(NL, i) + 1;
     const fimLinha = css.indexOf(NL, i);
-    const linha = css.slice(inicioLinha, fimLinha === -1 ? css.length : fimLinha);
+    const linha = css.slice(
+      inicioLinha,
+      fimLinha === -1 ? css.length : fimLinha,
+    );
     const antes = css.slice(0, i);
     const depois = css.slice(i + 2);
-    if (antes.endsWith("*/") && antes.slice(antes.lastIndexOf("*/") + 2).trim() === "")
+    if (
+      antes.endsWith("*/") &&
+      antes.slice(antes.lastIndexOf("*/") + 2).trim() === ""
+    )
       add(i); // (b)
-    else if (linha.trim() === BARRA + linha.trim().slice(1)) add(i); // (c)
+    else if (linha.trim() === BARRA + linha.trim().slice(1))
+      add(i); // (c)
     else if (/^\s*\}/.test(depois)) add(i); // (d)
   }
   return achados;
@@ -254,13 +263,6 @@ function auditOrphans() {
   });
 }
 
-function globalCssImports() {
-  const main = readFileSync(MAIN, "utf8");
-  return [...main.matchAll(/import\s+["'](.+?\.css)["'];/g)].map(
-    (match) => match[1],
-  );
-}
-
 function verifyGovernance() {
   if (!existsSync(GOVERNANCE)) {
     console.error("ERRO: frontend/scripts/css-governance.json ausente.");
@@ -268,10 +270,35 @@ function verifyGovernance() {
   }
 
   const governance = JSON.parse(readFileSync(GOVERNANCE, "utf8"));
-  const imports = globalCssImports();
+  const entry = inspectCssEntry(MAIN, SRC);
+  const imports = entry.globalImports;
   const allowed = new Set(governance.allowed_global_imports ?? []);
   const unknown = imports.filter((item) => !allowed.has(item));
   let ok = true;
+  for (const error of entry.errors) {
+    console.error(`ERRO: ${error}`);
+    ok = false;
+  }
+  if (
+    governance.global_entry &&
+    (entry.entryImports.length !== 1 ||
+      entry.entryImports[0] !== governance.global_entry)
+  ) {
+    console.error(
+      `ERRO: main.tsx deve importar somente ${governance.global_entry}.`,
+    );
+    ok = false;
+  }
+  // A lista autorizada também fixa a sequência existente antes da composição.
+  if (
+    JSON.stringify(imports) !==
+    JSON.stringify(governance.allowed_global_imports)
+  ) {
+    console.error(
+      "ERRO: composição global CSS diverge da ordem canônica autorizada.",
+    );
+    ok = false;
+  }
 
   const broken = auditOrphans().filter((item) => item.brokenComments.length);
   if (broken.length) {
@@ -295,7 +322,7 @@ function verifyGovernance() {
   const max = Number(governance.max_global_css_imports ?? allowed.size);
   if (imports.length > max) {
     console.error(
-      `ERRO: main.tsx importa ${imports.length} folhas globais; teto atual: ${max}.`,
+      `ERRO: a composição importa ${imports.length} folhas globais; teto atual: ${max}.`,
     );
     ok = false;
   }
@@ -321,7 +348,7 @@ const report = auditOrphans();
 
 if (args.has("--json")) {
   console.log(
-    JSON.stringify({ globalImports: globalCssImports(), report }, null, 2),
+    JSON.stringify({ ...inspectCssEntry(MAIN, SRC), report }, null, 2),
   );
 } else {
   console.log("Auditoria conservadora de CSS — EJC\n");

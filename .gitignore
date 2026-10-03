@@ -1,5 +1,7 @@
 # Dependencies
 node_modules/
+# npm ci é o gerenciador canônico do frontend (Docker/CI).
+/frontend/pnpm-lock.yaml
 
 # Python
 __pycache__/

@@ -2,6 +2,12 @@
 # M15 — Calendário Forense, Feriados e Suspensões (bateria de homologação)
 # Provado por execução real contra o servidor local na porta 8000.
 from __future__ import annotations
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import os
 import sys
 import json
@@ -9,17 +15,13 @@ import subprocess
 import datetime as dt
 import requests
 
-BASE = "http://127.0.0.1:8000"
+BASE = _shared.LOCAL_API
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 SENHA = _qa_pw('SENHA')
-ADM_EMAIL = "ejc_qa_auth_admin@golocal.ejc"
-FIN_EMAIL = "ejc_qa_auth_financeiro@golocal.ejc"
+ADM_EMAIL = _shared.qa_email('admin')
+FIN_EMAIL = _shared.qa_email('financeiro')
 
 FALHAS = 0
 TOTAL = 0
@@ -51,22 +53,13 @@ async def _drop_feriado_sintetico():
     await _do()
 
 
-def chk(desc, ok, extra=""):
+def chk(desc, ok, extra=''):
     global FALHAS, TOTAL
-    TOTAL += 1
-    if ok:
-        print(f"[PASS] {desc}")
-    else:
-        FALHAS += 1
-        print(f"[FAIL] {desc} — {extra}")
+    FALHAS, TOTAL = _shared.check_failures(desc, ok, extra, FALHAS=FALHAS, TOTAL=TOTAL)
 
 
 def db(sql):
-    env = dict(os.environ)
-    env["PGPASSWORD"] = "ejc"
-    o = subprocess.run(["psql", "-h", "localhost", "-U", "ejc", "-d", "ejc",
-                        "-t", "-A", "-c", sql], capture_output=True, text=True, env=env)
-    return o.stdout.strip()
+    return _shared.query_local(sql, runner=subprocess.run, environ=os.environ)
 
 
 def token(email):

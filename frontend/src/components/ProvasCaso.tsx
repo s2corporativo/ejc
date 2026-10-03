@@ -1,3 +1,5 @@
+import { downloadGeneratedPdf } from "../lib/download";
+import { apiDetailMessage as apiDetail } from "../lib/apiError";
 import { useEffect, useState } from "react";
 import {
   Paperclip,
@@ -157,12 +159,6 @@ const TIPO_COR: Record<ProvaTipo, string> = {
 const TIPO_LABEL: Record<ProvaTipo, string> = Object.fromEntries(
   TIPOS.map((t) => [t.key, t.label]),
 ) as Record<ProvaTipo, string>;
-
-function apiDetail(e: unknown, fallback: string): string {
-  const detail = (e as { response?: { data?: { detail?: unknown } } })?.response
-    ?.data?.detail;
-  return typeof detail === "string" ? detail : fallback;
-}
 
 interface FormState {
   tipo: ProvaTipo;
@@ -449,18 +445,11 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
   const gerarDocumentoUnico = async () => {
     setGerandoPdf(true);
     try {
-      const r = await api.post(`/casos/${caseId}/provas/documento-unico`);
-      const downloadUrl: string | undefined = r.data?.download_url;
-      if (!downloadUrl) throw new Error("download_url ausente na resposta");
-      const blob = await api.get(downloadUrl.replace(/^\/api/, ""), {
-        responseType: "blob",
-      });
-      const url = URL.createObjectURL(blob.data as Blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "documento-unico-anexos.pdf";
-      a.click();
-      URL.revokeObjectURL(url);
+      await downloadGeneratedPdf(
+        `/casos/${caseId}/provas/documento-unico`,
+        "documento-unico-anexos.pdf",
+        undefined,
+      );
       toast.success("Documento único de anexos (Visual Law) gerado.");
     } catch (e) {
       toast.error(apiDetail(e, "Falha ao gerar o documento único de anexos."));

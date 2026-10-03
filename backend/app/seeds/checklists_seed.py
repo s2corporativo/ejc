@@ -6,8 +6,8 @@ ambiental/bancário) NÃO são tocados.
 
 Execução: python -m app.seeds.checklists_seed
 """
-import os
-import sys
+import os as os  # Alias mantido para imports e monkeypatch existentes.
+import sys as sys  # Alias mantido para imports e monkeypatch existentes.
 from uuid import uuid4
 
 CHECKLISTS = [
@@ -105,18 +105,15 @@ CHECKLISTS = [
 
 
 def seed():
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import text
     from sqlalchemy.orm import Session
 
-    url = os.getenv("DATABASE_URL_SYNC") or os.getenv("DATABASE_URL", "")
-    if "+asyncpg" in url:
-        url = url.replace("+asyncpg", "+psycopg2")
-    elif url.startswith("postgresql://"):
-        url = url.replace("postgresql://", "postgresql+psycopg2://")
-    if not url:
-        print("❌ DATABASE_URL(_SYNC) não configurada."); sys.exit(1)
+    if __package__:
+        from ._bootstrap import create_sync_engine
+    else:  # Execução direta do arquivo de seed.
+        from _bootstrap import create_sync_engine
 
-    engine = create_engine(url)
+    engine = create_sync_engine()
     ins = skip = 0
     with Session(engine) as s:
         for c in CHECKLISTS:

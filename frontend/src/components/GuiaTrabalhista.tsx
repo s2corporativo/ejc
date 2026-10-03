@@ -1,9 +1,13 @@
+import {
+  GuiaSecCompacta as Sec,
+  GuiaTabCompacta as Tab,
+  GuiaShell,
+  useGuiaMarcados,
+} from "./GuiaPrimitivas";
 // src/components/GuiaTrabalhista.tsx
 // Guia Operacional de Direito do Trabalho — referência interna De Paula Teixeira.
 // Accordions + checklist localStorage. Mesmo conteúdo alimenta o RAG.
-import { useEffect, useState } from "react";
 import {
-  BookOpen,
   Clock,
   ListChecks,
   Scale,
@@ -12,54 +16,6 @@ import {
   FileText,
   Briefcase,
 } from "lucide-react";
-
-function Sec({ icon: Icon, titulo, children, aberto = false }: any) {
-  return (
-    <details
-      open={aberto}
-      className="group border border-bronze-pale rounded-lg overflow-hidden"
-    >
-      <summary className="flex items-center gap-2 px-4 py-2.5 cursor-pointer bg-bronze-50/40 hover:bg-bronze-50 text-sm font-medium text-navy-900 select-none">
-        <Icon size={15} className="text-bronze" /> {titulo}
-        <span className="ml-auto text-slate-400 group-open:rotate-180 transition-transform">
-          ▾
-        </span>
-      </summary>
-      <div className="px-4 py-3 text-xs text-slate-700 space-y-2 leading-relaxed">
-        {children}
-      </div>
-    </details>
-  );
-}
-
-function Tab({ head, rows }: { head: string[]; rows: string[][] }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-[11px]">
-        <thead>
-          <tr className="text-left text-ink-light">
-            {head.map((h) => (
-              <th key={h} className="py-1 pr-3 font-semibold">
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i} className="border-t border-bronze-50">
-              {r.map((c, j) => (
-                <td key={j} className="py-1 pr-3 align-top">
-                  {c}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 
 const CHECKLIST = [
   "Identificar vínculo empregatício: CLT, terceirizado, autônomo, sócio disfarçado?",
@@ -79,29 +35,15 @@ const CHECKLIST = [
 ];
 
 export default function GuiaTrabalhista() {
-  const [marcados, setMarcados] = useState<Record<number, boolean>>({});
-  useEffect(() => {
-    try {
-      setMarcados(
-        JSON.parse(localStorage.getItem("guia_trabalhista_chk") || "{}"),
-      );
-    } catch {}
-  }, []);
-  const toggle = (i: number) => {
-    const novo = { ...marcados, [i]: !marcados[i] };
-    setMarcados(novo);
-    localStorage.setItem("guia_trabalhista_chk", JSON.stringify(novo));
-  };
+  const { marcados, toggle } = useGuiaMarcados("guia_trabalhista_chk");
   const feitos = Object.values(marcados).filter(Boolean).length;
 
   return (
-    <div className="card p-4 mb-4 border-l-4 border-success-500">
-      <div className="flex items-center gap-2 mb-1">
-        <BookOpen size={16} className="text-bronze" />
-        <h2 className="font-serif font-semibold text-navy text-sm">
-          Guia Operacional de Direito do Trabalho
-        </h2>
-      </div>
+    <GuiaShell
+      compacta
+      className="card p-4 mb-4 border-l-4 border-success-500"
+      title={<>Guia Operacional de Direito do Trabalho</>}
+    >
       <p className="text-xs text-slate-500 mb-3">
         Referência interna (prescrição, verbas rescisórias, prazos processuais,
         teses). Alimenta também o Assistente IA e o Motor de Teses. Calcule
@@ -396,6 +338,6 @@ export default function GuiaTrabalhista() {
         Depósitos recursais: atualizar pelos índices CGJT (publicados
         semestralmente).
       </p>
-    </div>
+    </GuiaShell>
   );
 }

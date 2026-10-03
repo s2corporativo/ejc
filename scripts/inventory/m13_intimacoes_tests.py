@@ -7,18 +7,20 @@ recusar protegido (409) → processar exige decisão → capturar-agora sem OAB
 (422) e com OAB + DJEN desativado (503) → status-captura → auditoria →
 permissões (carteira e is_gestao).
 """
+
+if __package__:
+    from . import _shared
+else:  # Execução direta: python scripts/inventory/<script>.py
+    import _shared
+
 import requests, sys, random, os, time, datetime as _dt
 
-BASE = "http://127.0.0.1:8000"
-ADM_E, ADV_E, EST_E = ("ejc_qa_auth_admin@golocal.ejc",
-                       "ejc_qa_auth_advogado@golocal.ejc",
-                       "ejc_qa_auth_estagiario@golocal.ejc")
+BASE = _shared.LOCAL_API
+ADM_E, ADV_E, EST_E = (_shared.qa_email('admin'),
+                       _shared.qa_email('advogado'),
+                       _shared.qa_email('estagiario'))
 def _qa_pw(name: str) -> str:
-    import os
-    v = os.environ.get('EJC_QA_PASSWORD')
-    if not v:
-        raise RuntimeError(f'Credencial QA ausente: exporte EJC_QA_PASSWORD antes de rodar {name}')
-    return v
+    return _shared.qa_password(name)
 
 SENHA = _qa_pw('SENHA')
 ok = tot = 0
@@ -111,7 +113,7 @@ chk("listar TODAS (inclui processadas) 200", r.status_code == 200,
     f"HTTP {r.status_code}")
 
 # ── 2. fora da carteira (cliente externo) ──────────────────────────────────
-cli = login("ejc_qa_auth_cliente@golocal.ejc")
+cli = login(_shared.qa_email('cliente'))
 r = S.get(f"{BASE}/api/intimacoes/", headers=cli, timeout=30)
 # Cliente externo não é gestão jurídica e não é advogado de intimação: 403
 # uniforme (rota restrita ao Portal do Cliente) OU 200 com 0 itens —
@@ -202,7 +204,7 @@ chk("processada sai da lista de pendentes do advogado",
     f"{r.text[:150]}")
 
 # ── 8. capturar-agora: sem OAB → 422; com OAB + DJEN desativado → 503 ─────
-s_est = login("ejc_qa_auth_secretaria@golocal.ejc")
+s_est = login(_shared.qa_email('secretaria'))
 r = S.post(f"{BASE}/api/intimacoes/capturar-agora", headers=s_est, timeout=30)
 chk("capturar sem OAB no perfil → 422",
     r.status_code == 422 and "OAB" in (r.text or ""),
@@ -236,7 +238,7 @@ chk("auditoria CREATE do deadline djen com origem rastreável",
     any("CREATE" in a and "djen" in a for a in aud_dl), f"aud_dl={aud_dl[:2]}")
 
 # ── 11. RBAC de escrita ───────────────────────────────────────────────────
-fin = login("ejc_qa_auth_financeiro@golocal.ejc")
+fin = login(_shared.qa_email('financeiro'))
 r = S.post(f"{BASE}/api/intimacoes/{C2}/processar", headers=fin, timeout=30)
 chk("financeiro fora da is_gestao não vê intimações (404 uniforme)",
     r.status_code in (401, 403, 404), f"HTTP {r.status_code}")

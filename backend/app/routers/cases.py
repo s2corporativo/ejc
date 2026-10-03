@@ -2,6 +2,7 @@
 # Gestão de casos: CRUD + numeração DPT-AAAA-NNNN + prescrição automática
 # + movimentos (timeline) + endpoint de análise IA integrado.
 from __future__ import annotations
+from app.core.pagination import executar_pagina
 import logging
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -261,12 +262,7 @@ async def listar(
     q = q.order_by(Case.created_at.desc(), Case.id.desc())
 
     # count da base filtrada SEM ORDER BY (sort inútil fora do plano)
-    total = (await db.execute(
-        select(sqlfunc.count()).select_from(q.order_by(None).subquery())
-    )).scalar()
-    rows = (await db.execute(
-        q.offset((page - 1) * page_size).limit(page_size)
-    )).scalars().all()
+    total, rows = await executar_pagina(db, q, page, page_size, contar_sem_ordem=True)
     return {
         "data": [CaseResponse.model_validate(c) for c in rows],
         "total": total, "page": page, "page_size": page_size,
@@ -1021,6 +1017,20 @@ async def criar_movimento(
     return {"id": m.id, "detail": "Movimento registrado"}
 
 
+async def _movimento_autorizado(db: AsyncSession, cu: User, case_id: str, movimento_id: str):
+    q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
+    q = _filtro_visibilidade(q, cu)
+    if not (await db.execute(q)).scalar_one_or_none():
+        raise HTTPException(status_code=404,
+                            detail="Caso não encontrado ou sem permissão")
+    q = select(CaseMovimento).where(CaseMovimento.id == movimento_id,
+                                    CaseMovimento.case_id == case_id)
+    m = (await db.execute(q)).scalars().first()
+    if not m:
+        raise HTTPException(status_code=404, detail="Movimento não encontrado")
+    return m
+
+
 @router.patch("/{case_id}/movimentos/{movimento_id}",
               dependencies=[Depends(rate_limit("cases-movimentos-edita", 30))])
 async def editar_movimento(
@@ -1034,16 +1044,7 @@ async def editar_movimento(
     Patch parcial (só campos informados); guarda de acesso do caso;
     auditoria UPDATE. created_at/created_by nunca mudam (proveniência).
     """
-    q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
-    q = _filtro_visibilidade(q, cu)
-    if not (await db.execute(q)).scalar_one_or_none():
-        raise HTTPException(status_code=404,
-                            detail="Caso não encontrado ou sem permissão")
-    q = select(CaseMovimento).where(CaseMovimento.id == movimento_id,
-                                    CaseMovimento.case_id == case_id)
-    m = (await db.execute(q)).scalars().first()
-    if not m:
-        raise HTTPException(status_code=404, detail="Movimento não encontrado")
+    m = await _movimento_autorizado(db, cu, case_id, movimento_id)
     if payload.tipo is not None:
         m.tipo = payload.tipo
     if payload.descricao is not None:
@@ -1072,16 +1073,7 @@ async def excluir_movimento(
     """M12 (homologação 2026-08-16): exclusão de movimento da timeline.
     Hard delete (movimento não tem referências externas). Endurecido:
     movimento inexistente ou fora do caso retorna 404 (nunca 200)."""
-    q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
-    q = _filtro_visibilidade(q, cu)
-    if not (await db.execute(q)).scalar_one_or_none():
-        raise HTTPException(status_code=404,
-                            detail="Caso não encontrado ou sem permissão")
-    q = select(CaseMovimento).where(CaseMovimento.id == movimento_id,
-                                    CaseMovimento.case_id == case_id)
-    m = (await db.execute(q)).scalars().first()
-    if not m:
-        raise HTTPException(status_code=404, detail="Movimento não encontrado")
+    m = await _movimento_autorizado(db, cu, case_id, movimento_id)
     await db.delete(m)
     _role = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
     await criar_audit_log(

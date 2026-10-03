@@ -1,3 +1,4 @@
+import { FormInput, FormSelect } from "../../components/FormFields";
 import React, { useState } from "react";
 import { toast } from "../../components/Toast";
 import api from "../../lib/api";
@@ -88,77 +89,54 @@ export default function TabPartes({ caseId }: { caseId: string }) {
       {showForm && (
         <form onSubmit={salvar} className="card p-4 space-y-3">
           <div className="grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <label className="label">Tipo</label>
-              <select
-                value={form.tipo}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, tipo: e.target.value }))
-                }
-                className="input w-full"
-              >
-                {Object.entries(TIPOS).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">Nome *</label>
-              <input
-                required
-                value={form.nome}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, nome: e.target.value }))
-                }
-                className="input w-full"
-              />
-            </div>
-            <div>
-              <label className="label">CPF/CNPJ</label>
-              <input
-                value={form.cpf_cnpj}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, cpf_cnpj: e.target.value }))
-                }
-                className="input w-full"
-              />
-            </div>
-            <div>
-              <label className="label">Email</label>
-              <input
-                type="email"
-                value={form.email}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, email: e.target.value }))
-                }
-                className="input w-full"
-              />
-            </div>
-            <div>
-              <label className="label">Representante Legal</label>
-              <input
-                value={form.representante_legal}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    representante_legal: e.target.value,
-                  }))
-                }
-                className="input w-full"
-              />
-            </div>
-            <div>
-              <label className="label">OAB</label>
-              <input
-                value={form.oab}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, oab: e.target.value }))
-                }
-                className="input w-full"
-              />
-            </div>
+            <FormSelect
+              label="Tipo"
+              options={TIPOS}
+              value={form.tipo}
+              onChange={(e) => setForm((f) => ({ ...f, tipo: e.target.value }))}
+              className="input w-full"
+            />
+            <FormInput
+              label="Nome *"
+              required
+              value={form.nome}
+              onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))}
+              className="input w-full"
+            />
+            <FormInput
+              label="CPF/CNPJ"
+              value={form.cpf_cnpj}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, cpf_cnpj: e.target.value }))
+              }
+              className="input w-full"
+            />
+            <FormInput
+              label="Email"
+              type="email"
+              value={form.email}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, email: e.target.value }))
+              }
+              className="input w-full"
+            />
+            <FormInput
+              label="Representante Legal"
+              value={form.representante_legal}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  representante_legal: e.target.value,
+                }))
+              }
+              className="input w-full"
+            />
+            <FormInput
+              label="OAB"
+              value={form.oab}
+              onChange={(e) => setForm((f) => ({ ...f, oab: e.target.value }))}
+              className="input w-full"
+            />
           </div>
           <div className="flex gap-2">
             <button type="submit" className="btn-primary text-sm">

@@ -94,7 +94,7 @@ def _where_cursor(ap, case_id, tipo, situacao, urgencia, data_inicio, data_fim,
         where += (" AND COALESCE(v.status,'') NOT IN "
                   "('concluido','concluida','tratada','cancelado','fazendo')")
     if urgencia:
-        # Expressão SQL equivalente à urg() do Python (paridade testada):
+        # Expressão SQL equivalente à _urgencia() do Python (paridade testada):
         # vencido <0; critico <=3; atencao <=7; normal (inclui data NULL).
         # Fuso: data operacional de app/core/clock.py (fonte única), NÃO
         # CURRENT_DATE do servidor.
@@ -118,6 +118,18 @@ def _where_cursor(ap, case_id, tipo, situacao, urgencia, data_inicio, data_fim,
 # SQL literal com bind params; a regra marca todo text(), sem olhar
 # interpolacao. Ver docs/seguranca/SAST_BASELINE.md
 # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text
+
+
+def _urgencia(d):
+    if d is None:
+        return "normal"
+    if d < 0:
+        return "vencido"
+    if d <= 3:
+        return "critico"
+    if d <= 7:
+        return "atencao"
+    return "normal"
 
 
 @router.get("")
@@ -189,16 +201,6 @@ async def listar_atividades(
             ORDER BY v.data ASC NULLS LAST
         """), params)).mappings().all()
 
-        def urg(d):
-            if d is None:
-                return "normal"
-            if d < 0:
-                return "vencido"
-            if d <= 3:
-                return "critico"
-            if d <= 7:
-                return "atencao"
-            return "normal"
 
         def _dias(d):
             # Robusto: aceita int (date - date) ou timedelta (fallback de driver).
@@ -217,7 +219,7 @@ async def listar_atividades(
                 "status": r["status"], "case_id": r["case_id"], "caso_titulo": r["caso_titulo"],
                 "responsavel_id": r["responsavel_id"], "prioridade": r["prioridade"],
                 "subtipo": r["subtipo"],
-                "dias_restantes": di, "urgencia": urg(di),
+                "dias_restantes": di, "urgencia": _urgencia(di),
             })
         return {"data": data}
 
@@ -286,16 +288,6 @@ async def listar_atividades(
             {"ids": ids_agenda})
         agenda_map = {r[0]: r for r in rr}
 
-    def urg_py(d):
-        if d is None:
-            return "normal"
-        if d < 0:
-            return "vencido"
-        if d <= 3:
-            return "critico"
-        if d <= 7:
-            return "atencao"
-        return "normal"
 
     data = []
     for r in pagina:
@@ -314,7 +306,7 @@ async def listar_atividades(
             "caso_titulo": r["caso_titulo"],
             "responsavel_id": r["responsavel_id"], "prioridade": r["prioridade"],
             "subtipo": r["subtipo"],
-            "dias_restantes": di, "urgencia": urg_py(di),
+            "dias_restantes": di, "urgencia": _urgencia(di),
         }
         if r["tipo"] == "prazo" and r["id"] in prazo_map:
             p = prazo_map[r["id"]]

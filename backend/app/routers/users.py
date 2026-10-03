@@ -1,5 +1,6 @@
 # ── app/routers/users.py ─────────────────────────────────────────────────────
 from __future__ import annotations
+from app.core.pagination import executar_pagina
 
 from datetime import datetime, timezone
 from io import BytesIO
@@ -346,12 +347,7 @@ async def listar(
     cu: User = Depends(require_admin),
 ):
     q = select(User).where(User.deleted_at.is_(None)).order_by(User.full_name)
-    total = (
-        await db.execute(select(sqlfunc.count()).select_from(q.subquery()))
-    ).scalar()
-    rows = (
-        await db.execute(q.offset((page - 1) * page_size).limit(page_size))
-    ).scalars().all()
+    total, rows = await executar_pagina(db, q, page, page_size)
     return {
         "data": [UserResponse.model_validate(u) for u in rows],
         "total": total,

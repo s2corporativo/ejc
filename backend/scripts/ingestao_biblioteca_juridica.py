@@ -395,17 +395,13 @@ def build_extra(d):
 
 
 def _bootstrap_backend() -> None:
-    candidatos = [
-        "/app",
-        "/opt/ejc/backend",
-        "/home/ubuntu/ejc/backend",
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    ]
-    for candidato in candidatos:
-        if os.path.isdir(os.path.join(candidato, "app")):
-            if candidato not in sys.path:
-                sys.path.insert(0, candidato)
-            return
+    # Carrega o helper sem importar app antes de escolher o backend. Funciona
+    # também com execução direta e em imagens que contêm apenas backend/.
+    import runpy
+    from pathlib import Path
+
+    helper = Path(__file__).resolve().parents[1] / "app" / "seeds" / "_bootstrap.py"
+    runpy.run_path(str(helper))["bootstrap_backend"](__file__)
 
 
 def main():

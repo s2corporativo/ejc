@@ -29,144 +29,50 @@ def _tags_para_copia(rota_origem) -> list[str]:
     return [_t for _t in (rota_origem.tags or []) if _t not in _TAGS_PADRAO_AGR]
 
 
+def _copiar_rotas(origem: APIRouter) -> None:
+    for _r in origem.routes:
+        if getattr(_r, "path", None):
+            router.add_api_route(_r.path, _r.endpoint, methods=_r.methods,
+                                 dependencies=_r.dependencies,
+                                 response_model=_r.response_model,
+                                 status_code=_r.status_code,
+                                 tags=_tags_para_copia(_r), summary=_r.summary,
+                                 description=_r.description,
+                                 responses=_r.responses,
+                                 operation_id=_r.operation_id,
+                                 response_class=_r.response_class,
+                                 include_in_schema=_r.include_in_schema,
+                                 openapi_extra=_r.openapi_extra,
+                                 name=_r.name,
+                                 deprecated=getattr(_r, "deprecated", False))
+
+
 from app.routers import ramos_empresarial as _ramos_empresarial
-for _r in _ramos_empresarial.router.routes:
-    if getattr(_r, "path", None):
-        router.add_api_route(_r.path, _r.endpoint, methods=_r.methods,
-                             dependencies=_r.dependencies,
-                             response_model=_r.response_model,
-                             status_code=_r.status_code,
-                             tags=_tags_para_copia(_r), summary=_r.summary,
-                             description=_r.description,
-                             responses=_r.responses,
-                             operation_id=_r.operation_id,
-                             response_class=_r.response_class,
-                             include_in_schema=_r.include_in_schema,
-                             openapi_extra=_r.openapi_extra,
-                             name=_r.name,
-                             deprecated=getattr(_r, "deprecated", False))
+_copiar_rotas(_ramos_empresarial.router)
 
 from app.routers import ramos_civel as _ramos_civel
-for _r in _ramos_civel.router.routes:
-    if getattr(_r, "path", None):
-        router.add_api_route(_r.path, _r.endpoint, methods=_r.methods,
-                             dependencies=_r.dependencies,
-                             response_model=_r.response_model,
-                             status_code=_r.status_code,
-                             tags=_tags_para_copia(_r), summary=_r.summary,
-                             description=_r.description,
-                             responses=_r.responses,
-                             operation_id=_r.operation_id,
-                             response_class=_r.response_class,
-                             include_in_schema=_r.include_in_schema,
-                             openapi_extra=_r.openapi_extra,
-                             name=_r.name,
-                             deprecated=getattr(_r, "deprecated", False))
+_copiar_rotas(_ramos_civel.router)
 
 from app.routers import ramos_penal as _ramos_penal
-for _r in _ramos_penal.router.routes:
-    if getattr(_r, "path", None):
-        router.add_api_route(_r.path, _r.endpoint, methods=_r.methods,
-                             dependencies=_r.dependencies,
-                             response_model=_r.response_model,
-                             status_code=_r.status_code,
-                             tags=_tags_para_copia(_r), summary=_r.summary,
-                             description=_r.description,
-                             responses=_r.responses,
-                             operation_id=_r.operation_id,
-                             response_class=_r.response_class,
-                             include_in_schema=_r.include_in_schema,
-                             openapi_extra=_r.openapi_extra,
-                             name=_r.name,
-                             deprecated=getattr(_r, "deprecated", False))
+_copiar_rotas(_ramos_penal.router)
 
 from app.routers import ramos_trabalhista_esp as _ramos_trabalhista_esp
-for _r in _ramos_trabalhista_esp.router.routes:
-    if getattr(_r, "path", None):
-        router.add_api_route(_r.path, _r.endpoint, methods=_r.methods,
-                             dependencies=_r.dependencies,
-                             response_model=_r.response_model,
-                             status_code=_r.status_code,
-                             tags=_tags_para_copia(_r), summary=_r.summary,
-                             description=_r.description,
-                             responses=_r.responses,
-                             operation_id=_r.operation_id,
-                             response_class=_r.response_class,
-                             include_in_schema=_r.include_in_schema,
-                             openapi_extra=_r.openapi_extra,
-                             name=_r.name,
-                             deprecated=getattr(_r, "deprecated", False))
+_copiar_rotas(_ramos_trabalhista_esp.router)
 
 from app.routers import ramos_admin_esp as _ramos_admin_esp
-for _r in _ramos_admin_esp.router.routes:
-    if getattr(_r, "path", None):
-        router.add_api_route(_r.path, _r.endpoint, methods=_r.methods,
-                             dependencies=_r.dependencies,
-                             response_model=_r.response_model,
-                             status_code=_r.status_code,
-                             tags=_tags_para_copia(_r), summary=_r.summary,
-                             description=_r.description,
-                             responses=_r.responses,
-                             operation_id=_r.operation_id,
-                             response_class=_r.response_class,
-                             include_in_schema=_r.include_in_schema,
-                             openapi_extra=_r.openapi_extra,
-                             name=_r.name,
-                             deprecated=getattr(_r, "deprecated", False))
+_copiar_rotas(_ramos_admin_esp.router)
 
 from app.routers import ramos_bancario as _ramos_bancario
-for _r in _ramos_bancario.router.routes:
-    if getattr(_r, "path", None):
-        router.add_api_route(_r.path, _r.endpoint, methods=_r.methods,
-                             dependencies=_r.dependencies,
-                             response_model=_r.response_model,
-                             status_code=_r.status_code,
-                             tags=_tags_para_copia(_r), summary=_r.summary,
-                             description=_r.description,
-                             responses=_r.responses,
-                             operation_id=_r.operation_id,
-                             response_class=_r.response_class,
-                             include_in_schema=_r.include_in_schema,
-                             openapi_extra=_r.openapi_extra,
-                             name=_r.name,
-                             deprecated=getattr(_r, "deprecated", False))
+_copiar_rotas(_ramos_bancario.router)
 
 from app.routers import ramos_vitrine as _ramos_vitrine
-for _r in _ramos_vitrine.router.routes:
-    if getattr(_r, "path", None):
-        router.add_api_route(_r.path, _r.endpoint, methods=_r.methods,
-                             dependencies=_r.dependencies,
-                             response_model=_r.response_model,
-                             status_code=_r.status_code,
-                             tags=_tags_para_copia(_r), summary=_r.summary,
-                             description=_r.description,
-                             responses=_r.responses,
-                             operation_id=_r.operation_id,
-                             response_class=_r.response_class,
-                             include_in_schema=_r.include_in_schema,
-                             openapi_extra=_r.openapi_extra,
-                             name=_r.name,
-                             deprecated=getattr(_r, "deprecated", False))
+_copiar_rotas(_ramos_vitrine.router)
 
 # PAF federal versionado: monta antes das ferramentas complementares e substitui
 # somente o path histórico correspondente. O handler legado permanece disponível
 # no módulo original para rollback, mas não é montado pelo agregador canônico.
 from app.routers import ramos_tributario_paf as _ramos_tributario_paf
-for _r in _ramos_tributario_paf.router.routes:
-    if getattr(_r, "path", None):
-        router.add_api_route(_r.path, _r.endpoint, methods=_r.methods,
-                             dependencies=_r.dependencies,
-                             response_model=_r.response_model,
-                             status_code=_r.status_code,
-                             tags=_tags_para_copia(_r), summary=_r.summary,
-                             description=_r.description,
-                             responses=_r.responses,
-                             operation_id=_r.operation_id,
-                             response_class=_r.response_class,
-                             include_in_schema=_r.include_in_schema,
-                             openapi_extra=_r.openapi_extra,
-                             name=_r.name,
-                             deprecated=getattr(_r, "deprecated", False))
+_copiar_rotas(_ramos_tributario_paf.router)
 
 def _selar_endpoint_nao_homologado(endpoint, caminho: str):
     """Aplica o selo da matriz à resposta real da API sem alterar a assinatura.

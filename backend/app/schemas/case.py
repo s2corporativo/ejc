@@ -56,6 +56,12 @@ def _validar_case_type(v: Optional[str]) -> Optional[str]:
     return value
 
 
+def _validar_valor_pleiteado(v: Optional[Decimal]) -> Optional[Decimal]:
+    if v is not None and v < 0:
+        raise ValueError("valor_pleiteado não pode ser negativo")
+    return v
+
+
 class HonorariosCreate(BaseModel):
     """FASE 2 — honorários informados na ABERTURA do caso (objeto OPCIONAL).
 
@@ -150,9 +156,7 @@ class CaseCreate(BaseModel):
     @field_validator("valor_pleiteado")
     @classmethod
     def _valor_pleiteado_valido(cls, v: Optional[Decimal]) -> Optional[Decimal]:
-        if v is not None and v < 0:
-            raise ValueError("valor_pleiteado não pode ser negativo")
-        return v
+        return _validar_valor_pleiteado(v)
 
     @field_validator("numero_processo")
     @classmethod
@@ -210,9 +214,7 @@ class CaseUpdate(BaseModel):
     @field_validator("valor_pleiteado")
     @classmethod
     def _valor_pleiteado_valido(cls, v: Optional[Decimal]) -> Optional[Decimal]:
-        if v is not None and v < 0:
-            raise ValueError("valor_pleiteado não pode ser negativo")
-        return v
+        return _validar_valor_pleiteado(v)
 
     @field_validator("numero_processo")
     @classmethod

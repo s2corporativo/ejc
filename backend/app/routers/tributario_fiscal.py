@@ -211,8 +211,8 @@ def _html_relatorio(c: ConsolidacaoOut) -> str:
     }
 
     def moeda(v: float) -> str:
-        inteiro, _, dec = f"{v:,.2f}".partition(".")
-        return "R$ " + inteiro.replace(",", ".") + "," + dec
+        from app.utils.format import formatar_brl
+        return formatar_brl(v, coagir=False)
 
     def data_br(d: Optional[str]) -> str:
         if not d:

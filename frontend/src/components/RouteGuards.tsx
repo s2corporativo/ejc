@@ -1,15 +1,8 @@
+import RouteLoading from "./RouteLoading";
 import type { ReactElement } from "react";
 import { Navigate, useLocation } from "react-router";
-import { Spinner } from "./UI";
-import { useAuth } from "../stores/auth";
 
-function RouteLoading() {
-  return (
-    <div className="min-h-screen grid place-items-center bg-canvas">
-      <Spinner />
-    </div>
-  );
-}
+import { useAuth } from "../stores/auth";
 
 export function Protected({ children }: { children: ReactElement }) {
   const { status, user } = useAuth();

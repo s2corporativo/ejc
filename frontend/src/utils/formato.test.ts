@@ -1,9 +1,38 @@
 import { describe, expect, it } from "vitest";
-import { fmtDate, fmtDateTime, fmtMoney, fmtTaxaSucesso } from "./formato";
+import {
+  fmtBRL,
+  fmtDataISO,
+  fmtDia,
+  fmtDate,
+  fmtDateTime,
+  fmtMoney,
+  fmtMoneyInput,
+  fmtTaxaSucesso,
+  hojeISO,
+  parseNum,
+} from "./formato";
 
 // toLocaleString pt-BR separa "R$" do número com NBSP (ou NNBSP conforme a
 // versão do ICU) — normaliza para espaço comum antes de comparar.
 const plain = (s: string) => s.replace(/[\u00a0\u202f]/g, " ");
+
+describe("contratos de entrada e apresentação das calculadoras", () => {
+  it("distingue ausência de valor de zero digitado", () => {
+    expect(parseNum("")).toBeNull();
+    expect(parseNum("0")).toBe(0);
+    expect(parseNum("1.234,56")).toBe(1234.56);
+    expect(plain(fmtBRL(null))).toBe("R$ 0,00");
+    expect(fmtMoneyInput("")).toBe("—");
+    expect(plain(fmtMoneyInput("0"))).toBe("R$ 0,00");
+  });
+
+  it("preserva o dia civil de uma data ISO com offset", () => {
+    const date = "2026-10-03T23:59:00-03:00";
+    expect(fmtDataISO(date)).toBe("03/10/2026");
+    expect(fmtDia(date)).toBe("03/10/2026");
+    expect(hojeISO(new Date(2026, 9, 3, 23, 59))).toBe("2026-10-03");
+  });
+});
 
 describe("fmtMoney", () => {
   it("formata em Reais com 2 casas por padrão", () => {

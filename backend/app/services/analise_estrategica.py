@@ -4,9 +4,10 @@ Atua como advogado sênior com 20 anos de experiência.
 """
 import json
 import logging
-import re
 
 from app.services.system_prompts.base import RESTRICOES
+
+from app.utils.ai_json import parse_json_response
 
 logger = logging.getLogger(__name__)
 
@@ -129,19 +130,7 @@ Retorne este JSON (use null/listas vazias quando não houver base — NÃO inven
 
 
 def _parse_json_robusto(text: str) -> dict:
-    """Extrai JSON mesmo que a IA retorne texto ao redor."""
-    text = text.strip()
-    # remover markdown code blocks
-    text = re.sub(r"```(?:json)?", "", text).strip()
-    # encontrar primeiro { e último }
-    start = text.find("{")
-    end = text.rfind("}") + 1
-    if start == -1 or end == 0:
-        return {}
-    try:
-        return json.loads(text[start:end])
-    except Exception:
-        return {}
+    return parse_json_response(text, empty="dict", direct=False, fences="strip")
 
 
 async def _recuperar_ocr_completo_se_truncado(
