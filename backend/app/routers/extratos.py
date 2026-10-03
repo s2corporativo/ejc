@@ -31,6 +31,15 @@ async def extrato_caso(case_id: str, db: AsyncSession = Depends(get_db), cu: Use
         SELECT tipo, categoria, descricao, valor, data_lancamento, pago
         FROM centro_custos WHERE case_id=:id AND deleted_at IS NULL ORDER BY data_lancamento
     """), {"id": case_id})).mappings().all()
+    # Despesas processuais reembolsáveis também são saída de caixa do caso; o
+    # reembolso do cliente já entra em `entradas` (fee custas_despesas pago).
+    reembolsaveis = (await db.execute(text("""
+        SELECT 'despesa' AS tipo, categoria, descricao, valor, data AS data_lancamento,
+               TRUE AS pago, TRUE AS reembolsavel
+        FROM case_despesas WHERE case_id=:id AND deleted_at IS NULL ORDER BY data
+    """), {"id": case_id})).mappings().all()
+    custos = [dict(c) | {"reembolsavel": False} for c in custos] + [dict(r) for r in reembolsaveis]
+    custos.sort(key=lambda c: str(c["data_lancamento"] or ""))
     entradas = round(sum(float(f["valor"] or 0) for f in fees if f["status"] == "pago"), 2)
     a_receber = round(sum(float(f["valor"] or 0) for f in fees if f["status"] not in ("pago", "cancelado")), 2)
     saidas = round(sum(float(c["valor"] or 0) for c in custos if c["tipo"] == "despesa"), 2)
@@ -39,7 +48,7 @@ async def extrato_caso(case_id: str, db: AsyncSession = Depends(get_db), cu: Use
         "resumo": {"entradas": entradas, "a_receber": a_receber, "saidas": saidas,
                    "saldo": round(entradas - saidas, 2)},
         "honorarios": [dict(f) | {"valor": float(f["valor"] or 0)} for f in fees],
-        "custos": [dict(c) | {"valor": float(c["valor"] or 0)} for c in custos],
+        "custos": [c | {"valor": float(c["valor"] or 0)} for c in custos],
     }
 
 

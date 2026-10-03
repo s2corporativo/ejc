@@ -193,12 +193,24 @@ async def rentabilidade_financeira(
                 ),
                 despesas AS (
                     SELECT case_id, SUM(valor) AS valor
-                    FROM centro_custos
-                    WHERE deleted_at IS NULL
-                      AND CAST(tipo AS text)='despesa'
-                      AND pago=TRUE
-                      AND COALESCE(data_pagamento,data_lancamento) >= :inicio
-                      AND COALESCE(data_pagamento,data_lancamento) < :fim
+                    FROM (
+                        SELECT case_id, valor
+                        FROM centro_custos
+                        WHERE deleted_at IS NULL
+                          AND CAST(tipo AS text)='despesa'
+                          AND pago=TRUE
+                          AND COALESCE(data_pagamento,data_lancamento) >= :inicio
+                          AND COALESCE(data_pagamento,data_lancamento) < :fim
+                        UNION ALL
+                        -- Despesa processual reembolsável (case_despesas) é saída de
+                        -- caixa do escritório na data do adiantamento; o reembolso do
+                        -- cliente entra como receita (fee custas_despesas). Sem esta
+                        -- parcela o reembolso aparecia como lucro (plano ERP, E2).
+                        SELECT case_id, valor
+                        FROM case_despesas
+                        WHERE deleted_at IS NULL
+                          AND data >= :inicio AND data < :fim
+                    ) d
                     GROUP BY case_id
                 ),
                 comissoes AS (

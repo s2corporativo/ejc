@@ -67,12 +67,22 @@ async def _carregar_honorarios(db: AsyncSession, client_id: str) -> list[dict]:
 
 async def _carregar_despesas(db: AsyncSession, client_id: str) -> list[dict]:
     rows = (await db.execute(text("""
-        SELECT cc.id, cc.tipo, cc.categoria, cc.valor, cc.descricao,
-               cc.data_lancamento, cc.pago, cc.case_id, c.titulo AS caso_titulo
+        SELECT cc.id, CAST(cc.tipo AS text) AS tipo, CAST(cc.categoria AS text) AS categoria,
+               cc.valor, cc.descricao, cc.data_lancamento, cc.pago, cc.case_id,
+               c.titulo AS caso_titulo
         FROM centro_custos cc
         JOIN cases c ON c.id = cc.case_id
         WHERE c.client_id = :cid AND cc.deleted_at IS NULL
-        ORDER BY cc.data_lancamento DESC
+        UNION ALL
+        -- Despesa processual adiantada pelo escritório e reembolsável pelo
+        -- cliente: alimenta o total `reembolsos`, que antes ficava sempre 0.
+        SELECT cd.id, 'reembolsavel' AS tipo, cd.categoria, cd.valor, cd.descricao,
+               cd.data AS data_lancamento, TRUE AS pago, cd.case_id,
+               c.titulo AS caso_titulo
+        FROM case_despesas cd
+        JOIN cases c ON c.id = cd.case_id
+        WHERE c.client_id = :cid AND cd.deleted_at IS NULL AND c.deleted_at IS NULL
+        ORDER BY data_lancamento DESC
     """), {"cid": client_id})).mappings().all()
     despesas = [dict(d) for d in rows]
     for d in despesas:

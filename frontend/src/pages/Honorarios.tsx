@@ -2,7 +2,7 @@ import { exportCsv } from "../utils/exportCsv";
 import { toast } from "../components/Toast";
 import { exportPdf } from "../utils/exportPdf";
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import {
   Plus,
   DollarSign,
@@ -88,6 +88,15 @@ export default function Honorarios({
   const [pag, setPag] = useState<FeePaymentForm>({});
   const [salvando, setSalvando] = useState(false);
   const [registrando, setRegistrando] = useState(false);
+  // Plano ERP (E3): depois de registrar o recebimento, oferece o registro da
+  // NFS-e já preenchido — sem redigitar honorário, cliente, valor e descrição.
+  const [nfseOferta, setNfseOferta] = useState<{
+    fee_id: string;
+    client_id: string;
+    valor: string;
+    descricao: string;
+  } | null>(null);
+  const navigate = useNavigate();
   const [estModal, setEstModal] = useState<FeeRefundModal | null>(null);
   const [est, setEst] = useState<FeeRefundForm>({});
   const [estornando, setEstornando] = useState(false);
@@ -276,6 +285,17 @@ export default function Honorarios({
     setRegistrando(true);
     try {
       await api.post(`/fees/${pagModal.id}/pagamentos`, pag);
+      // Reembolso de custas não é receita de serviço — não gera NFS-e.
+      setNfseOferta(
+        pagModal.tipo === "custas_despesas"
+          ? null
+          : {
+              fee_id: pagModal.id,
+              client_id: pagModal.client_id,
+              valor: String(pag.valor),
+              descricao: pagModal.descricao,
+            },
+      );
       setPagModal(null);
       setPag({});
       load();
@@ -402,6 +422,34 @@ export default function Honorarios({
 
   return (
     <div>
+      {nfseOferta && (
+        <div
+          role="status"
+          className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
+        >
+          <span>Pagamento registrado. Deseja registrar a NFS-e deste recebimento?</span>
+          <span className="flex gap-2">
+            <button
+              className="btn-primary px-3 py-1.5 text-xs"
+              onClick={() => {
+                // Dados vão no state da navegação, não na URL: a descrição
+                // pode conter nome de cliente e URLs vão para logs (LGPD).
+                const notaDoHonorario = nfseOferta;
+                setNfseOferta(null);
+                navigate("/financeiro?tab=nfse", { state: { notaDoHonorario } });
+              }}
+            >
+              Registrar NFS-e
+            </button>
+            <button
+              className="btn-secondary px-3 py-1.5 text-xs"
+              onClick={() => setNfseOferta(null)}
+            >
+              Agora não
+            </button>
+          </span>
+        </div>
+      )}
       <div className="flex gap-2 items-center justify-end flex-wrap mb-4">
         <button
           onClick={() => {
