@@ -93,7 +93,11 @@ function Secao({
   );
 }
 
-export default function DossieJuridico({ caseId, onNovo, embedded = false }: Props) {
+export default function DossieJuridico({
+  caseId,
+  onNovo,
+  embedded = false,
+}: Props) {
   const navigate = useNavigate();
   const [dossie, setDossie] = useState<AnyRecord | null>(null);
   const [erro, setErro] = useState<string | null>(null);
