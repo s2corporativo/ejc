@@ -598,6 +598,7 @@ async def chat(
         # AI_PROVIDER global entra na chave: se a config trocar (ex.: auto→groq)
         # sem override explícito, não serve resposta de outro provedor no TTL.
         ai_provider=settings.AI_PROVIDER,
+        modo_sanitizacao=modo_sanitizacao,
     )
     _cached = await ai_cache.obter(_cache_key)
     if _cached:
@@ -1357,6 +1358,7 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
         tarefa_label, messages, temperature=cfg.temperature, max_tokens=cfg.max_tokens,
         model_override=cfg.model, provider_override=cfg.provider,
         nivel_inteligencia=nivel_efetivo, ai_provider=settings.AI_PROVIDER,
+        modo_sanitizacao=modo_sanitizacao,
     )
     _cached = await ai_cache.obter(_cache_key)
     if _cached:
@@ -1663,14 +1665,19 @@ async def chat_agentico(
     Retorna {"text","tool_calls","stop_reason","usage","provider","model",
              "text_para_log"}. `text_para_log` é PSEUDONIMIZADO (vai ao AILog;
     nunca PII reidratada)."""
-    from app.services.ai.sanitization_policy import ModoSanitizacao, modo_para_task
+    from app.services.ai.sanitization_policy import (
+        ModoSanitizacao, modo_para_task, reforcar_sigilo,
+    )
 
     task_type_original = task_type
     task_type = _normalizar_task_type(task_type)
     # S1: o modo vem do sigilo REAL do caso (área) quando o chamador o informa;
-    # senão, do task_type. Nunca deriva o sigilo só do rótulo de roteamento.
-    if modo_sanitizacao is None:
-        modo_sanitizacao = modo_para_task(task_type_original)
+    # senão, do task_type. NIA-05 (auditoria 03/10): mesmo contrato de chat()
+    # e executar_tarefa_ia() — o modo informado só ELEVA o piso da tarefa,
+    # nunca o rebaixa (um task_type de sigilo reforçado com modo explícito
+    # mais fraco perdia o LOCAL_COMPLETO).
+    modo_sanitizacao = reforcar_sigilo(
+        modo_para_task(task_type_original), modo_sanitizacao)
 
     # Identidade/base do escritório (BASE_PROMPT/16 regras) no system do agente.
     messages = legal_base.aplicar_base(messages, task_type)

@@ -153,6 +153,10 @@ async def validar(
                     "Grounding ao vivo de citações indisponível — confira manualmente "
                     "a jurisprudência (nº de processo, tribunal, súmula)."
                 )
+                # NIA-07 (auditoria 03/10): mesma consequência da falha da
+                # verificação de citações no passo 1 — sem a checagem, a
+                # revisão humana deixa de ser opcional.
+                revisao_obrigatoria = True
 
     # 2. Vedação de promessa de resultado — alerta, nunca reescrita.
     promessas = detectar_promessa_resultado(conteudo)
