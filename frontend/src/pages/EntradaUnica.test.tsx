@@ -15,7 +15,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 
 const getMock = vi.fn();
 const postMock = vi.fn();
@@ -111,6 +111,11 @@ function preencherRelato(chars: number) {
   });
 }
 
+function DestinoProbe() {
+  const { pathname, search } = useLocation();
+  return <div>DESTINO:{`${pathname}${search}`}</div>;
+}
+
 beforeEach(() => {
   sessionStorage.clear();
   getMock.mockReset();
@@ -143,45 +148,61 @@ afterEach(() => {
 });
 
 describe("EntradaUnica — tela inicial (A.1)", () => {
-  it("renderiza relato, dropzone com limites e botão Analisar desabilitado", async () => {
+  it("renderiza a entrada progressiva compacta com relato e anexos", async () => {
     montar();
+    expect(screen.getByLabelText("Relato do cliente")).toBeTruthy();
     expect(
-      screen.getByPlaceholderText("Cole aqui o que o cliente contou."),
+      screen.getByRole("button", { name: "Anexar documentos" }),
     ).toBeTruthy();
+    expect(screen.getByTestId("entrada-file-input")).toBeTruthy();
     expect(
-      screen.getByText(/Arraste documentos aqui · ou clique para escolher/),
+      screen.getByRole("button", { name: "Analisar relato e documentos" }),
     ).toBeTruthy();
     await waitFor(() =>
-      expect(screen.getByText(/até 40 arquivos, 120 MB/)).toBeTruthy(),
+      expect(getMock).toHaveBeenCalledWith("/entrada-universal/meta"),
     );
-    const botao = screen.getByRole("button", {
-      name: "Analisar",
-    }) as HTMLButtonElement;
-    expect(botao.disabled).toBe(true);
   });
 
-  it("habilita Analisar com relato ≥ 40 caracteres OU ≥ 1 arquivo", () => {
+  it("só dispara análise com relato ≥ 40 caracteres OU ≥ 1 arquivo", async () => {
     montar();
     const botao = screen.getByRole("button", {
-      name: "Analisar",
-    }) as HTMLButtonElement;
+      name: "Analisar relato e documentos",
+    });
 
     preencherRelato(39);
-    expect(botao.disabled).toBe(true);
+    fireEvent.click(botao);
+    expect(postMock).not.toHaveBeenCalled();
 
+    postMock.mockResolvedValueOnce({
+      data: { rascunho_id: "r-valid", cliente: {}, area: {}, documentos: [] },
+    });
     preencherRelato(40);
-    expect(botao.disabled).toBe(false);
+    fireEvent.click(botao);
+    await waitFor(() =>
+      expect(postMock).toHaveBeenCalledWith(
+        "/entrada/analisar",
+        expect.any(FormData),
+        expect.any(Object),
+      ),
+    );
 
-    // Sem relato, um arquivo basta.
-    preencherRelato(0);
-    expect(botao.disabled).toBe(true);
+    cleanup();
+    sessionStorage.clear();
+    postMock.mockReset();
+    postMock.mockResolvedValueOnce({
+      data: { rascunho_id: "r-file", cliente: {}, area: {}, documentos: [] },
+    });
+    montar();
     const input = screen.getByTestId("entrada-file-input");
     fireEvent.change(input, {
       target: {
         files: [new File(["x"], "doc.pdf", { type: "application/pdf" })],
       },
     });
-    expect(botao.disabled).toBe(false);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Analisar relato e documentos" }),
+    );
+    await waitFor(() => expect(postMock).toHaveBeenCalledTimes(1));
   });
 });
 
@@ -190,7 +211,7 @@ describe("EntradaUnica — confirmação (tela B)", () => {
     postMock.mockResolvedValueOnce({ data: RESPOSTA_COMPLETA });
     montar();
     preencherRelato(60);
-    fireEvent.click(screen.getByRole("button", { name: "Analisar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Analisar relato e documentos" }));
 
     await screen.findByText("Confira e confirme");
 
@@ -291,7 +312,7 @@ describe("EntradaUnica — confirmação (tela B)", () => {
     });
     montar();
     preencherRelato(60);
-    fireEvent.click(screen.getByRole("button", { name: "Analisar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Analisar relato e documentos" }));
 
     await screen.findByText("Confira e confirme");
     expect(
@@ -312,7 +333,7 @@ describe("EntradaUnica — confirmação (tela B)", () => {
     postMock.mockResolvedValueOnce({ data: RESPOSTA_COMPLETA });
     const primeira = montar();
     preencherRelato(60);
-    fireEvent.click(screen.getByRole("button", { name: "Analisar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Analisar relato e documentos" }));
     await screen.findByText("Confira e confirme");
     primeira.unmount();
 
@@ -322,6 +343,40 @@ describe("EntradaUnica — confirmação (tela B)", () => {
     expect(
       (screen.getByLabelText("Título do caso") as HTMLInputElement).value,
     ).toBe("Negativação indevida — Maria S. da Costa");
+  });
+});
+
+describe("EntradaUnica — criação abre o workspace do caso", () => {
+  it("não força o Dossiê após criar; abre diretamente a Visão do caso", async () => {
+    postMock
+      .mockResolvedValueOnce({
+        data: { rascunho_id: "r3", degradado: true, avisos: [] },
+      })
+      .mockResolvedValueOnce({
+        data: { case_id: "case-42", numero_interno: "DPT-2026-0042" },
+      });
+
+    render(
+      <MemoryRouter initialEntries={["/entrada"]}>
+        <Routes>
+          <Route path="/entrada" element={<EntradaUnica />} />
+          <Route path="/casos/:id" element={<DestinoProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    preencherRelato(60);
+    fireEvent.click(screen.getByRole("button", { name: "Analisar relato e documentos" }));
+    await screen.findByText("Confira e confirme");
+
+    fireEvent.click(
+      screen.getByLabelText("Confirmo que revisei os dados acima"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Criar caso" }));
+
+    expect(
+      await screen.findByText("DESTINO:/casos/case-42?tab=resumo"),
+    ).toBeTruthy();
   });
 });
 

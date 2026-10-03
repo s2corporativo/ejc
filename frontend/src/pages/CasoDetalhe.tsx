@@ -4,8 +4,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams, useNavigate } from "react-router";
 import {
   Sparkles,
-  ChevronDown,
   ChevronLeft,
+  ChevronDown,
   RefreshCw,
   ShieldCheck,
   Copy,
@@ -26,6 +26,7 @@ import IntakeAnalise from "../components/IntakeAnalise";
 import ConversaoChecklist from "../components/ConversaoChecklist";
 import ProvasCaso from "../components/ProvasCaso";
 import DossieEstrategicoCaso from "../components/DossieEstrategicoCaso";
+import DossieJuridico from "./EntradaUnica/DossieJuridico";
 import OrquestradorPanel from "../components/OrquestradorPanel";
 import CaseBreadcrumb from "../components/CaseBreadcrumb";
 import { ConsultaProfundaTJMG } from "../components/Infosimples";
@@ -130,13 +131,12 @@ export const TABS = [
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
-// Fase 1 (plano de simplificação): as ~25 abas do workspace são organizadas
-// nas CINCO seções canônicas de config/caseNav.ts — os MESMOS rótulos da
-// barra persistente (CaseContextBar) e do dock (CaseCommandDock). Cada aba
-// mantém a mesma key e o mesmo conteúdo — só muda o agrupamento; deep-links
-// (?tab=...) antigos continuam funcionando porque a seção ativa é derivada da
-// aba (GROUPS.find abaixo). O antigo grupo "Histórico e encerramento"
-// (memoria) foi absorvido por Atividades.
+// As ~25 capacidades do workspace são organizadas nas CINCO áreas canônicas de
+// config/caseNav.ts. A navegação principal vive no CaseContextBar; aqui ficam
+// somente os filtros internos da área ativa. Cada aba mantém a mesma key e o
+// mesmo conteúdo, preservando deep-links ?tab=... e redirects legados.
+// O antigo grupo "Histórico e encerramento" (memoria) foi absorvido por
+// Atividades.
 // `links` são rotas irmãs do caso (páginas próprias) expostas na seção
 // pertinente para não parecerem sistemas separados. A rota /casos/:id/jornada
 // deixou de ser link porque a jornada agora vive embutida na Visão.
@@ -674,6 +674,69 @@ function DadosDoCasoRecolhivel({
   );
 }
 
+// Espelha `exigir_advogado` (routers/entrada.py): /entrada/analisar responde
+// 403 abaixo de advogado — o atalho nem aparece para quem seria recusado.
+const PAPEIS_DOSSIE_JURIDICO = new Set([
+  "superadmin",
+  "admin",
+  "socio",
+  "advogado",
+]);
+
+export function DossieIntegradoCaso({ caseId }: { caseId: string }) {
+  const role = useAuth((s) => s.user?.role) ?? "";
+  const podeDossieJuridico = PAPEIS_DOSSIE_JURIDICO.has(role);
+  const [mostrarJuridico, setMostrarJuridico] = useState(false);
+  // Montar DossieJuridico dispara análise de IA e grava snapshot versionado:
+  // depois da primeira abertura o painel só é ocultado, nunca desmontado, para
+  // que alternar a visibilidade não repita custo de IA nem trilha de auditoria.
+  const [juridicoCarregado, setJuridicoCarregado] = useState(false);
+
+  return (
+    <div className="space-y-4">
+      <DossieEstrategicoCaso caseId={caseId} />
+
+      {podeDossieJuridico && (
+        <div className="card p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">
+                Análise jurídica completa
+              </h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Gera o Dossiê Jurídico profundo sob demanda, com matriz
+                fato-prova-tese, lacunas, leitura adversarial e plano jurídico.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn-secondary text-xs"
+              onClick={() => {
+                setJuridicoCarregado(true);
+                setMostrarJuridico((valor) => !valor);
+              }}
+              aria-expanded={mostrarJuridico}
+            >
+              {mostrarJuridico
+                ? "Ocultar Dossiê Jurídico"
+                : "Abrir Dossiê Jurídico"}
+            </button>
+          </div>
+
+          {juridicoCarregado && (
+            <div
+              className="mt-4 border-t border-slate-100 pt-4"
+              hidden={!mostrarJuridico}
+            >
+              <DossieJuridico caseId={caseId} embedded />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CasoDetalhe() {
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -915,7 +978,7 @@ export default function CasoDetalhe() {
       case "memoria":
         return <TabMemoria caseId={id} />;
       case "dossie":
-        return <DossieEstrategicoCaso caseId={id} />;
+        return <DossieIntegradoCaso caseId={id} />;
 
       case "ferramentas":
         return <TabFerramentas caso={caso} />;
@@ -926,21 +989,13 @@ export default function CasoDetalhe() {
     }
   };
 
-  const primaryCaseTabs: { key: TabKey; label: string }[] = [
-    { key: "resumo", label: "Visão geral" },
-    { key: "timeline", label: "Timeline" },
-    { key: "documentos", label: "Documentos" },
-    { key: "teses", label: "Estratégia" },
-    { key: "pecas", label: "Peças" },
-    { key: "prazos", label: "Prazos" },
-    { key: "financeiro", label: "Financeiro" },
-  ];
-  const primaryFlowTabs = new Set<TabKey>(
-    primaryCaseTabs.map((item) => item.key),
+  const activeSection =
+    CASE_NAV_SECTIONS.find((section) => section.tabs.includes(activeTab)) ??
+    CASE_NAV_SECTIONS[0];
+  const activeSectionTabs = filtrarTabsW3(activeSection.tabs).filter(
+    (tab): tab is TabKey => TABS.some((item) => item.key === tab),
   );
-  const tabsMais = filtrarTabsW3(TABS.map((tab) => tab.key)).filter(
-    (tab) => !primaryFlowTabs.has(tab),
-  );
+  const activeSectionLinks = GROUP_LINKS[activeSection.label] ?? [];
   const activeTabLabel =
     TABS.find((t) => t.key === activeTab)?.label ?? "Resumo";
   const numeroProcesso =
@@ -1071,63 +1126,40 @@ export default function CasoDetalhe() {
             </button>
           </div>
         </div>
-        <div className="ejc-case-nav-row border-t border-slate-100 px-3 py-2">
-          <nav
-            className="ejc-case-primary-tabs"
-            aria-label="Áreas principais do caso"
-          >
-            {primaryCaseTabs.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => setSearchParams({ tab: item.key })}
-                className={activeTab === item.key ? "is-active" : ""}
-              >
-                {item.label}
-              </button>
-            ))}
-          </nav>
-          <details className="group relative ejc-case-more">
-            <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:border-primary-300 hover:bg-primary-50">
-              Mais
-              <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
-            </summary>
-            <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50/90 p-3 shadow-sm">
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                Recursos complementares do caso
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {tabsMais.map((k) => {
-                  const t = TABS.find((x) => x.key === k)!;
-                  return (
-                    <button
-                      key={k}
-                      type="button"
-                      onClick={() => setSearchParams({ tab: k })}
-                      className={`h-8 rounded-full px-3 text-xs font-medium transition-colors ${
-                        activeTab === k
-                          ? "bg-slate-950 text-white"
-                          : "border border-slate-200 bg-white text-slate-600 hover:border-primary-300 hover:text-slate-950"
-                      }`}
-                    >
-                      {t.label}
-                    </button>
-                  );
-                })}
-                {Object.values(GROUP_LINKS)
-                  .flat()
-                  .map((link) => (
-                    <Link
-                      key={link.label}
-                      to={link.to(caso.id)}
-                      className="flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-primary-700 transition-colors hover:border-primary-300 hover:bg-primary-50"
-                    >
-                      {link.label}
-                    </Link>
-                  ))}
-              </div>
-            </div>
-          </details>
+        <div className="border-t border-slate-100 px-3 py-2">
+          {(activeSectionTabs.length > 1 || activeSectionLinks.length > 0) && (
+            <nav
+              className="flex flex-wrap gap-1.5"
+              aria-label={`Filtros de ${activeSection.label}`}
+            >
+              {activeSectionTabs.map((key) => {
+                const tab = TABS.find((item) => item.key === key)!;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setSearchParams({ tab: key })}
+                    className={`h-8 rounded-full px-3 text-xs font-medium transition-colors ${
+                      activeTab === key
+                        ? "bg-slate-950 text-white"
+                        : "border border-slate-200 bg-white text-slate-600 hover:border-primary-300 hover:text-slate-950"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+              {activeSectionLinks.map((link) => (
+                <Link
+                  key={link.label}
+                  to={link.to(caso.id)}
+                  className="flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-primary-700 transition-colors hover:border-primary-300 hover:bg-primary-50"
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </nav>
+          )}
         </div>
       </div>
 

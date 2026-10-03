@@ -6,7 +6,9 @@ export type NovoCasoModo = "documento" | "manual";
  * atalhos devem convergir para /entrada e escolher apenas o modo da mesma porta.
  */
 export const NOVO_CASO_DOCUMENTO_PATH = "/entrada?modo=documento";
-export const NOVO_CASO_MANUAL_PATH = "/entrada?modo=manual";
+// `aba=caso`: todo atalho "novo caso" abre o cadastro rápido já na aba do
+// caso — sem ela, CadastroManual cai na aba de cliente.
+export const NOVO_CASO_MANUAL_PATH = "/entrada?modo=manual&aba=caso";
 
 /**
  * Abre a Entrada Jurídica já vinculada a um cliente autorizado. Sem `modo`, a

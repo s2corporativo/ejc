@@ -1,10 +1,10 @@
-// ── Navegação canônica do modo caso (Fase 1 do plano de simplificação) ───────
-// Fonte dos cinco agrupadores internos do workspace do caso: a página
-// (CasoDetalhe/GROUPS) e o dock de ações (CaseCommandDock) derivam desta lista.
-// A CaseContextBar usa o fluxo operacional de sete etapas do cockpit e aponta
-// para abas pertencentes a estes agrupadores.
-// As abas (?tab=...) continuam sendo a unidade de deep-link; cada seção apenas
-// agrupa abas existentes. Nenhuma aba é removida — só reagrupada.
+// ── Navegação canônica do modo caso ─────────────────────────────────────────
+// Fonte única das cinco áreas principais exibidas no CaseContextBar:
+// Visão, Atividades, Documentos, Estratégia e Financeiro.
+// CasoDetalhe usa esta lista apenas para derivar a área ativa e seus filtros
+// internos. O CaseCommandDock é exclusivamente de ações rápidas.
+// As abas (?tab=...) continuam sendo deep-links estáveis; nenhuma capacidade é
+// removida, apenas agrupada sob uma das cinco áreas.
 import {
   Activity,
   FileStack,
@@ -15,12 +15,12 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 export interface CaseNavSection {
-  /** Rótulo canônico exibido na barra, na página e no dock. */
+  /** Rótulo canônico exibido na navegação principal do modo caso. */
   label: string;
   /** Aba padrão aberta ao navegar para a seção. */
   tab: string;
   icon: LucideIcon;
-  /** Descrição curta usada no CaseCommandDock. */
+  /** Descrição curta usada como ajuda contextual da área. */
   descricao: string;
   /** Todas as abas (?tab=...) agrupadas nesta seção. */
   tabs: readonly string[];

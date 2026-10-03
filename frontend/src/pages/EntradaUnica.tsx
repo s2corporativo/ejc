@@ -1,19 +1,19 @@
 // Entrada Única (/entrada) — porta de entrada principal de casos.
 // Fluxo canônico:
-//   A) relato + documentos → análise preliminar;
-//   B) confirmação editável → criação do caso;
-//   C) dossiê jurídico profundo → aprovação HITL → Motor de Peça.
+//   A) uma única porta: cadastro rápido OU análise assistida;
+//   B) análise preliminar → confirmação editável → criação do caso;
+//   C) o caso abre imediatamente; Dossiê/estratégia permanecem disponíveis
+//      dentro do workspace, sem virar etapa obrigatória.
 // A complexidade fica no EJC; a superfície inicial continua simples.
 import { useCallback, useEffect, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import api from "../lib/api";
 import { toast } from "../components/Toast";
-import { PageHeader } from "../components/UI";
+import { Button, PageHeader } from "../components/UI";
 import { useAuth } from "../stores/auth";
 import type { User } from "../types";
 import CadastroManual from "./CadastroManual";
 import { Confirmacao } from "./EntradaUnica/Confirmacao";
-import DossieJuridico from "./EntradaUnica/DossieJuridico";
 import { TelaAnalisando, TelaInicial } from "./EntradaUnica/TelaEnvio";
 import {
   carregarRascunho,
@@ -30,7 +30,7 @@ import {
   type Proposta,
 } from "./EntradaUnica/types";
 
-type Fase = "inicial" | "analisando" | "confirmar" | "dossie";
+type Fase = "inicial" | "analisando" | "confirmar";
 
 type ClienteContexto = {
   id: string;
@@ -75,12 +75,63 @@ function nomeClienteContexto(raw: unknown): string {
  * o cadastro manual; backend continua autoritativo para cada operação.
  */
 export default function EntradaUnica() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const role = user?.role || "";
-  const modoManual = searchParams.get("modo") === "manual";
-  if (modoManual || !PAPEIS_ENTRADA_IA.has(role)) return <CadastroManual />;
-  return <EntradaInteligente />;
+  const podeUsarIA = PAPEIS_ENTRADA_IA.has(role);
+  const modoManual = searchParams.get("modo") === "manual" || !podeUsarIA;
+
+  const selecionarModo = (modo: "ia" | "manual") => {
+    const next = new URLSearchParams(searchParams);
+    // "Cadastro rápido" é cadastro de CASO: abre direto na aba do caso.
+    if (modo === "manual") {
+      next.set("modo", "manual");
+      next.set("aba", "caso");
+    } else {
+      next.delete("modo");
+      next.delete("aba");
+    }
+    setSearchParams(next, { replace: true });
+  };
+
+  return (
+    <div>
+      <PageHeader
+        title="Nova demanda"
+        subtitle={
+          modoManual
+            ? "Cadastre rapidamente um caso existente, sem análise de IA."
+            : "Conte o caso ou envie documentos. O EJC analisa e você confirma antes de criar."
+        }
+        actions={
+          podeUsarIA ? (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant={modoManual ? "secondary" : "primary"}
+                onClick={() => selecionarModo("ia")}
+              >
+                Analisar com IA
+              </Button>
+              <Button
+                size="sm"
+                variant={modoManual ? "primary" : "secondary"}
+                onClick={() => selecionarModo("manual")}
+              >
+                Cadastro rápido
+              </Button>
+            </div>
+          ) : undefined
+        }
+      />
+
+      {modoManual ? (
+        <CadastroManual embedded />
+      ) : (
+        <EntradaInteligente embedded />
+      )}
+    </div>
+  );
 }
 
 /** Reutilizada no Dashboard para que / e /entrada usem a MESMA Entrada Única. */
@@ -90,6 +141,7 @@ export function EntradaInteligente({
   embedded?: boolean;
 }) {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const meuId = user?.id ?? "";
   const clientIdContexto = searchParams.get("client_id")?.trim() || null;
@@ -103,7 +155,6 @@ export function EntradaInteligente({
   const [usuarios, setUsuarios] = useState<User[]>([]);
   const [criando, setCriando] = useState(false);
   const [erro409, setErro409] = useState<string | null>(null);
-  const [caseCriadoId, setCaseCriadoId] = useState<string | null>(null);
   const [clienteContexto, setClienteContexto] =
     useState<ClienteContexto | null>(null);
   const [clienteContextoInvalido, setClienteContextoInvalido] = useState(false);
@@ -278,14 +329,13 @@ export function EntradaInteligente({
         return;
       }
       limparRascunho();
-      setCaseCriadoId(caseId);
       setProposta(null);
       toast.success(
         data?.numero_interno
-          ? `Caso ${data.numero_interno} criado. Iniciando leitura jurídica completa.`
-          : "Caso criado. Iniciando leitura jurídica completa.",
+          ? `Caso ${data.numero_interno} criado. A estratégia permanece disponível quando você precisar.`
+          : "Caso criado. A estratégia permanece disponível quando você precisar.",
       );
-      setFase("dossie");
+      navigate(`/casos/${caseId}?tab=resumo`, { replace: true });
     } catch (err) {
       const status = (err as { response?: { status?: number } } | undefined)
         ?.response?.status;
@@ -364,7 +414,7 @@ export function EntradaInteligente({
     } finally {
       setCriando(false);
     }
-  }, [proposta]);
+  }, [proposta, navigate]);
 
   const descartar = useCallback(() => {
     limparRascunho();
@@ -373,19 +423,9 @@ export function EntradaInteligente({
     setFase("inicial");
   }, []);
 
-  const novaEntrada = useCallback(() => {
-    limparRascunho();
-    setCaseCriadoId(null);
-    setProposta(null);
-    setTexto("");
-    setArquivos([]);
-    setErro409(null);
-    setFase("inicial");
-  }, []);
-
   return (
     <div>
-      {!embedded && fase !== "dossie" && (
+      {!embedded && (
         <PageHeader
           title="Entrada Jurídica"
           subtitle={
@@ -419,9 +459,6 @@ export function EntradaInteligente({
           onCriar={criarCaso}
           onDescartar={descartar}
         />
-      )}
-      {fase === "dossie" && caseCriadoId && (
-        <DossieJuridico caseId={caseCriadoId} onNovo={novaEntrada} />
       )}
     </div>
   );

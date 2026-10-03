@@ -112,19 +112,19 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
     ferramentas: [
       {
         id: "caso-novo",
-        titulo: "Novo Caso",
-        rota: "/casos/novo",
+        titulo: "Nova demanda",
+        rota: "/entrada",
         oQueE:
-          "O assistente guiado que abre um caso ligando cliente e dados básicos em poucos passos.",
+          "A porta única para abrir trabalho jurídico: cadastro rápido ou análise assistida por IA, sem duplicar fluxos.",
         paraQueServe:
-          "Padroniza a entrada de casos para nada essencial ficar de fora e o cliente ser reaproveitado quando já existir, reduzindo retrabalho e cadastro inconsistente.",
+          "Permite começar pelo caminho mais simples e aprofundar apenas quando necessário, preservando confirmação humana antes da criação assistida.",
         comoUsar: [
-          "Clique em Novo Caso, em destaque no menu Principal.",
-          "Informe o cliente — o sistema busca por CPF/CNPJ e reaproveita se já existir.",
-          "Preencha os dados básicos do caso (área, parte contrária, tribunal, valor da causa).",
-          "Conclua o assistente — o caso já nasce pronto para receber prazos, documentos e honorários.",
+          "Abra Nova demanda.",
+          "Use Cadastro rápido para um caso já conhecido ou Analisar com IA quando houver relato/documentos.",
+          "Na análise assistida, revise e confirme os dados antes de criar o caso.",
+          "Depois da criação, o sistema abre diretamente a Visão do caso; o Dossiê Jurídico fica disponível em Estratégia.",
         ],
-        dica: "Preencha a Prioridade (urgente/alta/média/baixa) já na abertura — ela aparece destacada na visão do caso.",
+        dica: "Os links antigos continuam funcionando por compatibilidade, mas novas aberturas devem começar em /entrada.",
         perfil: "advogado",
       },
       {
@@ -149,35 +149,35 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         titulo: "Detalhe do Caso",
         rota: "/casos/:id",
         oQueE:
-          "O workspace de um caso específico, com abas de resumo, partes, documentos, prazos e ações.",
+          "O workspace de um caso específico, organizado em cinco áreas: Visão, Atividades, Documentos, Estratégia e Financeiro.",
         paraQueServe:
           "Reúne tudo de um caso em um único ambiente de trabalho, para você não pular entre telas ao tocar um processo do início ao fim.",
         comoUsar: [
           "Em Casos, clique no caso desejado.",
-          "Navegue pelas abas: Resumo, Timeline, Partes, Documentos, Checklists, Teses.",
+          "Use a barra principal para alternar entre Visão, Atividades, Documentos, Estratégia e Financeiro.",
           "Na aba Resumo, use as ações rápidas: Análise IA, Sincronizar DataJud, lançar horas, encerrar caso.",
-          "Abra a Jornada e a aba Estratégia a partir do próprio caso.",
+          "Use Estratégia para teses, indicadores e dossiês; a próxima ação fica na Visão.",
         ],
         dica: "Registre o campo Resultado ao encerrar o caso — ele alimenta os desfechos reais da Jurimetria.",
         perfil: "advogado",
       },
       {
         id: "caso-jornada",
-        titulo: "Jornada do Caso",
-        rota: "/casos/:id/jornada",
+        titulo: "Visão e próxima ação",
+        rota: "/casos/:id",
         oQueE:
-          "A linha das 9 etapas do caso, do cliente à gestão contínua, com o que já foi feito e o que falta.",
+          "A visão operacional do caso, com a próxima ação recomendada, pendências e acesso às cinco áreas do workspace.",
         paraQueServe:
-          "Mostra em que ponto o caso está e qual o próximo passo, guiando advogados e equipe de apoio por um fluxo padronizado sem depender de memória.",
+          "Mostra o que precisa ser feito agora sem exigir que o advogado gerencie uma sequência artificial de etapas.",
         comoUsar: [
-          "No detalhe de um caso, clique em Jornada do Caso.",
-          "Percorra as etapas: Cliente, Triagem, Documentos, Inteligência, Estratégia, Produção, Revisão, Protocolo e Gestão.",
-          "Veja as pendências de cada etapa e clique para abrir a ferramenta correspondente.",
-          "Conclua as etapas na ordem para acompanhar o progresso do caso.",
+          "Em Casos, abra o caso desejado.",
+          "Confira a Próxima ação e as pendências logo na Visão.",
+          "Use a barra principal para alternar entre Visão, Atividades, Documentos, Estratégia e Financeiro.",
+          "Abra Ver detalhes apenas quando precisar consultar a jornada técnica completa ou executar uma ação do orquestrador.",
         ],
-        dica: "A etapa de Triagem leva direto à Entrevista Inteligente, com relato livre e apoio da IA.",
+        dica: "A Entrevista Inteligente continua disponível como ferramenta contextual do caso, sem ser uma etapa obrigatória.",
         perfil: "advogado",
-        badge: "Jornada",
+        badge: "Caso",
       },
       {
         id: "caso-entrevista",
@@ -188,7 +188,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         paraQueServe:
           "Transforma o relato do cliente em uma triagem inicial estruturada, com nível de confiança por item, acelerando a definição da área e da estratégia do caso.",
         comoUsar: [
-          "Na Jornada do Caso, abra a etapa Triagem (Entrevista Inteligente).",
+          "No caso, abra a Entrevista Inteligente quando precisar aprofundar o relato.",
           "Descreva os fatos em linguagem natural, como o cliente contou.",
           "Clique em Analisar e leia a triagem preliminar da IA.",
           "Confira o painel de confiança de cada item antes de aceitar as sugestões.",

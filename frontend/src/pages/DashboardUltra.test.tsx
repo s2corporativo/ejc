@@ -251,11 +251,13 @@ describe("DashboardUltra — cockpit jurídico final", () => {
 
     expect(await screen.findByText("Começar novo trabalho")).toBeTruthy();
     expect(
-      screen.getByRole("link", { name: "Entrada por IA" }).getAttribute("href"),
+      screen
+        .getByRole("link", { name: "Entrada Jurídica" })
+        .getAttribute("href"),
     ).toBe("/entrada");
     expect(
       screen.getByRole("link", { name: "+ Novo Caso" }).getAttribute("href"),
-    ).toBe("/cadastro-manual?aba=caso");
+    ).toBe("/entrada?modo=manual&aba=caso");
     expect(screen.queryByTestId("entrada-unica")).not.toBeTruthy();
   });
 
@@ -299,31 +301,15 @@ describe("DashboardUltra — cockpit jurídico final", () => {
     expect(screen.getByText("Revisar documentos")).toBeTruthy();
   });
 
-  it("preserva o fluxo jurídico em sete etapas com rotas reais", async () => {
+  it("não replica a jornada do caso no dashboard", async () => {
     mockGetOk();
     renderizar();
-    await screen.findByText("Fluxo jurídico");
+    await screen.findByText("Meu Dia");
 
-    const atalhos = [
-      ["Analisar caso", "/entrada"],
-      ["Provas", "/documentos"],
-      ["Teses", "/teses"],
-      ["Estratégia", "/inteligencia?tab=assistente"],
-      ["Peça", "/pecas"],
-      ["Revisão", "/pecas"],
-      ["Ajuizamento", "/ajuizamento"],
-    ] as const;
-
-    const legitimos = new Set(STAFF_ROUTES.map((r) => r.path));
-    for (const redirect of LEGACY_REDIRECTS) {
-      legitimos.add(redirect.to.split("?")[0]);
-    }
-
-    for (const [rotulo, href] of atalhos) {
-      const link = screen.getByRole("link", { name: rotulo });
-      expect(link.getAttribute("href")).toBe(href);
-      expect(legitimos.has(href.split("?")[0])).toBe(true);
-    }
+    expect(screen.queryByLabelText("Fluxo jurídico")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Provas" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Teses" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Ajuizamento" })).toBeNull();
   });
 
   it("restringe a Entrada Jurídica por papel", async () => {

@@ -11,7 +11,6 @@ import {
   X,
 } from "lucide-react";
 import api from "../lib/api";
-import { CASE_NAV_SECTIONS } from "../config/caseNav";
 import { useAreas } from "../lib/areas";
 import { caminhoAbaCaso } from "../lib/caseContext";
 import { toast } from "./Toast";
@@ -162,13 +161,6 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
     setAreaNova("");
   };
 
-  const actions = CASE_NAV_SECTIONS.map((secao) => ({
-    label: secao.label,
-    description: secao.descricao,
-    icon: secao.icon,
-    to: caminhoAbaCaso(caseId, secao.tab),
-  }));
-
   const caminhoProduzirPeca = `${caminhoAbaCaso(caseId, "pecas")}&acao=produzir`;
 
   return (
@@ -191,32 +183,9 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
                 <LayoutGrid className="h-4 w-4" /> Modo simples
               </div>
               <p className="mt-1 text-primary-700">
-                Escolha a tarefa. O workspace completo continua disponível na
-                tela do caso.
+                Escolha uma ação rápida. A navegação entre Visão, Atividades,
+                Documentos, Estratégia e Financeiro fica na barra do caso.
               </p>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              {actions.map(({ label, description, icon: Icon, to }) => (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => abrirDestino(to)}
-                  className="flex items-start gap-3 rounded-xl bg-slate-900/[0.04] p-4 text-left transition hover:bg-slate-900/[0.08]"
-                >
-                  <span className="rounded-lg bg-white p-2 text-primary-700 shadow-sm">
-                    <Icon className="h-4 w-4" />
-                  </span>
-                  <span>
-                    <span className="block text-sm font-semibold text-slate-900">
-                      {label}
-                    </span>
-                    <span className="mt-1 block text-xs leading-5 text-slate-500">
-                      {description}
-                    </span>
-                  </span>
-                </button>
-              ))}
             </div>
 
             <div className="grid gap-2 sm:grid-cols-2">

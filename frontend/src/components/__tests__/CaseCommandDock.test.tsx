@@ -38,7 +38,7 @@ describe("CaseCommandDock", () => {
     remove.mockResolvedValue({ data: { ok: true } });
   });
 
-  it("navega pelos MESMOS cinco destinos canônicos da barra do caso", () => {
+  it("expõe apenas ações contextuais sem repetir a navegação principal", () => {
     render(
       <MemoryRouter>
         <CaseCommandDock caseId="case-1" />
@@ -50,8 +50,6 @@ describe("CaseCommandDock", () => {
     );
 
     expect(screen.getByText("Modo simples")).toBeTruthy();
-    // Fase 1: os destinos de navegação são exatamente os cinco rótulos
-    // canônicos (config/caseNav) — os mesmos da CaseContextBar e da página.
     for (const rotulo of [
       "Visão",
       "Atividades",
@@ -59,14 +57,14 @@ describe("CaseCommandDock", () => {
       "Estratégia",
       "Financeiro",
     ]) {
-      expect(screen.getByText(rotulo)).toBeTruthy();
+      expect(screen.queryByText(rotulo)).toBeNull();
     }
-    // "Peças" deixou de ser um sexto destino de navegação: virou ação de
-    // produção, ao lado de Áreas do caso e Anexar documento — hoje desdobrada
-    // em produzir (gerador já no contexto do caso) e fila.
-    expect(screen.queryByText("Jornada e próxima ação")).toBeNull();
     expect(screen.getByRole("button", { name: /Produzir peça/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Fila de peças/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Áreas do caso" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Anexar documento" }),
+    ).toBeTruthy();
   });
 
   it("usa a taxonomia canônica e vincula uma área ao caso", async () => {

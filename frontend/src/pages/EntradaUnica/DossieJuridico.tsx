@@ -18,6 +18,7 @@ type AnyRecord = Record<string, any>;
 type Props = {
   caseId: string;
   onNovo?: () => void;
+  embedded?: boolean;
 };
 
 function erroTexto(err: unknown, fallback: string): string {
@@ -92,7 +93,11 @@ function Secao({
   );
 }
 
-export default function DossieJuridico({ caseId, onNovo }: Props) {
+export default function DossieJuridico({
+  caseId,
+  onNovo,
+  embedded = false,
+}: Props) {
   const navigate = useNavigate();
   const [dossie, setDossie] = useState<AnyRecord | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -257,19 +262,21 @@ export default function DossieJuridico({ caseId, onNovo }: Props) {
             {dossie.aviso}
           </p>
         </div>
-        <div className="flex gap-2">
-          {onNovo && (
-            <Button variant="ghost" onClick={onNovo}>
-              Nova entrada
+        {!embedded && (
+          <div className="flex gap-2">
+            {onNovo && (
+              <Button variant="ghost" onClick={onNovo}>
+                Nova entrada
+              </Button>
+            )}
+            <Button
+              variant="secondary"
+              onClick={() => navigate(`/casos/${caseId}`)}
+            >
+              Abrir caso
             </Button>
-          )}
-          <Button
-            variant="secondary"
-            onClick={() => navigate(`/casos/${caseId}`)}
-          >
-            Abrir caso
-          </Button>
-        </div>
+          </div>
+        )}
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">

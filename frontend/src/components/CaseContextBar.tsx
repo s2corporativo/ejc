@@ -1,42 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "react-router";
-import {
-  ArrowRight,
-  CalendarClock,
-  FileText,
-  FolderOpen,
-  Gavel,
-  Scale,
-  Send,
-  ShieldCheck,
-  Sparkles,
-  X,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import api from "../lib/api";
-import { asList } from "../lib/list";
+import { useEffect, useMemo } from "react";
+import { Link, useLocation, useNavigate } from "react-router";
+import { ArrowRight, CalendarClock, FolderOpen, X } from "lucide-react";
+import { CASE_NAV_SECTIONS } from "../config/caseNav";
 import { useCaseContext } from "../stores/caseContext";
 
-// Rotas /casos/:id/* ativam o modo caso; /casos/novo é o wizard (não é caso).
+// Rotas /casos/:id/* ativam o modo caso; /casos/novo é a entrada histórica.
 const CASE_ROUTE = /^\/casos\/([^/]+)/;
-
-type CaseWorkflowStep = {
-  label: string;
-  tab?: string;
-  hash?: string;
-  external?: boolean;
-  icon: LucideIcon;
-};
-
-const CASE_WORKFLOW: readonly CaseWorkflowStep[] = [
-  { label: "Fatos", tab: "resumo", icon: FolderOpen },
-  { label: "Provas", tab: "provas", icon: ShieldCheck },
-  { label: "Teses", tab: "teses", icon: Scale },
-  { label: "Estratégia", tab: "dossie", icon: Sparkles },
-  { label: "Peça", tab: "pecas", icon: FileText },
-  { label: "Revisão", tab: "pecas", hash: "#revisao", icon: Gavel },
-  { label: "Ajuizamento", external: true, icon: Send },
-];
 
 function prazoCurto(valor?: string): string | null {
   if (!valor) return null;
@@ -50,22 +19,19 @@ function prazoCurto(valor?: string): string | null {
 }
 
 /**
- * Faixa persistente do "Modo Caso".
+ * Contexto persistente do caso.
  *
- * Além de identificar o caso ativo, oferece o mesmo fluxo jurídico de sete
- * etapas usado no dashboard. As subabas detalhadas continuam no workspace, mas
- * deixam de ser a navegação primária. A próxima ação permanece visível em
- * qualquer superfície do caso, reforçando a pergunta operacional central:
- * "o que precisa ser feito agora?".
+ * Regra de simplificação: esta faixa NÃO replica a jornada jurídica. Ela mostra
+ * apenas a identidade do caso, a próxima ação e as cinco áreas canônicas do
+ * workspace. A inteligência e os estados derivados continuam no backend e na
+ * Visão do caso; aqui o advogado navega por intenção, não pela arquitetura.
  */
 export default function CaseContextBar() {
-  const { pathname, search, hash } = useLocation();
+  const { pathname, search } = useLocation();
   const caso = useCaseContext((state) => state.caso);
   const ativar = useCaseContext((state) => state.ativar);
   const sair = useCaseContext((state) => state.sair);
-  const [pecas, setPecas] = useState<
-    { id: string; status?: string; titulo?: string }[]
-  >([]);
+  const navigate = useNavigate();
 
   const idContextual = useMemo(() => {
     const match = CASE_ROUTE.exec(pathname);
@@ -80,27 +46,6 @@ export default function CaseContextBar() {
     if (idContextual) void ativar(idContextual);
   }, [idContextual, ativar]);
 
-  useEffect(() => {
-    if (!caso?.id) {
-      setPecas([]);
-      return;
-    }
-    let ativo = true;
-    api
-      .get("/legal-docs/", {
-        params: { case_id: caso.id, page: 1, page_size: 50 },
-      })
-      .then((response) => {
-        if (ativo) setPecas(asList(response.data));
-      })
-      .catch(() => {
-        if (ativo) setPecas([]);
-      });
-    return () => {
-      ativo = false;
-    };
-  }, [caso?.id]);
-
   if (!caso) return null;
 
   const baseCaso = `/casos/${caso.id}`;
@@ -108,12 +53,15 @@ export default function CaseContextBar() {
   const tabAtiva =
     new URLSearchParams(search).get("tab") || (rotaRaizDoCaso ? "resumo" : "");
   const prazo = prazoCurto(caso.proxima_acao_prazo);
-  const revisoesPendentes = pecas.filter((peca) =>
-    ["em_revisao", "corrigida"].includes(peca.status ?? ""),
-  ).length;
-  const prontasAjuizamento = pecas.filter((peca) =>
-    ["aprovada", "final"].includes(peca.status ?? ""),
-  ).length;
+
+  const secaoAtiva =
+    CASE_NAV_SECTIONS.find((secao) => secao.tabs.includes(tabAtiva)) ??
+    CASE_NAV_SECTIONS.find((secao) =>
+      secao.routeAliases?.some((alias) => pathname.endsWith(alias)),
+    ) ??
+    (pathname === "/ajuizamento"
+      ? CASE_NAV_SECTIONS.find((secao) => secao.label === "Documentos")
+      : undefined);
 
   return (
     <div className="border-b border-primary-200/60 bg-primary-50/95">
@@ -161,7 +109,13 @@ export default function CaseContextBar() {
           </div>
           <button
             type="button"
-            onClick={sair}
+            onClick={() => {
+              sair();
+              // Esta faixa é a única navegação entre as cinco áreas: sair do
+              // modo caso sem sair da rota /casos/:id deixaria o workspace sem
+              // seletor de área (a reativação só ocorre quando o id muda).
+              if (CASE_ROUTE.test(pathname)) navigate("/casos");
+            }}
             className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-primary-600 transition-colors hover:bg-primary-100 hover:text-primary-900"
             title="Sair do modo caso"
             aria-label="Sair do modo caso"
@@ -171,38 +125,22 @@ export default function CaseContextBar() {
         </div>
 
         <nav
-          aria-label="Fluxo jurídico do caso"
+          aria-label="Áreas do caso"
           className="ejc-case-flow flex gap-1 overflow-x-auto pb-2 scrollbar-thin"
         >
-          {CASE_WORKFLOW.map((item, index) => {
-            const Icon = item.icon;
-            const revisao = item.label === "Revisão";
-            const ativo = item.external
-              ? pathname === "/ajuizamento"
-              : item.tab === "pecas"
-                ? tabAtiva === "pecas" &&
-                  (revisao ? hash === "#revisao" : hash !== "#revisao")
-                : tabAtiva === item.tab;
-            const destino = item.external
-              ? `/ajuizamento?caso=${caso.id}`
-              : `${baseCaso}?tab=${item.tab ?? "resumo"}${item.hash ?? ""}`;
-
+          {CASE_NAV_SECTIONS.map((secao) => {
+            const Icon = secao.icon;
+            const ativo = secaoAtiva?.label === secao.label;
             return (
               <Link
-                key={item.label}
-                to={destino}
-                aria-current={ativo ? "step" : undefined}
+                key={secao.label}
+                to={`${baseCaso}?tab=${secao.tab}`}
+                aria-current={ativo ? "page" : undefined}
                 className={`ejc-case-flow__step ${ativo ? "is-active" : ""}`}
+                title={secao.descricao}
               >
-                <small aria-hidden="true">
-                  {item.label === "Revisão" && revisoesPendentes > 0
-                    ? String(revisoesPendentes)
-                    : item.label === "Ajuizamento" && prontasAjuizamento > 0
-                      ? "✓"
-                      : String(index + 1).padStart(2, "0")}
-                </small>
                 <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>{item.label}</span>
+                <span>{secao.label}</span>
               </Link>
             );
           })}

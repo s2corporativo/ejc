@@ -40,6 +40,7 @@ import api from "../lib/api";
 import { asList } from "../lib/list";
 import { useAuth } from "../stores/auth";
 import { getUltimoCasoId } from "../stores/caseContext";
+import { NOVO_CASO_MANUAL_PATH } from "../lib/novoCaso";
 import { EntradaInteligente } from "./EntradaUnica";
 import { IdentidadeAssistente } from "./EntradaUnica/IdentidadeAssistente";
 
@@ -651,19 +652,19 @@ export default function DashboardUltra() {
               </span>
               <strong>Começar novo trabalho</strong>
               <small>
-                Sua carteira já está ativa. Entre direto por IA ou cadastro
-                manual sem ocupar o painel de decisões.
+                Sua carteira já está ativa. Use a mesma Entrada Jurídica para
+                cadastrar rapidamente ou analisar documentos com IA.
               </small>
             </div>
             <div className="ejc-dash__entry-compact-actions">
               {canUseLegal && (
                 <Link to="/entrada" className="is-primary">
                   <Sparkles aria-hidden="true" />
-                  Entrada por IA
+                  Entrada Jurídica
                 </Link>
               )}
               {canUseEntry && (
-                <Link to="/cadastro-manual?aba=caso">
+                <Link to={NOVO_CASO_MANUAL_PATH}>
                   <Briefcase aria-hidden="true" />+ Novo Caso
                 </Link>
               )}
@@ -683,7 +684,7 @@ export default function DashboardUltra() {
             >
               {canUseEntry && (
                 <Link
-                  to="/cadastro-manual?aba=caso"
+                  to={NOVO_CASO_MANUAL_PATH}
                   className="ejc-dash__entry-option is-manual"
                 >
                   <span
@@ -756,7 +757,7 @@ export default function DashboardUltra() {
                     IA.
                   </p>
                   <Link
-                    to="/cadastro-manual?aba=caso"
+                    to={NOVO_CASO_MANUAL_PATH}
                     className="ejc-dash__entry-cta"
                   >
                     Cadastrar caso manualmente
@@ -951,7 +952,7 @@ export default function DashboardUltra() {
               ) : casosEmDestaque.length === 0 ? (
                 <li className="ejc-dash__empty ejc-dash__empty--action">
                   <span>Nenhum caso cadastrado ainda.</span>
-                  <Link to="/cadastro-manual?aba=caso">
+                  <Link to={NOVO_CASO_MANUAL_PATH}>
                     Cadastrar primeiro caso
                   </Link>
                 </li>
@@ -1061,65 +1062,6 @@ export default function DashboardUltra() {
             </ol>
           </section>
         </div>
-
-        <section className="ejc-dash__quick" aria-label="Fluxo jurídico">
-          <div className="ejc-dash__quick-head">
-            <Zap aria-hidden="true" />
-            <strong>Fluxo jurídico</strong>
-            <small>Do caso à próxima ação</small>
-          </div>
-          <div className="ejc-dash__quick-items">
-            <Link to="/entrada" aria-label="Analisar caso">
-              <span aria-hidden="true">
-                <Sparkles />
-              </span>
-              <small aria-hidden="true">01</small>
-              Analisar caso
-            </Link>
-            <Link to="/documentos" aria-label="Provas">
-              <span aria-hidden="true">
-                <Paperclip />
-              </span>
-              <small aria-hidden="true">02</small>
-              Provas
-            </Link>
-            <Link to="/teses" aria-label="Teses">
-              <span aria-hidden="true">
-                <Scale />
-              </span>
-              <small aria-hidden="true">03</small>
-              Teses
-            </Link>
-            <Link to="/inteligencia?tab=assistente" aria-label="Estratégia">
-              <span aria-hidden="true">
-                <ShieldCheck />
-              </span>
-              <small aria-hidden="true">04</small>
-              Estratégia
-            </Link>
-            <Link to="/pecas" aria-label="Peça">
-              <span aria-hidden="true">
-                <FileText />
-              </span>
-              <small aria-hidden="true">05</small>
-              Peça
-            </Link>
-            <Link to="/pecas" aria-label="Revisão">
-              <span aria-hidden="true">
-                <Gavel />
-              </span>
-              <small aria-hidden="true">06</small>
-              Revisão
-            </Link>
-            <Link to="/ajuizamento" aria-label="Ajuizamento">
-              <span aria-hidden="true">
-                <ChevronRight />
-              </span>
-              <small aria-hidden="true">07</small>
-              Ajuizamento
-            </Link>
-          </div>
-        </section>
 
         <section
           className="ejc-dash__extras"

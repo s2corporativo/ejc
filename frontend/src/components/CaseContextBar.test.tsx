@@ -25,29 +25,20 @@ import CaseContextBar from "./CaseContextBar";
 
 afterEach(cleanup);
 
-describe("CaseContextBar — fluxo jurídico do caso", () => {
-  it("expõe o mesmo fluxo visual do dashboard", () => {
+describe("CaseContextBar — navegação principal simplificada", () => {
+  it("expõe somente as cinco áreas canônicas", () => {
     render(
       <MemoryRouter initialEntries={["/casos/case-1?tab=resumo"]}>
         <CaseContextBar />
       </MemoryRouter>,
     );
 
-    const nav = screen.getByRole("navigation", {
-      name: "Fluxo jurídico do caso",
-    });
-    const rotulos = within(nav)
-      .getAllByRole("link")
-      .map((link) => link.textContent?.replace(/^\d{2}/, ""));
-    expect(rotulos).toEqual([
-      "Fatos",
-      "Provas",
-      "Teses",
-      "Estratégia",
-      "Peça",
-      "Revisão",
-      "Ajuizamento",
-    ]);
+    const nav = screen.getByRole("navigation", { name: "Áreas do caso" });
+    expect(
+      within(nav)
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual(["Visão", "Atividades", "Documentos", "Estratégia", "Financeiro"]);
   });
 
   it("mantém a próxima ação visível em qualquer superfície do caso", () => {
@@ -61,38 +52,38 @@ describe("CaseContextBar — fluxo jurídico do caso", () => {
     expect(screen.getByText("05/09/2026")).toBeTruthy();
   });
 
-  it("aponta o fluxo para as superfícies reais do caso", () => {
+  it("aponta as cinco áreas para as superfícies canônicas", () => {
     render(
       <MemoryRouter initialEntries={["/casos/case-1?tab=resumo"]}>
         <CaseContextBar />
       </MemoryRouter>,
     );
 
-    const nav = screen.getByRole("navigation", {
-      name: "Fluxo jurídico do caso",
-    });
+    const nav = screen.getByRole("navigation", { name: "Áreas do caso" });
     const hrefs = within(nav)
       .getAllByRole("link")
       .map((link) => link.getAttribute("href"));
     expect(hrefs).toEqual([
       "/casos/case-1?tab=resumo",
-      "/casos/case-1?tab=provas",
+      "/casos/case-1?tab=timeline",
+      "/casos/case-1?tab=documentos",
       "/casos/case-1?tab=teses",
-      "/casos/case-1?tab=dossie",
-      "/casos/case-1?tab=pecas",
-      "/casos/case-1?tab=pecas#revisao",
-      "/ajuizamento?caso=case-1",
+      "/casos/case-1?tab=financeiro",
     ]);
   });
 
-  it("marca Fatos como etapa ativa na raiz do caso", () => {
+  it("marca Documentos pela subaba Provas sem criar outra navegação", () => {
     render(
-      <MemoryRouter initialEntries={["/casos/case-1"]}>
+      <MemoryRouter initialEntries={["/casos/case-1?tab=provas"]}>
         <CaseContextBar />
       </MemoryRouter>,
     );
 
-    const fatos = screen.getByRole("link", { name: "Fatos" });
-    expect(fatos.getAttribute("aria-current")).toBe("step");
+    expect(
+      screen
+        .getByRole("link", { name: "Documentos" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+    expect(screen.queryByRole("link", { name: "Provas" })).toBeNull();
   });
 });

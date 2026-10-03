@@ -25,7 +25,6 @@ vi.mock("./Toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
-// Modo leitura por role (review PR #483): o painel lê o usuário do store.
 const authState = vi.hoisted(() => ({
   user: { role: "advogado" } as { role: string } | null,
 }));
@@ -86,12 +85,6 @@ const visao: OrquestradorVisao = {
       rotulo: "Base fática registrada",
       status: "concluida",
     },
-    {
-      etapa: "area_confirmada",
-      rotulo: "Área confirmada pelo advogado",
-      status: "bloqueada",
-    },
-    { etapa: "prazo_calculado", rotulo: "Prazo calculado", status: "pendente" },
   ],
   linha_do_tempo: [
     {
@@ -105,7 +98,11 @@ const visao: OrquestradorVisao = {
   ],
 };
 
-describe("OrquestradorPanel", () => {
+function abrirDetalhes() {
+  fireEvent.click(screen.getByText("Ver detalhes"));
+}
+
+describe("OrquestradorPanel — próxima ação simplificada", () => {
   afterEach(() => cleanup());
 
   beforeEach(() => {
@@ -122,50 +119,77 @@ describe("OrquestradorPanel", () => {
     });
   });
 
-  function renderPanel() {
+  function renderPanel(status = "aberto") {
     return render(
       <MemoryRouter>
-        <OrquestradorPanel caseId="caso-1" />
+        <OrquestradorPanel caseId="caso-1" casoStatus={status} />
       </MemoryRouter>,
     );
   }
 
-  it("mostra estado atual, jornada, pendências e linha do tempo", async () => {
+  it("mostra somente próxima ação e pendências na superfície principal", async () => {
     renderPanel();
 
-    expect(await screen.findByText("Compreensão dos fatos")).toBeTruthy();
+    expect(await screen.findByText("Próxima ação")).toBeTruthy();
+    expect(screen.queryByText("Aberto")).toBeNull();
     expect(
       screen.getByText(/Revisar e aprovar o snapshot de inteligência/),
     ).toBeTruthy();
-    expect(screen.getByText("Base fática registrada")).toBeTruthy();
-    expect(screen.getByText("Área confirmada pelo advogado")).toBeTruthy();
     expect(
       screen.getByText("Snapshot de inteligência ainda não aprovado."),
     ).toBeTruthy();
-    expect(screen.getByText("Análise completa do intake")).toBeTruthy();
+
+    // A jornada completa continua disponível, mas recolhida em "Ver detalhes";
+    // a timeline não compete mais com a próxima ação na superfície principal.
+    expect(screen.getByText("Ver detalhes")).toBeTruthy();
+    expect(screen.getByText("Base fática registrada")).toBeTruthy();
+    expect(screen.queryByText("Análise completa do intake")).toBeNull();
     expect(visaoOrquestrador).toHaveBeenCalledWith("caso-1");
   });
 
-  it("ato de aprovação humana não é executável direto e aponta o fluxo próprio", async () => {
+  it("distingue etapa em andamento de etapa pendente na jornada detalhada", async () => {
+    visaoOrquestrador.mockResolvedValue({
+      ...visao,
+      jornada: [
+        ...visao.jornada,
+        {
+          etapa: "area_sugerida",
+          rotulo: "Área sugerida",
+          status: "em_andamento",
+        },
+        {
+          etapa: "area_confirmada",
+          rotulo: "Área confirmada pelo advogado",
+          status: "pendente",
+        },
+      ],
+    });
     renderPanel();
 
+    expect(await screen.findByText("Área sugerida")).toBeTruthy();
+    expect(screen.getByText("Em andamento")).toBeTruthy();
+    expect(screen.getAllByText("Pendente")).toHaveLength(1);
+  });
+
+  it("ato de aprovação humana aponta direto para a superfície canônica", async () => {
+    renderPanel();
+    await screen.findByText("Próxima ação");
+    abrirDetalhes();
+
+    expect(screen.getByText("Aprovar snapshot de inteligência")).toBeTruthy();
+    expect(screen.getByText("Revisar inteligência do caso")).toBeTruthy();
+    expect(screen.getByText("Exige decisão ou aprovação humana.")).toBeTruthy();
     expect(
-      await screen.findByText("Aprovar snapshot de inteligência"),
-    ).toBeTruthy();
-    const desabilitado = screen.getByRole("button", {
-      name: "Execução direta indisponível",
-    }) as HTMLButtonElement;
-    expect(desabilitado.disabled).toBe(true);
-    expect(screen.getByText("Abrir jornada do caso")).toBeTruthy();
-    expect(
-      screen.getByText("Aprovação do advogado — abre o fluxo próprio."),
-    ).toBeTruthy();
+      screen.queryByRole("button", { name: "Execução direta indisponível" }),
+    ).toBeNull();
   });
 
   it("executa ação via /avancar após confirmação no modal", async () => {
     renderPanel();
+    await screen.findByText("Próxima ação");
+    abrirDetalhes();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Executar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Executar" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "Executar agora" }),
     );
@@ -177,26 +201,21 @@ describe("OrquestradorPanel", () => {
         {},
       );
     });
-    // Recarrega a visão depois da transição.
     await waitFor(() => expect(visaoOrquestrador).toHaveBeenCalledTimes(2));
   });
 
-  it("caso encerrado/arquivado: ações desabilitadas com tooltip de reabertura", async () => {
+  it("caso encerrado/arquivado fica em leitura e bloqueia execução", async () => {
     for (const status of ["encerrado", "arquivado"]) {
-      render(
-        <MemoryRouter>
-          <OrquestradorPanel caseId="caso-1" casoStatus={status} />
-        </MemoryRouter>,
-      );
-
-      // Informação continua visível (próximo passo e jornada)...
+      renderPanel(status);
       expect(
         (await screen.findAllByText(/Revisar e aprovar o snapshot/)).length,
       ).toBeGreaterThan(0);
-      // ...mas a execução fica bloqueada até a reabertura do caso.
-      const botao = screen.getAllByRole("button", {
+      expect(screen.getByText("Caso em modo leitura")).toBeTruthy();
+      abrirDetalhes();
+
+      const botao = screen.getByRole("button", {
         name: "Executar",
-      })[0] as HTMLButtonElement;
+      }) as HTMLButtonElement;
       expect(botao.disabled).toBe(true);
       expect(botao.getAttribute("title")).toBe(
         "Reabra o caso para executar ações",
@@ -205,21 +224,16 @@ describe("OrquestradorPanel", () => {
     }
   });
 
-  it("role abaixo de advogado: modo leitura — informação visível, execução não", async () => {
+  it("role abaixo de advogado mantém leitura e bloqueia execução", async () => {
     for (const role of ["advogado_auxiliar", "estagiario", "secretaria"]) {
       authState.user = { role };
-      render(
-        <MemoryRouter>
-          <OrquestradorPanel caseId="caso-1" />
-        </MemoryRouter>,
-      );
+      renderPanel();
+      await screen.findByText("Próxima ação");
+      abrirDetalhes();
 
-      expect(
-        (await screen.findAllByText(/Revisar e aprovar o snapshot/)).length,
-      ).toBeGreaterThan(0);
-      const botao = screen.getAllByRole("button", {
+      const botao = screen.getByRole("button", {
         name: "Executar",
-      })[0] as HTMLButtonElement;
+      }) as HTMLButtonElement;
       expect(botao.disabled).toBe(true);
       expect(botao.getAttribute("title")).toBe(
         "Ação disponível para advogados",
@@ -241,8 +255,10 @@ describe("OrquestradorPanel", () => {
       },
     });
     renderPanel();
+    await screen.findByText("Próxima ação");
+    abrirDetalhes();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Executar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Executar" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "Executar agora" }),
     );

@@ -210,17 +210,17 @@ export default function EntrevistaInteligente() {
         />
       )}
       <PageHeader
-        eyebrow="Jornada do Caso — Etapa 2"
+        eyebrow="Estratégia do caso"
         title="Entrevista Inteligente"
         subtitle="Conte o ocorrido em texto livre e receba a triagem preliminar da IA com nível de confiança por item."
         actions={
           id && (
-            <Link to={`/casos/${id}/jornada`}>
+            <Link to={`/casos/${id}?tab=resumo`}>
               <Button
                 variant="secondary"
                 icon={<ArrowLeft className="h-4 w-4" />}
               >
-                Voltar à jornada
+                Voltar ao caso
               </Button>
             </Link>
           )

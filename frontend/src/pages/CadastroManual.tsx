@@ -275,7 +275,9 @@ function nomeCliente(raw: unknown): string {
   return "";
 }
 
-export default function CadastroManual() {
+export default function CadastroManual({
+  embedded = false,
+}: { embedded?: boolean } = {}) {
   const [searchParams] = useSearchParams();
   const clientIdContexto = searchParams.get("client_id")?.trim() || null;
   const abrirCasoDireto = searchParams.get("aba") === "caso";
@@ -297,16 +299,6 @@ export default function CadastroManual() {
   } = useCadastroManualStore();
   const usuarioId = useAuth((s) => s.user?.id);
 
-  useEffect(() => {
-    if (!usuarioId) return;
-    const descartados = vincularUsuario(usuarioId);
-    if (descartados > 0) {
-      toast.error(
-        `${descartados} cadastro(s) pendente(s) de outro usuário foram descartados da fila offline desta estação.`,
-      );
-    }
-  }, [usuarioId, vincularUsuario]);
-
   const [aba, setAba] = useState<"cliente" | "caso">(
     clientIdContexto || abrirCasoDireto ? "caso" : "cliente",
   );
@@ -320,6 +312,37 @@ export default function CadastroManual() {
     ...(rascunhoCaso as Partial<CasoForm>),
     ...(clientIdContexto ? { client_id: "", criar_cliente: false } : {}),
   });
+  // Os formulários acima nascem do rascunho persistido ANTES de o store ser
+  // vinculado ao usuário logado. Se o rascunho era de outro usuário,
+  // `vincularUsuario` o descarta — e os formulários locais precisam ser
+  // realinhados ao estado já vinculado, senão a persistência abaixo regravaria
+  // a PII do dono anterior sob o novo usuário. Até o vínculo, nada é gravado.
+  const [rascunhoVinculado, setRascunhoVinculado] = useState(false);
+  useEffect(() => {
+    if (!usuarioId) return;
+    const descartados = vincularUsuario(usuarioId);
+    const vinculado = useCadastroManualStore.getState();
+    setFormCliente({
+      ...CLIENTE_VAZIO,
+      ...(vinculado.rascunhoCliente as Partial<ClienteForm>),
+    });
+    setFormCaso((atual) => ({
+      ...CASO_VAZIO,
+      ...(vinculado.rascunhoCaso as Partial<CasoForm>),
+      ...(clientIdContexto
+        ? { client_id: atual.client_id, criar_cliente: false }
+        : {}),
+    }));
+    setRascunhoVinculado(true);
+    if (descartados > 0) {
+      toast.error(
+        `${descartados} cadastro(s) pendente(s) de outro usuário foram descartados da fila offline desta estação.`,
+      );
+    }
+    // clientIdContexto só preserva o id já validado; não deve revincular.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usuarioId, vincularUsuario]);
+
   const [erroCliente, setErroCliente] = useState<string | null>(null);
   const [erroCaso, setErroCaso] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
@@ -359,15 +382,11 @@ export default function CadastroManual() {
         const nome = nomeCliente(r.data) || "Cliente selecionado";
         setClienteContextoNome(nome);
         setClienteContextoValido(true);
-        setFormCaso((atual) => {
-          const proximo = {
-            ...atual,
-            client_id: clientIdContexto,
-            criar_cliente: false,
-          };
-          setRascunhoCaso(proximo);
-          return proximo;
-        });
+        setFormCaso((atual) => ({
+          ...atual,
+          client_id: clientIdContexto,
+          criar_cliente: false,
+        }));
       })
       .catch(() => {
         if (!ativo) return;
@@ -442,19 +461,21 @@ export default function CadastroManual() {
     };
   }, [rodarSync, atualizarCacheClientes]);
 
+  useEffect(() => {
+    if (!rascunhoVinculado) return;
+    setRascunhoCliente(formCliente);
+  }, [rascunhoVinculado, formCliente, setRascunhoCliente]);
+
+  useEffect(() => {
+    if (!rascunhoVinculado) return;
+    setRascunhoCaso(formCaso);
+  }, [rascunhoVinculado, formCaso, setRascunhoCaso]);
+
   const mudarCliente = (patch: Partial<ClienteForm>) => {
-    setFormCliente((f) => {
-      const novo = { ...f, ...patch };
-      setRascunhoCliente(novo);
-      return novo;
-    });
+    setFormCliente((f) => ({ ...f, ...patch }));
   };
   const mudarCaso = (patch: Partial<CasoForm>) => {
-    setFormCaso((f) => {
-      const novo = { ...f, ...patch };
-      setRascunhoCaso(novo);
-      return novo;
-    });
+    setFormCaso((f) => ({ ...f, ...patch }));
   };
 
   const resetCliente = () => {
@@ -552,8 +573,7 @@ export default function CadastroManual() {
       client_id: clienteNovo ? "" : formCaso.client_id,
       prioridade: formCaso.prioridade,
       case_type: formCaso.case_type,
-      proxima_acao:
-        formCaso.proxima_acao.trim() || PROXIMA_ACAO_MANUAL_DEFAULT,
+      proxima_acao: formCaso.proxima_acao.trim() || PROXIMA_ACAO_MANUAL_DEFAULT,
       numero_processo: formCaso.numero_processo,
       tribunal: formCaso.tribunal,
       comarca: formCaso.comarca,
@@ -636,29 +656,33 @@ export default function CadastroManual() {
 
   return (
     <div>
-      <PageHeader
-        title={abrirCasoDireto ? "Cadastro rápido de caso" : "Cadastro Manual"}
-        subtitle={
-          clienteContextoValido && clienteContextoNome
-            ? `Abra um novo caso para ${clienteContextoNome}, sem IA.`
-            : abrirCasoDireto
-              ? "Cadastre um caso existente diretamente, sem análise de IA."
-              : "Cadastre clientes e abra casos sem IA — com fila offline quando faltar conexão."
-        }
-        actions={
-          <span
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium",
-              online
-                ? "bg-green-50 text-green-700"
-                : "bg-warn-100 text-warn-700",
-            )}
-          >
-            {online ? <Wifi size={13} /> : <WifiOff size={13} />}
-            {online ? "Online" : "Offline"}
-          </span>
-        }
-      />
+      {!embedded && (
+        <PageHeader
+          title={
+            abrirCasoDireto ? "Cadastro rápido de caso" : "Cadastro Manual"
+          }
+          subtitle={
+            clienteContextoValido && clienteContextoNome
+              ? `Abra um novo caso para ${clienteContextoNome}, sem IA.`
+              : abrirCasoDireto
+                ? "Cadastre um caso existente diretamente, sem análise de IA."
+                : "Cadastre clientes e abra casos sem IA — com fila offline quando faltar conexão."
+          }
+          actions={
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium",
+                online
+                  ? "bg-green-50 text-green-700"
+                  : "bg-warn-100 text-warn-700",
+              )}
+            >
+              {online ? <Wifi size={13} /> : <WifiOff size={13} />}
+              {online ? "Online" : "Offline"}
+            </span>
+          }
+        />
+      )}
 
       <Alert variant="info" className="mb-4">
         O modo offline funciona apenas com o app já carregado e autenticado
@@ -1114,7 +1138,8 @@ export default function CadastroManual() {
 
             <details className="sm:col-span-2 lg:col-span-3 rounded-xl border border-slate-200 bg-slate-50/60">
               <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-700">
-                Mais detalhes <span className="font-normal text-slate-400">(opcional)</span>
+                Mais detalhes{" "}
+                <span className="font-normal text-slate-400">(opcional)</span>
               </summary>
               <div className="grid grid-cols-1 gap-3 border-t border-slate-200 p-4 sm:grid-cols-2 lg:grid-cols-3">
                 <div>
@@ -1200,8 +1225,8 @@ export default function CadastroManual() {
                     }
                   />
                   <p className="mt-1 text-xs text-slate-400">
-                    Se ficar em branco, o EJC registrará automaticamente:{" "}
-                    “{PROXIMA_ACAO_MANUAL_DEFAULT}”.
+                    Se ficar em branco, o EJC registrará automaticamente: “
+                    {PROXIMA_ACAO_MANUAL_DEFAULT}”.
                   </p>
                 </div>
               </div>

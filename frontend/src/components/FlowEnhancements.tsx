@@ -105,8 +105,8 @@ function salvarMarcador(id: string) {
 
 /**
  * Extensões transversais ainda não existentes na implementação nativa:
- * - guarda o caso recém-criado e continua para a Jornada quando o fluxo legado
- *   voltar à lista;
+ * - guarda o caso recém-criado e continua direto para a Visão quando um fluxo
+ *   legado voltar à lista;
  * - injeta `case_id` em prazo/tarefa/evento criados a partir de `?caso=`;
  * - redireciona rotas consolidadas para o workspace canônico;
  * - mostra a central simples do caso na rota exata `/casos/:id`.
@@ -158,7 +158,7 @@ export default function FlowEnhancements() {
 
     if (location.pathname === "/casos") {
       sessionStorage.removeItem(CREATED_CASE_KEY);
-      navigate(`/casos/${marker.id}/jornada`, { replace: true });
+      navigate(`/casos/${marker.id}?tab=resumo`, { replace: true });
       return;
     }
 

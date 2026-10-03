@@ -240,7 +240,9 @@ describe("EJC — início canônico", () => {
     expect(dashboard).toContain("Casos em andamento");
     expect(dashboard).toContain("Documentos recentes");
     expect(dashboard).toContain("Casos em destaque");
-    expect(dashboard).toContain("Fluxo jurídico");
+    // Jornada simplificada (#2013, S3): o fluxo paralelo de sete etapas saiu
+    // do início — a régua de progresso vive só no caso.
+    expect(dashboard).not.toContain('aria-label="Fluxo jurídico"');
     expect(dashboard).toContain("Decisões que exigem sua atenção hoje");
     expect(dashboard).toContain("Começar novo trabalho");
     expect(dashboard).not.toContain('aria-label="Agenda e Prazos"');

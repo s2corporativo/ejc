@@ -22,7 +22,6 @@ import ErrorBoundary from "./ErrorBoundary";
 import HelpButton from "./HelpButton";
 import IaStatusBanner from "./IaStatusBanner";
 import ModuleLifecycleGate from "./ModuleLifecycleGate";
-import NovoCasoWizard from "./NovoCasoWizard";
 import OnboardingTour from "./OnboardingTour";
 import RecentCasesNav from "./RecentCasesNav";
 import SecurityMenu from "./SecurityMenu";
@@ -119,7 +118,6 @@ export default function LayoutReference() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [caseFocusExpanded, setCaseFocusExpanded] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
-  const [novoCasoOpen, setNovoCasoOpen] = useState(false);
   const [notifCount, setNotifCount] = useState(0);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [now, setNow] = useState(() => new Date());
@@ -227,14 +225,6 @@ export default function LayoutReference() {
     "estagiario",
     "secretaria",
   ]).has(user?.role || "");
-  const canUseLegalHeader = new Set([
-    "superadmin",
-    "admin",
-    "socio",
-    "advogado",
-    "advogado_auxiliar",
-  ]).has(user?.role || "");
-
   const renderNavItem = (item: ModuleRoute) => {
     const Icon = item.icon;
     const label = item.label;
@@ -329,21 +319,11 @@ export default function LayoutReference() {
 
           <div className="ejc-header-primary-actions">
             {canCreateCase && (
-              <button
-                type="button"
-                onClick={() => setNovoCasoOpen(true)}
-                className="ejc-header-action is-primary"
-              >
+              <Link to="/entrada" className="ejc-header-action is-primary">
                 <span className="ejc-header-action-plus" aria-hidden="true">
                   +
                 </span>
-                <span>Novo Caso</span>
-              </button>
-            )}
-            {canUseLegalHeader && (
-              <Link to="/entrada" className="ejc-header-action is-ai">
-                <Bot className="h-4 w-4" aria-hidden="true" />
-                <span>Entrada por IA</span>
+                <span>Nova demanda</span>
               </Link>
             )}
           </div>
@@ -633,10 +613,6 @@ export default function LayoutReference() {
         </main>
       </div>
 
-      <NovoCasoWizard
-        open={novoCasoOpen}
-        onClose={() => setNovoCasoOpen(false)}
-      />
       <OnboardingTour />
       {iaDisponivel ? (
         <Link
