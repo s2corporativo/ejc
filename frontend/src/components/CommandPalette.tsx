@@ -26,10 +26,7 @@ import {
   ROLES,
   STAFF_ROUTES,
 } from "../config/moduleRegistry";
-import {
-  NOVO_CASO_DOCUMENTO_PATH,
-  NOVO_CASO_MANUAL_PATH,
-} from "../lib/novoCaso";
+import { NOVO_CASO_MANUAL_PATH } from "../lib/novoCaso";
 
 const ICON: Record<string, typeof Users> = {
   cliente: Users,
@@ -194,16 +191,10 @@ export default function CommandPalette({
       ...(canCreateCase
         ? [
             {
-              path: NOVO_CASO_DOCUMENTO_PATH,
-              label: "Entrada por IA",
+              path: "/entrada",
+              label: "Nova demanda",
               description:
-                "Analisar documentos e iniciar um caso com inteligência jurídica",
-              icon: FileUp,
-            },
-            {
-              path: NOVO_CASO_MANUAL_PATH,
-              label: "+ Novo Caso",
-              description: "Cadastrar cliente e caso sem usar IA",
+                "Abrir a Entrada Jurídica para analisar com IA ou cadastrar rapidamente",
               icon: PenLine,
             },
           ]
@@ -394,20 +385,20 @@ export default function CommandPalette({
         ["novo caso", "criar caso"],
         {
           kind: "navigate",
-          label: "Abrir Novo Caso",
-          detail: "Cadastro manual sem IA.",
-          path: NOVO_CASO_MANUAL_PATH,
+          label: "Abrir Nova demanda",
+          detail: "Entrada Jurídica com opção de cadastro rápido.",
+          path: "/entrada",
           ready: canCreateCase,
         },
       ],
       [
-        ["entrada por ia", "analisar documento"],
+        ["entrada por ia", "analisar documento", "nova demanda"],
         {
           kind: "navigate",
-          label: "Abrir Entrada por IA",
-          detail: "Enviar documentos ou relatar o caso para análise.",
-          path: NOVO_CASO_DOCUMENTO_PATH,
-          ready: canUseLegalAI,
+          label: "Abrir Nova demanda",
+          detail: "Enviar documentos, relatar o caso ou usar cadastro rápido.",
+          path: "/entrada",
+          ready: canCreateCase,
         },
       ],
       [
