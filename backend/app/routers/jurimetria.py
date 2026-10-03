@@ -39,7 +39,11 @@ def _req_socio(cu: User = Depends(get_current_user)) -> User:
     return cu
 
 
-router = APIRouter(prefix="/jurimetria", tags=["Jurimetria"])
+# Gate de equipe jurídica na CRIAÇÃO do router: `router.dependencies.append`
+# só vale para rotas registradas depois dele (achado I3 da auditoria).
+router = APIRouter(
+    prefix="/jurimetria", tags=["Jurimetria"], dependencies=[Depends(_req_staff)]
+)
 
 
 _RESULTADOS_DECIDIDOS = ("procedente", "improcedente")
@@ -437,8 +441,6 @@ async def analise_prospectiva_qualitativa(
 # Origem: app/routers/jurimetria_extra.py. Prefixo /jurimetria idêntico
 # ao canônico — divisão puramente física. Rotas e regras preservadas.
 # Imports abaixo cobertos: from sqlalchemy import text, from app.core.security import get_current_user, , from app.services.jurimetria import _je_MIN_AMOSTRA,     from app.services.rag_coverage import medir_,     from app.services.rag_coverage import medir_
-
-router.dependencies.append(Depends(_req_staff))
 
 RESULTADO_LABEL = {
     "exito": "Êxito",

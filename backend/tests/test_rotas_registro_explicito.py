@@ -511,6 +511,20 @@ def test_paridade_openapi_com_snapshot_anterior():
         (("/api/users/me/avatar", "POST"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
         (("/api/users/me/avatar", "DELETE"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
         (("/api/users/{user_id}/avatar", "GET"), ["HTTPBearer", "_dep", "get_current_user", "get_db"]),
+        # Achado I3 (auditoria de Inteligência, 01/10/2026): `_req_staff`
+        # (EQUIPE_JURIDICA, allowlist exata — Issue #694) passa a ser
+        # declarado na criação do APIRouter de jurimetria; o `append` antigo
+        # só valia para rotas registradas depois dele, deixando estas sem gate
+        # de papel (financeiro/secretaria recebiam 200 em /analise-prospectiva).
+        # Alteração RESTRITIVA; ver test_jurimetria_rbac_i3.py. As rotas de
+        # leitura abaixo já exigiam sócio/equipe inline; só ganham o gate cedo.
+        (("/api/jurimetria/overview", "GET"), ["HTTPBearer", "_req_staff", "get_current_user", "get_db"]),
+        (("/api/jurimetria/por-area", "GET"), ["HTTPBearer", "_req_staff", "get_current_user", "get_db"]),
+        (("/api/jurimetria/por-magistrado", "GET"), ["HTTPBearer", "_req_staff", "get_current_user", "get_db"]),
+        (("/api/jurimetria/por-tese", "GET"), ["HTTPBearer", "_req_staff", "get_current_user", "get_db"]),
+        (("/api/jurimetria/por-tribunal", "GET"), ["HTTPBearer", "_req_staff", "get_current_user", "get_db"]),
+        (("/api/jurimetria/predicao-exito", "POST"), ["HTTPBearer", "_req_staff", "get_current_user", "get_db"]),
+        (("/api/jurimetria/tendencias", "GET"), ["HTTPBearer", "_req_staff", "get_current_user", "get_db"]),
         # Fase 8, onda 1-B: gate admin/sócio dos painéis de governança da IA
         # promovido do CORPO do handler para a dependency `_req_admin_socio`
         # (403 antes de qualquer trabalho; ROLE_GATE no inventário RBAC) e
