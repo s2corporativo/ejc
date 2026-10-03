@@ -800,6 +800,24 @@ def test_m18_preflight_recusa_gates_do_rag_desligados():
     assert "for gate in RAG_EXIGIR_APROVADO RAG_SUMULAS_QUARENTENA" in script
 
 
+@pytest.mark.parametrize("linha,esperado", [
+    ("RAG_EXIGIR_APROVADO=true", "true"),
+    ("RAG_EXIGIR_APROVADO=True  ", "true"),
+    ('export RAG_EXIGIR_APROVADO = "false" # comentário', "false"),
+    ("RAG_EXIGIR_APROVADO='0'", "0"),
+    ("RAG_EXIGIR_APROVADO=f", "f"),
+])
+def test_m18_valor_do_env_e_normalizado_antes_da_comparacao(linha, esperado):
+    import re as _re
+    import subprocess
+
+    script = (APP.parents[1] / "scripts" / "deploy_manual.sh").read_text(encoding="utf-8")
+    funcao = _re.search(r"^valor_bool_env\(\) \{.*?^\}", script, _re.S | _re.M).group(0)
+    saida = subprocess.run(["bash", "-c", funcao + '\nvalor_bool_env "$1"', "_", linha],
+                           capture_output=True, text=True, check=True).stdout
+    assert saida == esperado
+
+
 # ── db-level (Postgres real) ─────────────────────────────────────────────────
 
 _db = pytest.mark.skipif(

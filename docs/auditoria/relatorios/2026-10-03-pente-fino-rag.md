@@ -98,6 +98,15 @@ desses PRs.
 
 ## 4. Revisão do `security-auditor` (regra 8)
 
+**Terceira rodada:** sem achados críticos ou altos. Não encontrou SQL interpolado com algo além da constante do módulo, contorno do delimitador ou transação abortada pelo savepoint. O M-5 não quebra integrador legítimo. Achados aplicados:
+- **médio:** legado sem caso de origem continuava global e aprovável. Agora entra em quarentena, e o `/revisar` recusa aprová-lo sem confirmar a origem;
+- **baixo:** curador/responsável inativo ou excluído era aceito. Agora é recusado;
+- **baixo:** o título da destilação ia para o log (LGPD). Agora só o id;
+- **baixo:** o pré-voo de deploy era contornável com aspas, `export`, espaços ou comentário. Agora o valor é normalizado e só verdadeiro canônico passa.
+
+Residual aceito: a conferência de "fonte que entrou no prompt" usa os 120 primeiros caracteres. Uma fonte cortada com início idêntico ao de outra que sobreviveu continuaria declarada. Isso só torna o A-23 levemente mais permissivo; o erro oposto é fail-safe.
+
+
 **Segunda rodada:** sem achados críticos, altos ou médios. Sem ciclo de import e sem consumidor de `disponivel`; RBAC e rate-limit da rota intactos; o log do OCR não carrega conteúdo. As três observações baixas foram aplicadas: zerar a revisão ao devolver à fila, tirar as notas do audit log e corrigir um comentário em `juris_import/ingest.py`.
 
 **Primeira rodada:**
@@ -129,8 +138,8 @@ sem interpolação de entrada, sem regressão de LGPD/HITL. Três achados:
 ## 5. Verificação
 
 - Testes novos:
-  - `tests/test_rag_pente_fino_20261003.py` (56 unitários + 3 db-level);
-  - `tests/test_scripts_curadoria_saneamento_rag.py` (14 unitários + 3 db-level).
+  - `tests/test_rag_pente_fino_20261003.py` (61 unitários + 3 db-level);
+  - `tests/test_scripts_curadoria_saneamento_rag.py` (14 unitários + 4 db-level).
 - Todos os testes de regressão desta rodada falham no código anterior; os únicos que passam são os controles declarados.
 - Harness ajustado (sem mudar o que testam): `test_anexos_service.py`, `test_matriz_teses.py` e `test_rag_avaliacao_precisao_dblevel.py` (caminho textual fixado).
 - Ledger de rotas: sem alteração.

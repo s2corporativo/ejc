@@ -151,8 +151,10 @@ async def executar(caminho: Path, curador_id: str, aplicar: bool) -> int:
     async with AsyncSessionLocal() as db:
         curador = await db.get(User, curador_id)
         papel = getattr(getattr(curador, "role", None), "value", getattr(curador, "role", None))
-        if curador is None or papel not in PAPEIS_CURADORIA:
-            logger.error("Curador inexistente ou sem papel de governança (%s).",
+        if (curador is None or papel not in PAPEIS_CURADORIA
+                or getattr(curador, "deleted_at", None) is not None
+                or getattr(curador, "is_active", True) is False):
+            logger.error("Curador inexistente, inativo ou sem papel de governança (%s).",
                          ", ".join(sorted(PAPEIS_CURADORIA)))
             return 1
 

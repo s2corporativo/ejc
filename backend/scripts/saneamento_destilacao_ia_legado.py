@@ -86,7 +86,9 @@ async def executar(aplicar: bool, responsavel: str | None) -> int:
             usuario = await db.get(User, responsavel)
             papel = getattr(getattr(usuario, "role", None), "value",
                             getattr(usuario, "role", None))
-            if usuario is None or papel not in PAPEIS_GOVERNANCA:
+            if (usuario is None or papel not in PAPEIS_GOVERNANCA
+                    or getattr(usuario, "deleted_at", None) is not None
+                    or getattr(usuario, "is_active", True) is False):
                 logger.error("Responsável inexistente ou sem papel de governança (%s).",
                              ", ".join(sorted(PAPEIS_GOVERNANCA)))
                 return 2
@@ -122,9 +124,9 @@ async def executar(aplicar: bool, responsavel: str | None) -> int:
                         )).first()
                         caso = None if conflito else c
             escopo = f"caso:{caso.id}" if caso else "publica (caso de origem indisponível)"
-            logger.info("%s  [%s]  rag_status=%s  → pendente; escopo %s",
-                        doc.id, (doc.titulo or "")[:60],
-                        (doc.extra or {}).get("rag_status"), escopo)
+            # Só o id: o título de uma destilação pode trazer nome de parte (LGPD).
+            logger.info("%s  rag_status=%s  → pendente; escopo %s",
+                        doc.id, (doc.extra or {}).get("rag_status"), escopo)
             plano.append((doc, caso, escopo))
 
         com_caso = sum(1 for _, c, _ in plano if c)
@@ -139,6 +141,12 @@ async def executar(aplicar: bool, responsavel: str | None) -> int:
             return 1
         for doc, caso, escopo in plano:
             doc.extra = extra_saneado(doc.extra, escopo=escopo, responsavel=responsavel)
+            if caso is None:
+                # Sem caso de origem não há escopo seguro: quarentena impede a
+                # aprovação direta para a base pública (`/revisar` recusa) até
+                # que um curador confirme a origem.
+                doc.extra = {**doc.extra, "quarantine_active": True,
+                             "quarantine_reason": "saneamento_a2_sem_caso_de_origem"}
             if caso is not None:
                 doc.client_id = str(caso.client_id)
                 doc.case_id = str(caso.id)

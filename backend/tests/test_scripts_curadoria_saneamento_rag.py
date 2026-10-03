@@ -198,6 +198,24 @@ async def test_curadoria_em_lote_recusa_curador_sem_papel(_engine, tmp_path):
 
 
 @_db
+async def test_curadoria_em_lote_recusa_curador_inativo(_engine, tmp_path):
+    from app.core.database import AsyncSessionLocal
+    from app.models.user import User, UserRole
+
+    async with AsyncSessionLocal() as db:
+        inativo = User(id=uuid.uuid4().hex, full_name="Ex-sócio", hashed_password="x",
+                       email=f"cvl-{uuid.uuid4().hex[:8]}@ejc.local", role=UserRole.socio,
+                       is_active=False)
+        db.add(inativo)
+        await db.commit()
+    arq = tmp_path / "lote.csv"
+    arq.write_text("doc_id,legal_status,link_oficial,conferido_em,notas\n"
+                   f"x,vigente,{_OK['link_oficial']},2026-10-01,Conferido no Planalto\n",
+                   encoding="utf-8")
+    assert await cvl.executar(arq, inativo.id, aplicar=False) == 1
+
+
+@_db
 async def test_saneamento_tira_o_legado_global_da_recuperacao(_engine, monkeypatch):
     from app.core.database import AsyncSessionLocal
     from app.services.ai_service import buscar_contexto_rag
@@ -228,3 +246,6 @@ async def test_saneamento_tira_o_legado_global_da_recuperacao(_engine, monkeypat
                                   {"d": doc_id})).scalar()
         assert extra["rag_status"] == "pendente"
         assert extra["saneamento_a2"]["antes"]["rag_status"] == "aprovado"
+        # Sem caso de origem resolvível: quarentena impede aprovação direta
+        # para a base pública.
+        assert extra["quarantine_active"] is True
