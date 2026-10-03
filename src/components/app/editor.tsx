@@ -35,6 +35,7 @@ import type { DocumentDTO } from "@/lib/types";
 import { useAppStore } from "@/lib/store";
 import { toast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
+import { MoldeMode } from "./molde-mode";
 
 export function Editor() {
   const { currentDocId, setAppTab, writingStyle } = useAppStore();
@@ -524,6 +525,9 @@ export function Editor() {
             <TabsTrigger value="versions" className="gap-1.5">
               <History className="h-3.5 w-3.5" /> Versões {versions.length > 0 && <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">{versions.length}</Badge>}
             </TabsTrigger>
+            <TabsTrigger value="molde" className="gap-1.5">
+              <Wand2 className="h-3.5 w-3.5" /> Modo Molde
+            </TabsTrigger>
           </TabsList>
         </div>
 
@@ -724,6 +728,27 @@ export function Editor() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="molde" className="mt-4">
+          {content && content.length > 50 ? (
+            <MoldeMode
+              baseContent={content}
+              templateName={doc?.templateName || "minuta"}
+              onApply={(newContent) => {
+                setContent(newContent);
+                setDirty(true);
+                toast({ title: "Modo Molde aplicado", description: "Alterações aceitas incorporadas ao documento" });
+              }}
+            />
+          ) : (
+            <Card>
+              <CardContent className="py-12 text-center text-sm text-muted-foreground">
+                <Wand2 className="mx-auto mb-2 h-10 w-10 opacity-30" />
+                Gere ou abra uma minuta primeiro para usar o Modo Molde.
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>

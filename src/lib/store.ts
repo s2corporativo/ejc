@@ -29,7 +29,9 @@ interface AppState {
     | "jurisprudence"
     | "batch"
     | "documents"
-    | "settings";
+    | "settings"
+    | "case-analysis"
+    | "audit";
   setAppTab: (t: AppState["appTab"]) => void;
   currentDocId: string | null;
   setCurrentDocId: (id: string | null) => void;

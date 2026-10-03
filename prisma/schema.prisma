@@ -87,3 +87,65 @@ model NewsItem {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
+
+// Resumo avançado estruturado de um caso (cards: partes, cronologia, pedidos, etc.)
+model CaseAnalysis {
+  id          String   @id @default(cuid())
+  userId      String?
+  title       String
+  factsInput  String   // fatos brutos informados
+  parties     String   // JSON array de {role, name?, type}
+  timeline    String   // JSON array de {date, event}
+  requests    String   // JSON array de strings
+  proofs      String   // JSON array de strings
+  decisions   String   // JSON array de strings
+  values      String   // JSON array de {label, amount}
+  risks       String   // JSON array of {level, description}
+  nextSteps   String   // JSON array de strings
+  createdAt   DateTime @default(now())
+}
+
+// Modo Molde: alterações estruturadas propostas pela IA sobre um documento-base
+model MoldeChange {
+  id          String   @id @default(cuid())
+  documentId  String
+  operation   String   // replace | add | remove
+  anchor      String   // trecho exato do documento-base
+  replacement String?  // novo trecho (para replace/add)
+  reason      String   // justificativa
+  status      String   @default("pending") // pending | accepted | rejected
+  createdAt   DateTime @default(now())
+  appliedAt   DateTime?
+}
+
+// Eventos de auditoria imutáveis (todo ação relevante)
+model AuditEvent {
+  id          String   @id @default(cuid())
+  userId      String?
+  action      String   // generate | edit | export | delete | search | login | anonymize | etc.
+  resource    String   // document | case | jurisprudence | settings
+  resourceId  String?
+  metadata    String   // JSON com detalhes (template, tokens, etc.)
+  ip          String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// Ledger de uso/créditos imutável (débito, crédito, estorno)
+model UsageLedger {
+  id          String   @id @default(cuid())
+  userId      String?
+  type        String   // debit | credit | refund | adjustment
+  operation   String   // minuta | connect_interaction | search | suggest
+  amount      Int      // positivo para crédito, negativo para débito
+  balance     Int      // saldo após esta operação
+  reason      String
+  metadata    String   // JSON
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}

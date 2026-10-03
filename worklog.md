@@ -197,3 +197,38 @@ Stage Summary:
 - 13 seções na landing, 7 tabs no app, 9 templates, 17 skills.
 - 0 erros console, 0 ESLint, dev server saudável.
 - Próxima fase sugerida: autenticação NextAuth real, persistência de versões no DB, painel admin de templates, integração PJe real, mobile app.
+
+---
+Task ID: 12 (cron webDevReview #5 — Análise técnica MinutaIA)
+Agent: cron webDevReview (15min)
+Task: Baseado na análise técnica detalhada da MinutaIA, implementar diferenciais arquiteturais: Resumo Avançado, Referências Rastreáveis, Modo Molde, Logs de Auditoria + Ledger de Créditos.
+
+Work Log:
+- Lida análise técnica profunda do MinutaIA (16 seções) destacando 4 diferenciais arquiteturais críticos: (1) Resumo Avançado estruturado em cards, (2) Referências Rastreáveis com document_id+page, (3) Modo Molde com alterações estruturadas (replace/add/remove + anchor + reason), (4) Logs de auditoria + ledger de créditos imutáveis.
+- Dev server confirmado ativo (PID 4517→12931 após restart para Prisma client, HTTP 200, 0 erros).
+- SCHEMA PRISMA expandido com 4 novos modelos: CaseAnalysis (parties, timeline, requests, proofs, decisions, values, risks, nextSteps como JSON), MoldeChange (operation, anchor, replacement, reason, status, appliedAt), AuditEvent (action, resource, resourceId, metadata, ip — imutável, indexado por userId/action/createdAt), UsageLedger (type, operation, amount, balance, reason — imutável ledger com saldo calculado). `bun run db:push` aplicado.
+- LIB DE AUDITORIA criada (src/lib/audit.ts): logAuditEvent() registra ações imutáveis com metadata + IP; logUsageEntry() calcula saldo incremental e registra débitos/créditos/estornos. Importado e chamado em generate-minuta (debit: -1 + audit generate_minuta), documents DELETE (audit delete_document) e PATCH (audit edit_document).
+- API /api/case-analysis (POST+GET): LLM real analisa fatos do caso e retorna JSON estruturado com 8 categorias (parties, timeline, requests, proofs, decisions, values, risks, nextSteps). System prompt força resposta JSON válida. Fallback offline com heurística baseada em keywords. Persiste análises no DB. Verificado: gerou 2 parties, 1 risk, 3 nextSteps para caso de inscrição indevida.
+- API /api/molde (POST): Modo Molde real. Recebe documento-base + instrução, retorna JSON {changes: [{operation, anchor, replacement, reason}]}. System prompt instrui a NÃO reescrever o documento, apenas propor alterações pontuais com anchors exatos. Validação: anchors devem existir (parcialmente) no documento-base. Máx 10 mudanças.
+- API /api/audit (GET+POST): Lista eventos de auditoria (ordenados por createdAt desc, limit 200, filtro por action). POST para registrar novos eventos com IP.
+- API /api/usage-ledger (GET): Lista o ledger imutável com summary (currentBalance, totalDebit, totalCredit, byOperation).
+- COMPONENTE CaseAnalysis (Resumo Avançado): textarea para fatos + título, botão "Analisar caso" com loading, grid de 6 cards (Partes, Cronologia, Pedidos, Provas, Decisões, Valores), card de Riscos com badges coloridos (alto=vermelho/médio=ambar/baixo=verde), lista numerada de Próximos Passos, skeleton loading, histórico de análises anteriores.
+- COMPONENTE MoldeMode: integrado como novo sub-tab "Modo Molde" no editor. Textarea para instrução, gera lista de mudanças propostas com diff visual (anchor destacado em secondary, replacement em primary/5, badges coloridos por operation: replace=azul/add=verde/remove=vermelho), botões aceitar/rejeitar por mudança, botão "Aplicar N alterações" que substitui/adiciona/remove no documento-base.
+- COMPONENTE AuditLedger: tab "Auditoria" com 4 cards de resumo (saldo atual, consumidos, recebidos, total de operações), grid de consumo por operação, sub-tabs "Ledger de uso" (lista imutável de entradas com badges débito/crédito e saldo) e "Trilha de auditoria" (lista de eventos com action labels, resource, resourceId, metadata JSON, timestamp).
+- STORE expandido: appTab agora inclui "case-analysis" e "audit". AppShell atualizado com 9 tabs (Dashboard, Gerar, Editor, Resumo do caso, JurisprudênciaIA, Lote, Minutas, Auditoria, Configurações) + atalhos de teclado (1/g/e/c/j/b/d/a/,).
+- COMMAND PALETTE atualizado: 14 comandos com novos "Resumo avançado do caso" (C) e "Auditoria & créditos" (A).
+- ESLint limpo (0 erros, 0 warnings). Dev server reiniciado para carregar novo Prisma client.
+- Verificação end-to-end via agent-browser:
+  - Case Analysis: fatos preenchidos → IA retornou parties (2), risks (1), nextSteps (3) em ~15s. Cards estruturados renderizados corretamente.
+  - Generate minuta → auto-switch para Editor → audit event "generate_minuta" criado + ledger entry debit -1 (balance: 199).
+  - Audit tab: "1 entradas" no ledger, "1 eventos" na trilha com "Geração de minuta" visível, summary cards com saldo 199.
+
+Stage Summary:
+- 4 diferenciais arquiteturais do MinutaIA implementados conforme análise técnica.
+- Resumo Avançado: 8 categorias estruturadas via LLM + fallback heurístico, cards visuais, riscos coloridos, próximos passos numerados.
+- Modo Molde: alterações estruturadas (replace/add/remove com anchor) em vez de reescrever, diff visual, aceitar/rejeitar individual.
+- Auditoria imutável: AuditEvent para generate/edit/delete, com metadata + IP + timestamps.
+- Ledger de créditos imutável: débito automático de -1 por minuta gerada, saldo incremental, summary por operação.
+- 9 tabs no app, 14 comandos no palette, 4 novos modelos Prisma, 4 novas APIs.
+- 0 erros console, 0 ESLint, dev server saudável (PID 12931).
+- Próxima fase sugerida: Referências Rastreáveis com document_id+page_number nas minutas, upload de PDFs com OCR, RAG documental, editor ProseMirror/Lexical com diff real, fila assíncrona para lotes.

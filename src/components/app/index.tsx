@@ -9,6 +9,8 @@ import {
   FolderOpen,
   LayoutDashboard,
   Settings as SettingsIcon,
+  FileSearch,
+  ShieldCheck,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppStore } from "@/lib/store";
@@ -19,14 +21,18 @@ import { Batch } from "./batch";
 import { DocumentsList } from "./documents-list";
 import { Dashboard } from "./dashboard";
 import { Settings } from "./settings";
+import { CaseAnalysis } from "./case-analysis";
+import { AuditLedger } from "./audit-ledger";
 
 const TABS = [
   { id: "dashboard" as const, label: "Dashboard", icon: LayoutDashboard, key: "1" },
   { id: "generator" as const, label: "Gerar minuta", icon: Wand2, key: "g" },
   { id: "editor" as const, label: "Editor", icon: FileText, key: "e" },
+  { id: "case-analysis" as const, label: "Resumo do caso", icon: FileSearch, key: "c" },
   { id: "jurisprudence" as const, label: "JurisprudênciaIA", icon: Search, key: "j" },
   { id: "batch" as const, label: "Geração em lote", icon: Layers, key: "b" },
   { id: "documents" as const, label: "Minutas salvas", icon: FolderOpen, key: "d" },
+  { id: "audit" as const, label: "Auditoria", icon: ShieldCheck, key: "a" },
   { id: "settings" as const, label: "Configurações", icon: SettingsIcon, key: "," },
 ];
 
@@ -36,7 +42,6 @@ export function AppShell() {
   // Global keyboard shortcuts (single key press, no modifier)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Only when not typing in an input/textarea/contenteditable
       const target = e.target as HTMLElement;
       if (
         target?.tagName === "INPUT" ||
@@ -46,7 +51,6 @@ export function AppShell() {
       ) {
         return;
       }
-      // Skip if any modifier pressed (let Cmd+K etc work)
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
       const key = e.key.toLowerCase();
@@ -94,9 +98,11 @@ export function AppShell() {
         {appTab === "dashboard" && <Dashboard />}
         {appTab === "generator" && <Generator />}
         {appTab === "editor" && <Editor />}
+        {appTab === "case-analysis" && <CaseAnalysis />}
         {appTab === "jurisprudence" && <Jurisprudence />}
         {appTab === "batch" && <Batch />}
         {appTab === "documents" && <DocumentsList />}
+        {appTab === "audit" && <AuditLedger />}
         {appTab === "settings" && <Settings />}
       </div>
     </div>

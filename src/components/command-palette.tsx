@@ -26,6 +26,8 @@ import {
   HelpCircle,
   Printer,
   Settings,
+  FileSearch,
+  ShieldCheck,
 } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { useTheme } from "next-themes";
@@ -44,7 +46,7 @@ export function CommandPalette() {
   const { setView, setAppTab, setAuthOpen } = useAppStore();
   const { setTheme, resolvedTheme } = useTheme();
 
-  const go = useCallback((view: "landing" | "app", tab?: "dashboard" | "generator" | "editor" | "jurisprudence" | "batch" | "documents" | "settings") => {
+  const go = useCallback((view: "landing" | "app", tab?: "dashboard" | "generator" | "editor" | "case-analysis" | "jurisprudence" | "batch" | "documents" | "audit" | "settings") => {
     setView(view);
     if (tab) setAppTab(tab);
     setOpen(false);
@@ -69,6 +71,8 @@ export function CommandPalette() {
     { icon: Wand2, label: "Gerar nova minuta", shortcut: "G", group: "Plataforma", onSelect: () => go("app", "generator") },
     { icon: FileText, label: "Abrir editor", shortcut: "E", group: "Plataforma", onSelect: () => go("app", "editor") },
     { icon: Search, label: "Pesquisar jurisprudência", shortcut: "J", group: "Plataforma", onSelect: () => go("app", "jurisprudence") },
+    { icon: FileSearch, label: "Resumo avançado do caso", shortcut: "C", group: "Plataforma", onSelect: () => go("app", "case-analysis") },
+    { icon: ShieldCheck, label: "Auditoria & créditos", shortcut: "A", group: "Plataforma", onSelect: () => go("app", "audit") },
     { icon: Layers, label: "Geração em lote", shortcut: "B", group: "Plataforma", onSelect: () => go("app", "batch") },
     { icon: FolderOpen, label: "Minutas salvas", shortcut: "D", group: "Plataforma", onSelect: () => go("app", "documents") },
     { icon: Settings, label: "Configurações do perfil", shortcut: ",", group: "Plataforma", onSelect: () => go("app", "settings") },

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
 import { anonymize, deanonymize } from "@/lib/anonymize";
+import { logAuditEvent, logUsageEntry } from "@/lib/audit";
 import type { GenerateMinutaRequest, GenerateMinutaResponse, DocumentDTO } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -128,6 +129,30 @@ ${markerListStr}
   await db.user.update({
     where: { id: userId },
     data: { minutasUsed: { increment: 1 } },
+  });
+
+  // Registra evento de auditoria + entrada no ledger de uso (imutáveis)
+  await logAuditEvent({
+    action: "generate_minuta",
+    resource: "document",
+    resourceId: doc.id,
+    metadata: {
+      templateSlug: tpl.slug,
+      templateName: tpl.name,
+      skillSlugs: skills.map((s) => s.slug),
+      markersCount: anonymization.total,
+      tokensUsed,
+      anonymized: true,
+    },
+    userId,
+  });
+  await logUsageEntry({
+    type: "debit",
+    operation: "minuta",
+    amount: -1,
+    reason: `Geração de ${tpl.name}`,
+    metadata: { documentId: doc.id, templateSlug: tpl.slug, tokensUsed },
+    userId,
   });
 
   const documentDTO: DocumentDTO = {
