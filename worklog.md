@@ -232,3 +232,39 @@ Stage Summary:
 - 9 tabs no app, 14 comandos no palette, 4 novos modelos Prisma, 4 novas APIs.
 - 0 erros console, 0 ESLint, dev server saudável (PID 12931).
 - Próxima fase sugerida: Referências Rastreáveis com document_id+page_number nas minutas, upload de PDFs com OCR, RAG documental, editor ProseMirror/Lexical com diff real, fila assíncrona para lotes.
+
+---
+Task ID: 13 (adaptação para uso pessoal no escritório)
+Agent: main (Z.ai Code)
+Task: Usuário esclareceu que o sistema é para uso PESSOAL no escritório (não SaaS para vender). Adaptar: remover marketing pesado, adicionar gestão de clientes/casos, focar em produtividade.
+
+Work Log:
+- Contexto ajustado: sistema passa de SaaS comercial para ferramenta pessoal de escritório. Sem necessidade de planos, testimonials, newsletter, media mentions.
+- Store atualizado: view default agora é "app" (pula landing marketing), adicionado currentCaseId, appTab inclui "clients".
+- SCHEMA PRISMA expandido com 2 novos modelos: Client (name, email, phone, document, notes, color) e Case (title, number, area, status, notes, clientId FK). Document ganhou caseId FK + tags JSON. `bun run db:push` aplicado (onDelete: SetNull para preservar minutas órfãs).
+- 2 NOVAS APIs: /api/clients (GET/POST/PATCH/DELETE com logAuditEvent) e /api/cases (GET com filtro clientId/status, POST/PATCH/DELETE com auditoria).
+- NOVO COMPONENTE ClientsCases (src/components/app/clients-cases.tsx): gestão completa de clientes com cards expansíveis, busca por nome/email/CPF, CRUD via Dialog, casos organizados por cliente com toggle de status (active/concluded), badges coloridos por área (civil/penal/trabalhista/tributário/consumer/família/previdenciário), contagem de casos e minutas por cliente, animações framer-motion.
+- AppShell REESCRITO: 10 tabs agora (Início, Clientes, Gerar minuta, Editor, Minutas, Resumo do caso, JurisprudênciaIA, Geração em lote, Auditoria, Configurações). Branding mudou de "Plataforma" para "Escritório". Atalhos de teclado: 1/C/G/E/D/R/J/B/A/,.
+- HEADER reescrito para uso pessoal: nav com 7 itens práticos (Início, Clientes, Gerar, Editor, Minutas, Jurisprudência, Auditoria), botão "Site" para ver página institucional, sem "Login" nem "Acessar Plataforma" (já logado).
+- LANDING SIMPLIFICADA: removidas seções de marketing (Stats com números inflados, Testimonials, Pricing, Newsletter/CTA, Media, Integrations). Mantidas apenas: Hero (enxuto, sem números de marketing), HowItWorks, Features, Anonymization (tarja-1), Privacy, FAQ. 6 seções (era 13).
+- HERO reescrito: badge "Assistente jurídico do seu escritório", H1 "Gere minutas jurídicas com IA e sigilo", descrição focada em uso interno, 4 badges de conformidade (tarja-1, LGPD, CNJ 615/2025, sem treinar IA), botões "Gerar minuta agora" + "Ver início".
+- DASHBOARD adaptado: removido card "Plano Individual" (marketing SaaS), substituído por "Bem-vindo de volta" com contagem de minutas/templates/habilidades. Quick actions atualizadas: Gerar minuta, Meus clientes, Pesquisar jurisprudência, Resumo do caso. Card "Impacto do JuridIA" (comunidade) substituído por "Produtividade do escritório" com stats reais (minutas total/hoje/favoritas) + dicas de atalhos + fluxo recomendado (cadastrar cliente → criar caso → gerar minuta → revisar → exportar).
+- ESLint limpo (0 erros, 0 warnings). Dev server reiniciado (PID 15412, HTTP 200).
+- Verificação end-to-end via agent-browser:
+  - App abre direto no dashboard (não mais landing marketing).
+  - Tab Clientes funcional: criou cliente "João da Silva Teste" via Dialog, confirmado pela API.
+  - Caso "Ação indenizatória teste" criado vinculado ao cliente, área civil, status active.
+  - 0 erros de console.
+  - 10 APIs HTTP 200.
+
+Stage Summary:
+- Sistema adaptado de SaaS comercial para ferramenta pessoal de escritório.
+- Gestão de Clientes e Casos (CRUD completo) com organização por área jurídica e status.
+- Store default: app view (pula marketing).
+- Landing enxuta (6 seções, sem pricing/testimonials/newsletter/media).
+- Header prático (7 itens de navegação direta).
+- Dashboard focado em produtividade real (sem números de marketing inflados).
+- 10 tabs no app, 10 APIs funcionais, 2 novos modelos Prisma (Client, Case).
+- Fluxo recomendado: Cliente → Caso → Minuta → Editor → Export.
+- 0 erros console, 0 ESLint, dev server saudável.
+- Próxima fase: vincular minutas a casos no generator, filtros por cliente nas minutas, templates personalizados do escritório (CRUD), export com dados do cliente/caso preenchidos automaticamente.

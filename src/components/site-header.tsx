@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
-import { Menu, Scale, X } from "lucide-react";
+import { Menu, Scale, X, FileText, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -15,24 +14,27 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { useAppStore } from "@/lib/store";
 
 const NAV = [
-  { label: "Recursos", href: "#recursos" },
-  { label: "Como funciona", href: "#como-funciona" },
-  { label: "Tarja-1", href: "#anonimizacao" },
-  { label: "Novidades", href: "#novidades" },
-  { label: "Planos", href: "#planos" },
-  { label: "FAQ", href: "#faq" },
-  { label: "Na mídia", href: "#midia" },
+  { label: "Início", tab: "dashboard" as const },
+  { label: "Clientes", tab: "clients" as const },
+  { label: "Gerar minuta", tab: "generator" as const },
+  { label: "Editor", tab: "editor" as const },
+  { label: "Minutas", tab: "documents" as const },
+  { label: "Jurisprudência", tab: "jurisprudence" as const },
+  { label: "Auditoria", tab: "audit" as const },
 ];
 
 export function SiteHeader() {
   const [open, setOpen] = useState(false);
-  const { view, setView, setAuthOpen, user } = useAppStore();
+  const { view, setView, setAppTab, user } = useAppStore();
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border glass">
       <div className="container-juridia flex h-16 items-center justify-between gap-4">
         <button
-          onClick={() => setView("landing")}
+          onClick={() => {
+            setView("app");
+            setAppTab("dashboard");
+          }}
           className="flex items-center gap-2.5 transition-opacity hover:opacity-80"
           aria-label="JuridIA — Início"
         >
@@ -42,21 +44,23 @@ export function SiteHeader() {
           <div className="flex flex-col leading-none">
             <span className="text-lg font-bold tracking-tight">JuridIA</span>
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              Direito Brasileiro
+              Escritório
             </span>
           </div>
         </button>
 
-        {view === "landing" && (
+        {view === "app" && (
           <nav className="hidden items-center gap-1 md:flex">
             {NAV.map((item) => (
-              <a
-                key={item.href}
-                href={item.href}
-                className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground hover:bg-accent/40"
+              <Button
+                key={item.tab}
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={() => setAppTab(item.tab)}
               >
                 {item.label}
-              </a>
+              </Button>
             ))}
           </nav>
         )}
@@ -65,7 +69,6 @@ export function SiteHeader() {
           <ThemeToggle />
           <button
             onClick={() => {
-              // Trigger Cmd+K via dispatch
               window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
             }}
             className="hidden md:flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
@@ -75,24 +78,19 @@ export function SiteHeader() {
             <kbd className="font-mono text-[10px]">⌘K</kbd>
             <span>Comandos</span>
           </button>
-          {view === "landing" ? (
+          {view === "app" ? (
             <>
+              <span className="hidden text-sm text-muted-foreground sm:inline">
+                {user?.name || user?.email}
+              </span>
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
-                className="hidden sm:inline-flex"
-                onClick={() => setAuthOpen(true)}
+                onClick={() => setView("landing")}
+                title="Ver página institucional"
               >
-                Login
-              </Button>
-              <Button
-                size="sm"
-                className="hidden sm:inline-flex"
-                onClick={() => {
-                  setView("app");
-                }}
-              >
-                Acessar Plataforma
+                <Home className="mr-1.5 h-4 w-4" />
+                Site
               </Button>
               <Sheet open={open} onOpenChange={setOpen}>
                 <SheetTrigger asChild>
@@ -107,54 +105,30 @@ export function SiteHeader() {
                 </SheetTrigger>
                 <SheetContent side="right" className="w-[280px]">
                   <SheetHeader>
-                    <SheetTitle>JuridIA</SheetTitle>
+                    <SheetTitle>Escritório</SheetTitle>
                   </SheetHeader>
                   <nav className="mt-4 flex flex-col gap-1">
                     {NAV.map((item) => (
-                      <a
-                        key={item.href}
-                        href={item.href}
-                        onClick={() => setOpen(false)}
-                        className="rounded-md px-3 py-2 text-sm font-medium hover:bg-accent"
+                      <button
+                        key={item.tab}
+                        onClick={() => {
+                          setAppTab(item.tab);
+                          setOpen(false);
+                        }}
+                        className="flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium hover:bg-accent"
                       >
+                        <FileText className="h-4 w-4 text-muted-foreground" />
                         {item.label}
-                      </a>
+                      </button>
                     ))}
-                    <div className="my-2 h-px bg-border" />
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setAuthOpen(true);
-                        setOpen(false);
-                      }}
-                    >
-                      Login
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setView("app");
-                        setOpen(false);
-                      }}
-                    >
-                      Acessar Plataforma
-                    </Button>
                   </nav>
                 </SheetContent>
               </Sheet>
             </>
           ) : (
-            <div className="flex items-center gap-2">
-              <span className="hidden text-sm text-muted-foreground sm:inline">
-                {user?.name || user?.email}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setView("landing")}
-              >
-                Voltar ao site
-              </Button>
-            </div>
+            <Button size="sm" onClick={() => setView("app")}>
+              Entrar no escritório
+            </Button>
           )}
         </div>
       </div>

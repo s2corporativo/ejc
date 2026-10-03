@@ -19,6 +19,41 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   documents Document[]
+  clients   Client[]
+}
+
+// Clientes do escritório (uso pessoal, não SaaS)
+model Client {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  email     String?
+  phone     String?
+  document  String?  // CPF/CNPJ
+  notes     String?
+  color     String   @default("") // cor para identificação visual
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  cases     Case[]
+}
+
+// Casos/processos do escritório
+model Case {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  title       String
+  number      String?  // número do processo
+  area        String   @default("civil") // civil | penal | trabalhista | tributario | consumer | family | previdenciario
+  status      String   @default("active") // active | archived | concluded
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  documents   Document[]
+
+  @@index([clientId])
+  @@index([status])
 }
 
 model Template {
@@ -60,11 +95,15 @@ model Document {
   skillSlugs       String   // JSON array de skills usadas
   status           String   @default("draft") // draft | generated | archived
   batchId          String?
+  caseId           String?
+  case             Case?    @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  tags             String   @default("[]") // JSON array de tags livres
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   @@index([userId])
   @@index([batchId])
+  @@index([caseId])
 }
 
 model JurisprudenceSearch {

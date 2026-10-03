@@ -11,6 +11,7 @@ import {
   Settings as SettingsIcon,
   FileSearch,
   ShieldCheck,
+  Users,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppStore } from "@/lib/store";
@@ -23,15 +24,17 @@ import { Dashboard } from "./dashboard";
 import { Settings } from "./settings";
 import { CaseAnalysis } from "./case-analysis";
 import { AuditLedger } from "./audit-ledger";
+import { ClientsCases } from "./clients-cases";
 
 const TABS = [
-  { id: "dashboard" as const, label: "Dashboard", icon: LayoutDashboard, key: "1" },
+  { id: "dashboard" as const, label: "Início", icon: LayoutDashboard, key: "1" },
+  { id: "clients" as const, label: "Clientes", icon: Users, key: "c" },
   { id: "generator" as const, label: "Gerar minuta", icon: Wand2, key: "g" },
   { id: "editor" as const, label: "Editor", icon: FileText, key: "e" },
-  { id: "case-analysis" as const, label: "Resumo do caso", icon: FileSearch, key: "c" },
+  { id: "documents" as const, label: "Minutas", icon: FolderOpen, key: "d" },
+  { id: "case-analysis" as const, label: "Resumo do caso", icon: FileSearch, key: "r" },
   { id: "jurisprudence" as const, label: "JurisprudênciaIA", icon: Search, key: "j" },
   { id: "batch" as const, label: "Geração em lote", icon: Layers, key: "b" },
-  { id: "documents" as const, label: "Minutas salvas", icon: FolderOpen, key: "d" },
   { id: "audit" as const, label: "Auditoria", icon: ShieldCheck, key: "a" },
   { id: "settings" as const, label: "Configurações", icon: SettingsIcon, key: "," },
 ];
@@ -39,7 +42,7 @@ const TABS = [
 export function AppShell() {
   const { appTab, setAppTab } = useAppStore();
 
-  // Global keyboard shortcuts (single key press, no modifier)
+  // Atalhos de teclado (tecla única, sem modifier)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -72,7 +75,7 @@ export function AppShell() {
             <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-none border-0 bg-transparent p-2 scrollbar-juridia sm:w-auto">
               <div className="flex items-center gap-2 pr-3">
                 <LayoutDashboard className="h-4 w-4 text-primary" />
-                <span className="text-sm font-semibold">Plataforma</span>
+                <span className="text-sm font-semibold">Escritório</span>
               </div>
               <div className="mx-1 h-6 w-px bg-border" />
               {TABS.map((t) => (
@@ -96,12 +99,13 @@ export function AppShell() {
 
       <div>
         {appTab === "dashboard" && <Dashboard />}
+        {appTab === "clients" && <ClientsCases />}
         {appTab === "generator" && <Generator />}
         {appTab === "editor" && <Editor />}
+        {appTab === "documents" && <DocumentsList />}
         {appTab === "case-analysis" && <CaseAnalysis />}
         {appTab === "jurisprudence" && <Jurisprudence />}
         {appTab === "batch" && <Batch />}
-        {appTab === "documents" && <DocumentsList />}
         {appTab === "audit" && <AuditLedger />}
         {appTab === "settings" && <Settings />}
       </div>

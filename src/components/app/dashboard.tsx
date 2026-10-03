@@ -83,9 +83,9 @@ export function Dashboard() {
 
   const quickActions = [
     { label: "Gerar nova minuta", icon: Zap, tab: "generator" as const, color: "text-primary" },
+    { label: "Meus clientes", icon: Star, tab: "clients" as const, color: "text-primary" },
     { label: "Pesquisar jurisprudência", icon: Search, tab: "jurisprudence" as const, color: "text-primary" },
-    { label: "Geração em lote", icon: FileText, tab: "batch" as const, color: "text-primary" },
-    { label: "Ver minutas salvas", icon: ArrowRight, tab: "documents" as const, color: "text-primary" },
+    { label: "Resumo do caso", icon: FileText, tab: "case-analysis" as const, color: "text-primary" },
   ];
 
   return (
@@ -100,36 +100,33 @@ export function Dashboard() {
         </p>
       </div>
 
-      {/* Usage card */}
+      {/* Resumo do escritório */}
       <Card className="mb-6 overflow-hidden border-primary/20">
         <div className="relative">
           <div className="absolute inset-0 bg-gradient-to-r from-primary/5 to-accent/10" />
           <CardContent className="relative p-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary" className="gap-1">
-                    <Sparkles className="h-3 w-3" /> Plano {planName}
-                  </Badge>
-                  {stats?.demo && (
-                    <Badge variant="outline" className="text-xs">
-                      {stats.demo.remaining} minutas restantes
-                    </Badge>
-                  )}
-                </div>
-                <h2 className="mt-3 text-lg font-semibold">Uso deste ciclo</h2>
+                <Badge variant="secondary" className="gap-1">
+                  <Sparkles className="h-3 w-3" /> Assistente jurídico ativo
+                </Badge>
+                <h2 className="mt-3 text-lg font-semibold">Bem-vindo de volta</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {stats?.demo?.minutasUsed || 0} de {stats?.demo?.minutasLimit || 0} minutas geradas
+                  {stats?.demo?.minutasUsed || 0} minutas geradas ·{" "}
+                  {stats?.templates || 0} templates · {stats?.skills || 0} habilidades
                 </p>
                 <div className="mt-3 max-w-md">
-                  <Progress value={usagePct} className="h-2" />
+                  <Progress value={Math.min(100, ((stats?.demo?.minutasUsed || 0) / 200) * 100)} className="h-2" />
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    {200 - (stats?.demo?.minutasUsed || 0)} gerações restantes neste ciclo
+                  </p>
                 </div>
               </div>
               <div className="flex flex-col items-center gap-1">
                 <div className="text-4xl font-bold tracking-tight text-primary">
                   {stats?.demo?.minutasUsed || 0}
                 </div>
-                <div className="text-xs text-muted-foreground">minutas usadas</div>
+                <div className="text-xs text-muted-foreground">minutas geradas</div>
               </div>
             </div>
           </CardContent>
@@ -295,43 +292,42 @@ export function Dashboard() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <TrendingUp className="h-4 w-4 text-primary" />
-              Impacto do JuridIA
+              Produtividade do escritório
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-lg bg-secondary/50 p-4">
-              <div className="text-3xl font-bold text-primary">
-                + {(stats?.totalDocuments || 0).toLocaleString("pt-BR")}
-              </div>
-              <div className="mt-1 text-sm text-muted-foreground">
-                minutas geradas por toda a comunidade JuridIA
-              </div>
-            </div>
             <div className="grid grid-cols-3 gap-3 text-center">
-              <div>
-                <div className="text-xl font-bold">
-                  + {Math.round((stats?.totalUsers || 0) / 1000)}k
-                </div>
-                <div className="text-[11px] text-muted-foreground">usuários</div>
+              <div className="rounded-lg border border-border p-3">
+                <div className="text-xl font-bold">{docs.length}</div>
+                <div className="text-[11px] text-muted-foreground">minutas no total</div>
               </div>
-              <div>
-                <div className="text-xl font-bold">
-                  + {stats?.publicInstitutions || 0}
-                </div>
-                <div className="text-[11px] text-muted-foreground">instituições</div>
+              <div className="rounded-lg border border-border p-3">
+                <div className="text-xl font-bold">{todayDocs.length}</div>
+                <div className="text-[11px] text-muted-foreground">hoje</div>
               </div>
-              <div>
-                <div className="text-xl font-bold">
-                  + {stats?.lawOffices?.toLocaleString("pt-BR") || 0}
-                </div>
-                <div className="text-[11px] text-muted-foreground">escritórios</div>
+              <div className="rounded-lg border border-border p-3">
+                <div className="text-xl font-bold">{favCount}</div>
+                <div className="text-[11px] text-muted-foreground">favoritas</div>
               </div>
             </div>
             <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
               <Zap className="mb-1 inline h-3.5 w-3.5 text-primary" />{" "}
-              <strong className="text-foreground">Dica:</strong> combine 2 ou mais
- habilidades (skills) para obter minutas com fundamentação mais rica e
- aderente à jurisprudência dos tribunais superiores.
+              <strong className="text-foreground">Dica:</strong> use{" "}
+              <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px]">⌘K</kbd>{" "}
+              para abrir a paleta de comandos e navegar rápido entre as seções.
+              Atalhos de tecla única:{" "}
+              <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px]">C</kbd>{" "}
+              clientes,{" "}
+              <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px]">G</kbd>{" "}
+              gerar,{" "}
+              <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px]">J</kbd>{" "}
+              jurisprudência.
+            </div>
+            <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
+              <Sparkles className="mb-1 inline h-3.5 w-3.5 text-primary" />{" "}
+              <strong className="text-foreground">Fluxo recomendado:</strong>{" "}
+              cadastre o cliente na aba Clientes → crie um caso → gere a minuta
+              vinculada → revise no editor → exporte em PDF/DOC.
             </div>
           </CardContent>
         </Card>

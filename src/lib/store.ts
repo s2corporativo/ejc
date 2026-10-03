@@ -31,10 +31,13 @@ interface AppState {
     | "documents"
     | "settings"
     | "case-analysis"
-    | "audit";
+    | "audit"
+    | "clients";
   setAppTab: (t: AppState["appTab"]) => void;
   currentDocId: string | null;
   setCurrentDocId: (id: string | null) => void;
+  currentCaseId: string | null;
+  setCurrentCaseId: (id: string | null) => void;
   selectedTemplateSlug: string | null;
   setSelectedTemplateSlug: (slug: string | null) => void;
   selectedSkillSlugs: string[];
@@ -66,12 +69,14 @@ const DEFAULT_PROFILE: LawyerProfile = {
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
-      view: "landing",
+      view: "app",
       setView: (view) => set({ view }),
       appTab: "dashboard",
       setAppTab: (appTab) => set({ appTab }),
       currentDocId: null,
       setCurrentDocId: (currentDocId) => set({ currentDocId }),
+      currentCaseId: null,
+      setCurrentCaseId: (currentCaseId) => set({ currentCaseId }),
       selectedTemplateSlug: null,
       setSelectedTemplateSlug: (selectedTemplateSlug) => set({ selectedTemplateSlug }),
       selectedSkillSlugs: [],
