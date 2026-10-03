@@ -275,7 +275,7 @@ function nomeCliente(raw: unknown): string {
   return "";
 }
 
-export default function CadastroManual() {
+export default function CadastroManual({ embedded = false }: { embedded?: boolean } = {}) {
   const [searchParams] = useSearchParams();
   const clientIdContexto = searchParams.get("client_id")?.trim() || null;
   const abrirCasoDireto = searchParams.get("aba") === "caso";
@@ -636,29 +636,31 @@ export default function CadastroManual() {
 
   return (
     <div>
-      <PageHeader
-        title={abrirCasoDireto ? "Cadastro rápido de caso" : "Cadastro Manual"}
-        subtitle={
-          clienteContextoValido && clienteContextoNome
-            ? `Abra um novo caso para ${clienteContextoNome}, sem IA.`
-            : abrirCasoDireto
-              ? "Cadastre um caso existente diretamente, sem análise de IA."
-              : "Cadastre clientes e abra casos sem IA — com fila offline quando faltar conexão."
-        }
-        actions={
-          <span
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium",
-              online
-                ? "bg-green-50 text-green-700"
-                : "bg-warn-100 text-warn-700",
-            )}
-          >
-            {online ? <Wifi size={13} /> : <WifiOff size={13} />}
-            {online ? "Online" : "Offline"}
-          </span>
-        }
-      />
+      {!embedded && (
+        <PageHeader
+          title={abrirCasoDireto ? "Cadastro rápido de caso" : "Cadastro Manual"}
+          subtitle={
+            clienteContextoValido && clienteContextoNome
+              ? `Abra um novo caso para ${clienteContextoNome}, sem IA.`
+              : abrirCasoDireto
+                ? "Cadastre um caso existente diretamente, sem análise de IA."
+                : "Cadastre clientes e abra casos sem IA — com fila offline quando faltar conexão."
+          }
+          actions={
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium",
+                online
+                  ? "bg-green-50 text-green-700"
+                  : "bg-warn-100 text-warn-700",
+              )}
+            >
+              {online ? <Wifi size={13} /> : <WifiOff size={13} />}
+              {online ? "Online" : "Offline"}
+            </span>
+          }
+        />
+      )}
 
       <Alert variant="info" className="mb-4">
         O modo offline funciona apenas com o app já carregado e autenticado
