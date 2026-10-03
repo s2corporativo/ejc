@@ -123,6 +123,13 @@ _SEM_MODEL_INTENCIONAL = {
     # ferramenta. Só apareceu agora porque esta é a 1ª vez que a Camada 2
     # (comparação com banco real) roda de fato, contra Postgres no CI.
     "alembic_version",
+    # Migration 171: contratos legados são views; as tabelas físicas
+    # renomeadas são espelhos exclusivos de rollback, não domínio paralelo.
+    "raio_x_analises", "raio_x_documentos", "legal_chat_sessions",
+    "legal_chat_messages", "legal_chat_attachments", "legal_chat_state_versions",
+    "raio_x_analises_legado_171", "raio_x_documentos_legado_171",
+    "legal_chat_sessions_legado_171", "legal_chat_messages_legado_171",
+    "legal_chat_attachments_legado_171", "legal_chat_state_versions_legado_171",
 }
 
 

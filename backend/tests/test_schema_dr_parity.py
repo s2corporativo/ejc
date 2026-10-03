@@ -18,7 +18,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 APP_DIR = BACKEND_DIR / "app"
-HEAD_REVISION = "170_djen_remove_unicidade_global"
+HEAD_REVISION = "171_preliminares_cutover"
 
 RAW_SQL_TABLES_ESPERADAS = {
     "agenda_eventos", "areas", "case_ambiental", "case_etiquetas",
@@ -29,7 +29,11 @@ RAW_SQL_TABLES_ESPERADAS = {
     "partner_withdrawals", "peca_codigo_contador", "portal_mensagens",
     "pricing_rules", "score_juridico", "teses_vitoriosas",
 }
-VIEWS_ESPERADAS = {"vw_atividades"}
+VIEWS_ESPERADAS = {
+    "vw_atividades", "raio_x_analises", "raio_x_documentos",
+    "legal_chat_sessions", "legal_chat_messages", "legal_chat_attachments",
+    "legal_chat_state_versions",
+}
 FALSOS_POSITIVOS_SQL = {
     "alembic_version", "pg_extension", "pg_stat_activity",
     # CTE recursiva do versionamento documental (``WITH RECURSIVE cadeia``),
@@ -262,6 +266,14 @@ def _conjunto_a() -> tuple[dict[str, frozenset[str]], frozenset[str]]:
                     if origem in tabelas:
                         tabelas[destino] = tabelas.pop(origem)
                 views.update(match.group(1).lower() for match in _RE_CREATE_VIEW.finditer(sql))
+        if revision.revision == "171_preliminares_cutover":
+            # DDL parametrizado por um manifesto congelado, conferido também
+            # pelos testes reais de upgrade/backfill/rollback desta revisão.
+            fontes = revision.module.FONTES
+            assert {f[0] for f in fontes} == VIEWS_ESPERADAS - {"vw_atividades"}
+            for antiga, _, _, _ in fontes:
+                tabelas[antiga + "_legado_171"] = tabelas.pop(antiga)
+                views.add(antiga)
     return ({k: frozenset(v) for k, v in tabelas.items()}, frozenset(views))
 
 

@@ -11,6 +11,7 @@ A normalização roda tanto em atribuições novas quanto ao carregar registros
 legados. ``set_committed_value`` evita marcar o objeto como dirty apenas por
 termos saneado a representação de leitura.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -38,16 +39,16 @@ def normalizar_citacoes(value: Any) -> list[dict[str, Any]]:
     return [item for item in value if isinstance(item, dict)]
 
 
-@event.listens_for(LegalChatSession.area_sugerida, "set", retval=True)
+@event.listens_for(LegalChatSession.area, "set", retval=True)
 def _normalizar_area_ao_atribuir(_target, value, _oldvalue, _initiator):
-    return normalizar_area_sugerida(value)
+    return normalizar_area_sugerida(value) if isinstance(_target, LegalChatSession) else value
 
 
 @event.listens_for(LegalChatSession, "load")
 def _normalizar_area_ao_carregar(target: LegalChatSession, _context) -> None:
     normalizada = normalizar_area_sugerida(target.area_sugerida)
     if normalizada != target.area_sugerida:
-        set_committed_value(target, "area_sugerida", normalizada)
+        set_committed_value(target, "area", normalizada)
 
 
 @event.listens_for(LegalChatMessage.citacoes, "set", retval=True)

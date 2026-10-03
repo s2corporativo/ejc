@@ -1,32 +1,10 @@
-"""Preliminares — fundação de schema da fusão Raio-X + Sala Jurídica (F5, Fase 1).
+"""Persistência única de preliminares de Raio-X e Sala Jurídica.
 
-Contexto (Issue #799, `docs/PLANO_FUSAO_CASO_UNICO.md`): `raio_x_analises` e
-`legal_chat_sessions` modelam o MESMO conceito de produto — uma análise
-preliminar de um caso antes dele virar `Case` oficial — em duas tabelas
-físicas separadas, resíduo de quando Raio-X e Sala Jurídica eram telas
-distintas. Esta Fase 1 é estritamente ADITIVA: cria o schema unificado
-(`preliminares` + 3 tabelas filhas) sem tocar nas tabelas antigas, sem
-migrar dado e sem alterar nenhum service/router. `raio_x_service.py` e
-`legal_chat_service.py` continuam sendo a fonte de dados em produção.
-
-Próximos passos (NÃO fazem parte desta fase — deixados para o futuro):
-  Fase 2 — backfill do dado histórico + dual-write nos services existentes.
-  Fase 3 — cutover dos consumidores (routers/services) para `preliminares` e
-           aposentadoria (DROP, com backup) de `raio_x_analises`,
-           `raio_x_documentos`, `legal_chat_sessions`, `legal_chat_messages`,
-           `legal_chat_attachments` e `legal_chat_state_versions`.
-
-Discriminador `origem` (`raio_x` | `sala_juridica`): colunas específicas de
-cada origem ficam nullable — nula quando não fizer sentido para aquela
-origem. Nomes que descrevem a MESMA coisa nas duas tabelas de origem foram
-unificados num único nome canônico:
-  - `potencial_cliente` (RaioXAnalise.potencial_cliente == LegalChatSession.cliente_potencial)
-  - `area`              (RaioXAnalise.area == LegalChatSession.area_sugerida; ampliado p/ String(100))
-
-`preliminar_estados.autoria` corresponde a `LegalChatStateVersion.origem`
-("ia" | "advogado") — renomeado aqui para não colidir semanticamente com o
-discriminador `origem` da tabela-mãe (que distingue Raio-X de Sala Jurídica).
+Os módulos antigos expõem adaptadores ORM com discriminador de origem,
+nomes/defaults compatíveis e nenhuma tabela própria. A migration 171
+migra os dados e mantém views legadas e espelho transacional de rollback.
 """
+
 from __future__ import annotations
 
 from sqlalchemy import (
@@ -44,7 +22,7 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, synonym
 
 from app.core.database import Base
 
@@ -61,12 +39,12 @@ class Preliminar(Base):
 
     __tablename__ = "preliminares"
     __table_args__ = (
-        CheckConstraint(
-            "origem IN ('raio_x', 'sala_juridica')", name="ck_preliminares_origem"
-        ),
+        CheckConstraint("origem IN ('raio_x', 'sala_juridica')", name="ck_preliminares_origem"),
         Index("ix_preliminares_status_criado", "status", "created_at"),
         Index("ix_preliminares_criador_status", "created_by", "status"),
     )
+
+    __mapper_args__ = {"polymorphic_on": "origem", "polymorphic_abstract": True}
 
     # ── Comuns às duas origens ────────────────────────────────────────────
     id = Column(String(36), primary_key=True)
@@ -78,19 +56,13 @@ class Preliminar(Base):
     convertido_case_id = Column(String(36), ForeignKey("cases.id"), nullable=True, index=True)
     converted_at = Column(DateTime(timezone=True), nullable=True)
     created_by = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    # Piso técnico para futura política de retenção LGPD. Nenhuma migration ou
-    # rotina de purga anterior é dependência desta Fase 1: a coluna nasce
-    # nullable e sem comportamento automático. A política, o cálculo e eventual
-    # backfill de `retention_until` pertencem à fase posterior de continuidade e
-    # só podem ser ativados após regra formal de retenção + testes/rollback.
+    # Retenção preservada do Raio-X; a Sala não ganha purga automática.
     retention_until = Column(DateTime(timezone=True), nullable=True)
     archived_at = Column(DateTime(timezone=True), nullable=True)
     discarded_at = Column(DateTime(timezone=True), nullable=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
-    )
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     # ── Específicas de origem="raio_x" (RaioXAnalise) ────────────────────
     numero_processo = Column(String(30), nullable=True, index=True)
@@ -117,24 +89,28 @@ class Preliminar(Base):
     # ── Específicas de origem="sala_juridica" (LegalChatSession) ─────────
     favorita = Column(Boolean, nullable=True, default=False)
     client_id = Column(String(36), ForeignKey("clients.id"), nullable=True, index=True)
-    advogado_responsavel_id = Column(
-        String(36), ForeignKey("users.id"), nullable=True, index=True
-    )
+    advogado_responsavel_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
     workspace_texto = Column(Text, nullable=True)
     workspace_versao = Column(Integer, nullable=True, default=0)
     frozen_at = Column(DateTime(timezone=True), nullable=True)
     custo_ia_total = Column(Numeric(12, 6), nullable=True, default=0)
 
     documentos = relationship(
-        "PreliminarDocumento", back_populates="preliminar", cascade="all, delete-orphan",
+        "PreliminarDocumento",
+        back_populates="preliminar",
+        cascade="all, delete-orphan",
         order_by="PreliminarDocumento.created_at",
     )
     mensagens = relationship(
-        "PreliminarMensagem", back_populates="preliminar", cascade="all, delete-orphan",
+        "PreliminarMensagem",
+        back_populates="preliminar",
+        cascade="all, delete-orphan",
         order_by="PreliminarMensagem.created_at",
     )
     estados = relationship(
-        "PreliminarEstado", back_populates="preliminar", cascade="all, delete-orphan",
+        "PreliminarEstado",
+        back_populates="preliminar",
+        cascade="all, delete-orphan",
         order_by="PreliminarEstado.versao",
     )
 
@@ -149,9 +125,7 @@ class PreliminarDocumento(Base):
     )
 
     id = Column(String(36), primary_key=True)
-    preliminar_id = Column(
-        String(36), ForeignKey("preliminares.id", ondelete="CASCADE"), nullable=False
-    )
+    preliminar_id = Column(String(36), ForeignKey("preliminares.id", ondelete="CASCADE"), nullable=False)
     nome_original = Column(String(255), nullable=False)
     filepath = Column(String(500), nullable=False)
     mimetype = Column(String(100), nullable=True)
@@ -165,6 +139,10 @@ class PreliminarDocumento(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     preliminar = relationship("Preliminar", back_populates="documentos")
+    analise_id = synonym("preliminar_id")
+    session_id = synonym("preliminar_id")
+    analise = synonym("preliminar")
+    sessao = synonym("preliminar")
 
 
 class PreliminarMensagem(Base):
@@ -174,14 +152,10 @@ class PreliminarMensagem(Base):
     """
 
     __tablename__ = "preliminar_mensagens"
-    __table_args__ = (
-        Index("ix_preliminar_mensagens_preliminar", "preliminar_id", "created_at"),
-    )
+    __table_args__ = (Index("ix_preliminar_mensagens_preliminar", "preliminar_id", "created_at"),)
 
     id = Column(String(36), primary_key=True)
-    preliminar_id = Column(
-        String(36), ForeignKey("preliminares.id", ondelete="CASCADE"), nullable=False
-    )
+    preliminar_id = Column(String(36), ForeignKey("preliminares.id", ondelete="CASCADE"), nullable=False)
     autor = Column(String(10), nullable=False)  # "user" | "ia"
     user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
     modo = Column(String(40), nullable=False, default="conversa_livre")
@@ -200,6 +174,8 @@ class PreliminarMensagem(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     preliminar = relationship("Preliminar", back_populates="mensagens")
+    session_id = synonym("preliminar_id")
+    sessao = synonym("preliminar")
 
 
 class PreliminarEstado(Base):
@@ -215,9 +191,7 @@ class PreliminarEstado(Base):
     )
 
     id = Column(String(36), primary_key=True)
-    preliminar_id = Column(
-        String(36), ForeignKey("preliminares.id", ondelete="CASCADE"), nullable=False
-    )
+    preliminar_id = Column(String(36), ForeignKey("preliminares.id", ondelete="CASCADE"), nullable=False)
     versao = Column(Integer, nullable=False)
     resumo = Column(Text, nullable=True)
     estado = Column(JSONB, nullable=False, default=dict)
@@ -229,3 +203,6 @@ class PreliminarEstado(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     preliminar = relationship("Preliminar", back_populates="estados")
+    session_id = synonym("preliminar_id")
+    origem = synonym("autoria")
+    sessao = synonym("preliminar")

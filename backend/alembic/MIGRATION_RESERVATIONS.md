@@ -2,11 +2,11 @@
 
 Este arquivo é o ledger canônico de **reservas futuras** e do trecho recente da cadeia Alembic. O histórico detalhado de reservas antigas permanece preservado no Git.
 
-**Head canônico atual da `main`:** `167_finance_fk_indexes`
-**Head esperado nesta árvore após as migrations do branch:** `170_djen_remove_unicidade_global`
-**Próximo prefixo livre nesta árvore:** `171`
+**Head canônico atual da `main`:** `170_djen_remove_unicidade_global`
+**Head esperado nesta árvore após as migrations do branch:** `171_preliminares_cutover`
+**Próximo prefixo livre nesta árvore:** `172`
 
-> Estado da `main` após integração de `158_case_partes_trabalhista_pii_expand` e `159_user_cpf_secure`. A migration 159 parte diretamente de 158 e integra a cadeia canônica.
+> Base conferida em `4c03f861`: cadeia linear até 170. A revisão 171 é o complemento desta branch; nenhuma migration aplicada foi reescrita.
 
 > Nunca reutilize um número menor ou igual ao head atual, mesmo quando houver lacuna histórica. A ordem numérica precisa crescer junto com `down_revision`.
 
@@ -62,13 +62,16 @@ gh pr list --state open
 | `165_commission_operations` | `164_commission_rules` | **Mesclada** | Ajustes, lotes de pagamento e fechamento mensal de comissões. |
 | `166_finance_governance` | `165_commission_operations` | **Mesclada** | Fechamento financeiro, alçadas e conciliação. |
 | `167_finance_fk_indexes` | `166_finance_governance` | **Mesclada** | Índices aditivos para FKs de comprovantes em commission_payment_batches e partner_withdrawals. |
-| `168_finance_ged_links` | `167_finance_fk_indexes` | **Reservada** | Padroniza comprovantes/documentos do Financeiro no GED canônico (`documents`) para despesas gerais, extratos bancários e pagamentos de honorários. |
+| `168_finance_ged_links` | `167_finance_fk_indexes` | **Mesclada** | Padroniza comprovantes/documentos do Financeiro no GED canônico (`documents`) para despesas gerais, extratos bancários e pagamentos de honorários. |
+| `169_djen_multi_advogado` | `168_finance_ged_links` | **Mesclada** | Unicidade de comunicação por advogado, com evidência oficial. |
+| `170_djen_remove_unicidade_global` | `169_djen_multi_advogado` | **Mesclada** | Conclui a expansão da unicidade de comunicações. |
+| `171_preliminares_cutover` | `170_djen_remove_unicidade_global` | **Reservada** | Backfill transacional e ORM único, com views legadas e espelhos de rollback; nenhuma tabela de dados removida. |
 
-### Estado atual a partir do head 162 integrado
+### Estado atual da cadeia integrada
 
 - Os prefixos `158` e `159` fazem parte da cadeia canônica da `main` e nunca podem ser reutilizados.
 - `160_activity_alert_states`, `161_fee_estornos` e `162_case_financial_classification` já integram a `main`.
-- O head efetivo da `main` é `167_finance_fk_indexes`; o próximo prefixo livre é `168`.
+- O head efetivo da `main` é `170_djen_remove_unicidade_global`; esta branch reserva `171_preliminares_cutover`. O próximo prefixo livre nesta árvore é `172`.
 - Frentes de Documentos/Legal Hold/Outbox que ainda carreguem migrations históricas `156_*` são incompatíveis com a cadeia atual e devem ser reconstruídas somente depois do avanço efetivo do head, usando o próximo número então confirmado.
 
 ## Banco de Teses — decisão canônica
