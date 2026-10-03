@@ -57,19 +57,38 @@ def _tarefa_cacheavel(task_type: str) -> bool:
         return False
 
 
-def chave(task_type: str, messages: list[dict], **params) -> str:
+def _modo_cacheavel(modo) -> bool:
+    """NIA-06 (auditoria 03/10): o modo EFETIVO da chamada — tarefa reforçada
+    pelo sigilo do caso — também decide. Sem isto, uma tarefa mapeada para
+    MASCARAMENTO por override, num caso LOCAL_COMPLETO, gravava no Redis a
+    resposta local em claro. Só MASCARAMENTO (irreversível) é cacheável."""
+    if modo is None:
+        return True
+    from app.services.ai.sanitization_policy import ModoSanitizacao
+    return modo == ModoSanitizacao.MASCARAMENTO
+
+
+def chave(task_type: str, messages: list[dict], *, modo_sanitizacao=None,
+          **params) -> str:
     """Hash estável da requisição. Ordena params para independer da ordem.
 
-    Chaves não-cacheáveis continuam determinísticas para observabilidade/testes,
-    mas usam prefixo próprio reconhecido por obter/gravar.
+    `modo_sanitizacao` é o modo EFETIVO da chamada (None = só a política da
+    tarefa). Chaves não-cacheáveis continuam determinísticas para
+    observabilidade/testes, mas usam prefixo próprio reconhecido por obter/gravar.
     """
     payload = {
         "task_type": task_type,
         "messages": messages,
         "params": {k: params[k] for k in sorted(params)},
     }
+    if modo_sanitizacao is not None:
+        payload["modo"] = str(getattr(modo_sanitizacao, "value", modo_sanitizacao))
     bruto = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
-    prefixo = _PREFIXO if _tarefa_cacheavel(task_type) else _PREFIXO_NAO_CACHEAVEL
+    try:
+        cacheavel = _tarefa_cacheavel(task_type) and _modo_cacheavel(modo_sanitizacao)
+    except Exception:
+        cacheavel = False  # fail-closed, como em _tarefa_cacheavel
+    prefixo = _PREFIXO if cacheavel else _PREFIXO_NAO_CACHEAVEL
     return prefixo + hashlib.sha256(bruto.encode("utf-8")).hexdigest()
 
 
