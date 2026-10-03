@@ -251,11 +251,11 @@ describe("DashboardUltra — cockpit jurídico final", () => {
 
     expect(await screen.findByText("Começar novo trabalho")).toBeTruthy();
     expect(
-      screen.getByRole("link", { name: "Entrada por IA" }).getAttribute("href"),
+      screen.getByRole("link", { name: "Entrada Jurídica" }).getAttribute("href"),
     ).toBe("/entrada");
     expect(
       screen.getByRole("link", { name: "+ Novo Caso" }).getAttribute("href"),
-    ).toBe("/cadastro-manual?aba=caso");
+    ).toBe("/entrada?modo=manual");
     expect(screen.queryByTestId("entrada-unica")).not.toBeTruthy();
   });
 
