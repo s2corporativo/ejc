@@ -9,9 +9,13 @@
 // Nenhuma instância axios paralela é criada aqui.
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import {
+  RASCUNHO_CADASTRO_MANUAL_KEY,
+  registrarLimpezaRascunho,
+} from "../lib/rascunho/contrato";
 
-/** Chave do localStorage — exportada para a limpeza no logout (stores/auth.ts). */
-export const CADASTRO_MANUAL_KEY = "ejc_cadastro_manual";
+/** Chave do localStorage — fonte única em lib/rascunho/contrato.ts. */
+export const CADASTRO_MANUAL_KEY = RASCUNHO_CADASTRO_MANUAL_KEY;
 
 export type TipoItem = "cliente" | "caso";
 export type StatusItem = "pendente" | "enviando" | "erro";
@@ -397,7 +401,7 @@ export const useCadastroManualStore = create<CadastroManualState>()(
 
 /**
  * Limpa TODO o estado do cadastro manual — memória e localStorage. Chamada no
- * LOGOUT (stores/auth.ts), como já acontece com o RASCUNHO_KEY do intake:
+ * LOGOUT (via registro do contrato único de rascunho — lib/rascunho/contrato.ts):
  * fila e rascunhos carregam PII e não podem sobreviver ao fim da sessão em
  * estação compartilhada (LGPD).
  */
@@ -416,3 +420,7 @@ export function limparCadastroManual(): void {
     // Storage indisponível não pode derrubar o logout.
   }
 }
+
+// Contrato único de rascunho: qualquer caminho de logout (api.logout,
+// auth.clearSession, 401/403 do bootstrap) chega aqui via limparTodosRascunhos.
+registrarLimpezaRascunho(limparCadastroManual);
