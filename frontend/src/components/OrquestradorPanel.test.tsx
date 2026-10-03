@@ -98,8 +98,8 @@ const visao: OrquestradorVisao = {
   ],
 };
 
-function abrirAcoes() {
-  fireEvent.click(screen.getByText(/Ações disponíveis/));
+function abrirDetalhes() {
+  fireEvent.click(screen.getByText("Ver detalhes"));
 }
 
 describe("OrquestradorPanel — próxima ação simplificada", () => {
@@ -127,11 +127,11 @@ describe("OrquestradorPanel — próxima ação simplificada", () => {
     );
   }
 
-  it("mostra uma única régua operacional, próxima ação e pendências", async () => {
+  it("mostra somente próxima ação e pendências na superfície principal", async () => {
     renderPanel();
 
     expect(await screen.findByText("Próxima ação")).toBeTruthy();
-    expect(screen.getByText("Aberto")).toBeTruthy();
+    expect(screen.queryByText("Aberto")).toBeNull();
     expect(
       screen.getByText(/Revisar e aprovar o snapshot de inteligência/),
     ).toBeTruthy();
@@ -141,7 +141,7 @@ describe("OrquestradorPanel — próxima ação simplificada", () => {
 
     // A jornada completa continua disponível, mas recolhida em "Ver detalhes";
     // a timeline não compete mais com a próxima ação na superfície principal.
-    expect(screen.getByText("Ver detalhes da jornada")).toBeTruthy();
+    expect(screen.getByText("Ver detalhes")).toBeTruthy();
     expect(screen.getByText("Base fática registrada")).toBeTruthy();
     expect(screen.queryByText("Análise completa do intake")).toBeNull();
     expect(visaoOrquestrador).toHaveBeenCalledWith("caso-1");
@@ -150,7 +150,7 @@ describe("OrquestradorPanel — próxima ação simplificada", () => {
   it("ato de aprovação humana aponta direto para a superfície canônica", async () => {
     renderPanel();
     await screen.findByText("Próxima ação");
-    abrirAcoes();
+    abrirDetalhes();
 
     expect(screen.getByText("Aprovar snapshot de inteligência")).toBeTruthy();
     expect(screen.getByText("Revisar inteligência do caso")).toBeTruthy();
@@ -163,7 +163,7 @@ describe("OrquestradorPanel — próxima ação simplificada", () => {
   it("executa ação via /avancar após confirmação no modal", async () => {
     renderPanel();
     await screen.findByText("Próxima ação");
-    abrirAcoes();
+    abrirDetalhes();
 
     fireEvent.click(screen.getByRole("button", { name: "Executar" }));
     fireEvent.click(
@@ -186,10 +186,8 @@ describe("OrquestradorPanel — próxima ação simplificada", () => {
       expect(
         (await screen.findAllByText(/Revisar e aprovar o snapshot/)).length,
       ).toBeGreaterThan(0);
-      expect(
-        screen.getByText(status === "encerrado" ? "Encerrado" : "Arquivado"),
-      ).toBeTruthy();
-      abrirAcoes();
+      expect(screen.getByText("Caso em modo leitura")).toBeTruthy();
+      abrirDetalhes();
 
       const botao = screen.getByRole("button", {
         name: "Executar",
@@ -207,7 +205,7 @@ describe("OrquestradorPanel — próxima ação simplificada", () => {
       authState.user = { role };
       renderPanel();
       await screen.findByText("Próxima ação");
-      abrirAcoes();
+      abrirDetalhes();
 
       const botao = screen.getByRole("button", {
         name: "Executar",
@@ -234,7 +232,7 @@ describe("OrquestradorPanel — próxima ação simplificada", () => {
     });
     renderPanel();
     await screen.findByText("Próxima ação");
-    abrirAcoes();
+    abrirDetalhes();
 
     fireEvent.click(screen.getByRole("button", { name: "Executar" }));
     fireEvent.click(
