@@ -2012,21 +2012,20 @@ html.dark .ejc-legal-ticker__item{
 }
 .ejc-smart-alert-item.is-info {
   box-shadow: inset 3px 0 0 #6d57b8;
-}/* Modos jurídicos{
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0 0 10px;
-}html.dark .ejc-smart-alert-panel,
-html.dark .ejc-smart-alert-item__actions button{
+}
+
+html.dark .ejc-smart-alert-panel,
+html.dark .ejc-smart-alert-item__actions button {
   border-color: #30445a;
   background: #132437;
   color: #dfe8ef;
-}html.dark .ejc-smart-alert-panel > header,
-html.dark .ejc-smart-alert-item{
+}
+html.dark .ejc-smart-alert-panel > header,
+html.dark .ejc-smart-alert-item {
   border-color: #2a3e53;
-}html.dark .ejc-smart-alert-panel > header strong,
-html.dark .ejc-smart-alert-item__body strong{
+}
+html.dark .ejc-smart-alert-panel > header strong,
+html.dark .ejc-smart-alert-item__body strong {
   color: #edf3f8;
 }
 html.dark .ejc-smart-alert-item__body p,
