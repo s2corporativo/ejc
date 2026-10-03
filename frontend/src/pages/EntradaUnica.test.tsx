@@ -15,7 +15,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 
 const getMock = vi.fn();
 const postMock = vi.fn();
@@ -109,6 +109,11 @@ function preencherRelato(chars: number) {
   fireEvent.change(screen.getByLabelText("Relato do cliente"), {
     target: { value: "x".repeat(chars) },
   });
+}
+
+function DestinoProbe() {
+  const { pathname, search } = useLocation();
+  return <div>DESTINO:{`${pathname}${search}`}</div>;
 }
 
 beforeEach(() => {
@@ -322,6 +327,40 @@ describe("EntradaUnica — confirmação (tela B)", () => {
     expect(
       (screen.getByLabelText("Título do caso") as HTMLInputElement).value,
     ).toBe("Negativação indevida — Maria S. da Costa");
+  });
+});
+
+describe("EntradaUnica — criação abre o workspace do caso", () => {
+  it("não força o Dossiê após criar; abre diretamente a Visão do caso", async () => {
+    postMock
+      .mockResolvedValueOnce({
+        data: { rascunho_id: "r3", degradado: true, avisos: [] },
+      })
+      .mockResolvedValueOnce({
+        data: { case_id: "case-42", numero_interno: "DPT-2026-0042" },
+      });
+
+    render(
+      <MemoryRouter initialEntries={["/entrada"]}>
+        <Routes>
+          <Route path="/entrada" element={<EntradaUnica />} />
+          <Route path="/casos/:id" element={<DestinoProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    preencherRelato(60);
+    fireEvent.click(screen.getByRole("button", { name: "Analisar" }));
+    await screen.findByText("Confira e confirme");
+
+    fireEvent.click(
+      screen.getByLabelText("Confirmo que revisei os dados acima"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Criar caso" }));
+
+    expect(
+      await screen.findByText("DESTINO:/casos/case-42?tab=resumo"),
+    ).toBeTruthy();
   });
 });
 
