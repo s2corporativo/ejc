@@ -210,7 +210,7 @@ subagente não conferido não vira afirmação sua no PR.
 `README.md` (operação) · `docs/ai/` (núcleo de IA, HITL, LGPD) ·
 `docs/CATALOGO_APIS_EJC.md` · `docs/DESIGN_SYSTEM_EJC.md` ·
 `docs/auditoria/` (plano ativo e achados — leia só o bloco em execução) ·
-`RUNBOOK_*.md` (procedimentos) · `RELATORIO_*.md` (histórico, não
+`RUNBOOK_*.md` (procedimentos) · `docs/arquivo/relatorios/` (histórico, não
 procedimento).
 
 **Critério de lançamento**: um advogado leva um caso real do início ao

@@ -28,7 +28,7 @@ Closes #
 
 ## Agente de IA e instruções locais
 
-- [ ] `docs/GOVERNANCA_IA.md`, `CLAUDE.md`, `AGENTS.md` e `.agent/rules/*.md` foram lidos
+- [ ] `docs/GOVERNANCA_IA.md`, `CLAUDE.md` e `AGENTS.md` foram lidos
 - [ ] `docs/ia/README.md` foi consultado quando o PR foi produzido ou revisado por agente
 - [ ] `docs/ia/tarefas/README.md` foi consultado e o modelo usado foi informado:
 - [ ] `docs/ia/PROBLEMAS_CONHECIDOS.md` foi consultado/atualizado quando aplicável

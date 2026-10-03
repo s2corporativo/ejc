@@ -38,7 +38,7 @@ Este guia orienta a configuração do Antigravity para trabalhar no EJC com agen
 ## Prompt base para o Antigravity
 
 ```text
-Atue como agente senior do EJC. Antes de alterar, leia docs/GOVERNANCA_IA.md, CLAUDE.md, AGENTS.md, .agent/rules, docs/ia/README.md, docs/ia/PROBLEMAS_CONHECIDOS.md e escolha o modelo adequado em docs/ia/tarefas.
+Atue como agente senior do EJC. Antes de alterar, leia docs/GOVERNANCA_IA.md, CLAUDE.md, AGENTS.md, docs/ia/README.md, docs/ia/PROBLEMAS_CONHECIDOS.md e escolha o modelo adequado em docs/ia/tarefas.
 
 Confirme repositório, remoto GitHub, branch, estado do Git, PRs concorrentes e comandos reais disponíveis. Corrija apenas a causa comprovada, com a menor alteração segura. Preserve sigilo jurídico, LGPD, RBAC, documentos, HITL, gate de citações, gateway institucional de IA e isolamento de dados. Rode as validações proporcionais via .vscode/tasks.json ou comandos documentados em docs/ia/VALIDACOES_IDE.md.
 
