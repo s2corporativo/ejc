@@ -119,7 +119,11 @@ export default function EntradaUnica() {
         }
       />
 
-      {modoManual ? <CadastroManual embedded /> : <EntradaInteligente embedded />}
+      {modoManual ? (
+        <CadastroManual embedded />
+      ) : (
+        <EntradaInteligente embedded />
+      )}
     </div>
   );
 }
