@@ -651,19 +651,19 @@ export default function DashboardUltra() {
               </span>
               <strong>Começar novo trabalho</strong>
               <small>
-                Sua carteira já está ativa. Entre direto por IA ou cadastro
-                manual sem ocupar o painel de decisões.
+                Sua carteira já está ativa. Use a mesma Entrada Jurídica para
+                cadastrar rapidamente ou analisar documentos com IA.
               </small>
             </div>
             <div className="ejc-dash__entry-compact-actions">
               {canUseLegal && (
                 <Link to="/entrada" className="is-primary">
                   <Sparkles aria-hidden="true" />
-                  Entrada por IA
+                  Entrada Jurídica
                 </Link>
               )}
               {canUseEntry && (
-                <Link to="/cadastro-manual?aba=caso">
+                <Link to="/entrada?modo=manual">
                   <Briefcase aria-hidden="true" />+ Novo Caso
                 </Link>
               )}
@@ -683,7 +683,7 @@ export default function DashboardUltra() {
             >
               {canUseEntry && (
                 <Link
-                  to="/cadastro-manual?aba=caso"
+                  to="/entrada?modo=manual"
                   className="ejc-dash__entry-option is-manual"
                 >
                   <span
@@ -756,7 +756,7 @@ export default function DashboardUltra() {
                     IA.
                   </p>
                   <Link
-                    to="/cadastro-manual?aba=caso"
+                    to="/entrada?modo=manual"
                     className="ejc-dash__entry-cta"
                   >
                     Cadastrar caso manualmente
@@ -951,7 +951,7 @@ export default function DashboardUltra() {
               ) : casosEmDestaque.length === 0 ? (
                 <li className="ejc-dash__empty ejc-dash__empty--action">
                   <span>Nenhum caso cadastrado ainda.</span>
-                  <Link to="/cadastro-manual?aba=caso">
+                  <Link to="/entrada?modo=manual">
                     Cadastrar primeiro caso
                   </Link>
                 </li>
