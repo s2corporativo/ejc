@@ -48,6 +48,12 @@ def evaluate_proposition_validity(
     """Avalia status usando somente relações explicitamente registradas.
 
     A ausência de relações não significa validade: retorna ``nao_verificada``.
+    Convenção de direção (decisão conservadora, LB2): ``direcao`` (``saida``/
+    ``entrada``) é deliberadamente ignorada. A leitura de qual lado "supera" não
+    foi definida pelo titular nem revisada por advogado; ignorar a direção nunca
+    esconde um alerta (pode, no máximo, sinalizar a mais). Não condicionar por
+    ``direcao`` sem essa definição e sem revisar os testes de grafo.
+
     O formato preferencial é o índice do grafo canônico: ``tipo`` + ``outro``.
     Também aceitamos ``source_id`` para interoperabilidade. Relações sem nó/fonte
     rastreável não promovem estado jurídico.

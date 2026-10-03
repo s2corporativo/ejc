@@ -371,6 +371,8 @@ def _contract_from_native(spec: NativeSkillSpec) -> LegalSkillContract:
         source_refs=(),
         precedent_refs=(),
         thesis_refs=(),
+        # ATIVA = skill nativa já registrada em operação; não implica fonte
+        # curada (source_refs vazio até haver curadoria oficial — LB7).
         status=SkillStatus.ATIVA,
         requires_case=spec.requires_case,
         oab_restricted=spec.oab_restricted,

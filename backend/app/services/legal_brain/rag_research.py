@@ -6,6 +6,11 @@ from .contracts import ResearchPlan
 from .research_loop import evaluate_research_coverage, next_research_gap
 
 
+# "saneamento_fatico" é o purpose emitido por build_clarification_plan;
+# "clarificar_fatos" é mantido por compatibilidade com planos já serializados.
+_CLARIFICATION_PURPOSES = frozenset({"saneamento_fatico", "clarificar_fatos"})
+
+
 def _record_from_rag(item: dict[str, Any], *, purpose: str) -> dict[str, Any] | None:
     """Converte um resultado do RAG em evidência rastreável, sem promover mérito.
 
@@ -91,11 +96,11 @@ async def execute_research_plan_with_rag(
     executed_steps: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
     clarification_only = bool(plan.steps) and all(
-        step.purpose == "clarificar_fatos" for step in plan.steps
+        step.purpose in _CLARIFICATION_PURPOSES for step in plan.steps
     )
 
     for step in plan.steps:
-        if step.purpose == "clarificar_fatos":
+        if step.purpose in _CLARIFICATION_PURPOSES:
             executed_steps.append(
                 {"purpose": step.purpose, "query": step.query, "retrieved": 0, "skipped": True}
             )
