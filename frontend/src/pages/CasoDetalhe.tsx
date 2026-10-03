@@ -698,7 +698,9 @@ function DossieIntegradoCaso({ caseId }: { caseId: string }) {
             onClick={() => setMostrarJuridico((valor) => !valor)}
             aria-expanded={mostrarJuridico}
           >
-            {mostrarJuridico ? "Ocultar Dossiê Jurídico" : "Abrir Dossiê Jurídico"}
+            {mostrarJuridico
+              ? "Ocultar Dossiê Jurídico"
+              : "Abrir Dossiê Jurídico"}
           </button>
         </div>
 
