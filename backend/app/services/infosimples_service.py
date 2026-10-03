@@ -316,20 +316,55 @@ async def _contar_uso_dia(db: AsyncSession, dia: date) -> int:
     ), {"dia": dia})).scalar() or 0)
 
 
-async def _registrar_uso(
+# code provisório da linha de reserva (consulta autorizada, ainda sem resposta).
+# Permanece assim se a chamada falhar após o envio: a Infosimples pode ter
+# processado e cobrado, então a linha CONTINUA contando no teto (falha fechada).
+_CODE_RESERVADO = 0
+_CODE_FALHA_REDE = -1
+
+# Chave do advisory lock transacional que serializa "contar + reservar".
+_LOCK_TETO = "infosimples_teto_diario"
+
+
+async def _reservar_uso(
     db: AsyncSession, dia: date, caminho: str, phash: str,
-    code: int | None, resultado: dict | None, user_id: str | None,
-) -> None:
+    user_id: str | None, teto: int,
+) -> tuple[str | None, int]:
+    """Reserva ATOMICAMENTE uma unidade do teto ANTES da chamada paga.
+
+    Serializa com pg_advisory_xact_lock (liberado no commit/rollback), conta e
+    insere a linha de reserva na mesma transação; o commit torna a reserva
+    visível às demais requisições antes de a chamada paga começar. Retorna
+    (id_da_reserva, usados); id None = teto atingido (nada foi inserido).
+    """
+    await db.execute(sqltext("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+                     {"k": _LOCK_TETO})
+    usados = await _contar_uso_dia(db, dia)
+    if usados >= teto:
+        await db.rollback()  # libera o lock
+        return None, usados
+    rid = str(uuid4())
     await db.execute(sqltext(
         "INSERT INTO infosimples_uso "
         "(id, dia, caminho, parametros_hash, code, resultado, user_id) "
-        "VALUES (:id, :dia, :caminho, :ph, :code, CAST(:res AS JSONB), :uid)"
+        "VALUES (:id, :dia, :caminho, :ph, :code, NULL, :uid)"
+    ), {"id": rid, "dia": dia, "caminho": caminho, "ph": phash,
+        "code": _CODE_RESERVADO, "uid": user_id})
+    await db.commit()
+    return rid, usados + 1
+
+
+async def _concluir_uso(
+    db: AsyncSession, rid: str, code: int, resultado: dict | None,
+) -> None:
+    """Completa a linha reservada com o desfecho (code e, se sucesso, cache)."""
+    await db.execute(sqltext(
+        "UPDATE infosimples_uso SET code = :code, resultado = CAST(:res AS JSONB) "
+        "WHERE id = :id"
     ), {
-        "id": str(uuid4()), "dia": dia, "caminho": caminho, "ph": phash,
-        "code": code,
+        "id": rid, "code": code,
         "res": json.dumps(resultado, ensure_ascii=False, default=str)
                if resultado is not None else None,
-        "uid": user_id,
     })
 
 
@@ -342,6 +377,16 @@ async def _post_form(url: str, dados: dict, timeout_s: float) -> dict:
         r = await c.post(url, data=dados)
         r.raise_for_status()
         return r.json()
+
+
+async def _marcar_falha(db: AsyncSession, rid: str) -> None:
+    """Falha de rede/HTTP após o envio: a reserva PERMANECE contada (a
+    Infosimples pode ter processado). Best-effort — nunca mascara o erro."""
+    try:
+        await _concluir_uso(db, rid, _CODE_FALHA_REDE, None)
+        await db.commit()
+    except Exception:
+        logger.warning("[infosimples] falha ao marcar reserva", exc_info=True)
 
 
 # ── API principal ─────────────────────────────────────────────────────────────
@@ -358,7 +403,7 @@ async def consultar(
 
     Retorna {"code", "code_message", "data", "header", "site_receipts",
     "cache": bool}. O bookkeeping de custo (linha em infosimples_uso + audit
-    log) é COMMITADO aqui mesmo: uma consulta cobrada é fato consumado — não
+    log) é COMMITADO aqui mesmo (a reserva do teto, antes da chamada): uma consulta cobrada é fato consumado — não
     pode se perder num rollback do fluxo chamador.
 
     Levanta:
@@ -399,11 +444,11 @@ async def consultar(
         await db.commit()
         return {**cacheado, "cache": True}
 
-    # 2) Teto de custo. (Checagem read-then-insert: corrida entre requisições
-    #    simultâneas pode estourar o teto em poucas unidades — aceitável para
-    #    um teto de custo diário; o contador persistido corrige no próximo hit.)
-    usados = await _contar_uso_dia(db, hoje)
-    if usados >= s.INFOSIMPLES_MAX_CONSULTAS_DIA:
+    # 2) Teto de custo: a unidade é RESERVADA (e commitada) antes da chamada
+    #    paga, sob advisory lock — requisições simultâneas não ultrapassam o teto.
+    rid, usados = await _reservar_uso(
+        db, hoje, caminho, phash, user_id, s.INFOSIMPLES_MAX_CONSULTAS_DIA)
+    if rid is None:
         raise LimiteDiarioAtingidoError(
             f"Limite diário de consultas Infosimples atingido "
             f"({usados}/{s.INFOSIMPLES_MAX_CONSULTAS_DIA}). Cada consulta é "
@@ -421,11 +466,13 @@ async def consultar(
         # Sem retry: repetir uma consulta PAGA sem certeza do estado da
         # primeira poderia dobrar o custo. Mensagem sem corpo/token.
         logger.warning("[infosimples] falha HTTP em %s: %s", caminho, type(e).__name__)
+        await _marcar_falha(db, rid)
         raise InfosimplesIndisponivelError(
             f"Falha de rede/HTTP ao consultar a Infosimples ({type(e).__name__}). "
             "Tente novamente em instantes."
         ) from None
     except (ValueError, KeyError):
+        await _marcar_falha(db, rid)
         raise InfosimplesIndisponivelError(
             "Resposta inesperada (não-JSON) da Infosimples."
         ) from None
@@ -443,9 +490,7 @@ async def consultar(
     # 4) Bookkeeping da consulta EXECUTADA (cobrada): conta no teto mesmo em
     #    erro 6xx; só sucesso vira cache. Commit imediato (fato consumado).
     sucesso = code == 200
-    await _registrar_uso(
-        db, hoje, caminho, phash, code, resultado if sucesso else None, user_id,
-    )
+    await _concluir_uso(db, rid, code, resultado if sucesso else None)
     await criar_audit_log(
         db, user_id, user_role, "CONSULTA_PAGA", "infosimples", None,
         detalhes=f"{caminho} (code={code})",
