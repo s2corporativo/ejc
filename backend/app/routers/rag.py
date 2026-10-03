@@ -2,7 +2,7 @@
 # Base de conhecimento RAG: ingestão de docs + consulta.
 import logging
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import Optional, List, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, UploadFile, File, Form
 from pydantic import BaseModel
@@ -589,7 +589,10 @@ async def ingest_fontes_oficiais(
 
 # ── Destilação RAG com gate humano (#15) ─────────────────────────────────────
 class IngerirAILogRequest(BaseModel):
-    categoria: str = "conhecimento_ia"
+    # Saída de IA revisada NÃO pode se declarar "jurisprudencia", "legislacao"
+    # ou outra fonte primária por payload. Mantemos uma categoria canônica e
+    # distinguível, para que síntese de IA nunca se passe por fonte oficial.
+    categoria: Literal["conhecimento_ia"] = "conhecimento_ia"
     titulo_override: str | None = None
 
 @router.post("/ingerir-ai-log/{log_id}", summary="Destila output de IA aprovado para o RAG")
@@ -600,11 +603,23 @@ async def ingerir_ai_log_aprovado(
     cu: User = Depends(get_current_user),
 ):
     """
-    Gate humano de destilação: advogado aprova um output de IA (ai_log)
-    e ele é ingerido no RAG como conhecimento institucional.
-    REGRA: só outputs com status HITL 'revisado' ou 'aplicado' podem ser ingeridos.
+    Gate humano de aprendizado institucional: um output revisado/aplicado só
+    entra no RAG quando está vinculado a caso real, sob o MESMO escopo
+    client_id/case_id. Antes de persistir, a saída é pseudonimizada novamente
+    com as entidades atuais do caso (defesa contra logs históricos/legados).
+
+    Assim o feedback humano melhora consultas futuras sem transformar texto de
+    IA em fonte oficial nem vazar estratégia/dados entre clientes.
     """
-    from app.models.ai_log import AILog, AIStatusHITL
+    requer_equipe_juridica(
+        cu, "Aprendizado institucional restrito à equipe jurídica."
+    )
+
+    from app.models.ai_log import (
+        AILog, AIStatusHITL, pseudonimizar_texto_auditoria,
+    )
+    from app.core.ownership import verificar_acesso_caso
+    from app.services.ai.entidades_caso import entidades_do_caso
     from app.services.ingestion_service import upsert_documento
 
     log = (await db.execute(
@@ -618,39 +633,75 @@ async def ingerir_ai_log_aprovado(
             status_code=400,
             detail=f"Somente outputs com status 'revisado' ou 'aplicado' podem ser ingeridos. Status atual: {log.status_hitl}"
         )
+    if not log.case_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Aprendizado institucional exige AI log vinculado a um caso.",
+        )
     if not log.resposta or len(log.resposta.strip()) < 50:
         raise HTTPException(status_code=400, detail="Output muito curto para ingestão")
 
-    titulo = req.titulo_override or f"IA {log.tipo_uso.value} — {log.created_at.strftime('%d/%m/%Y')}"
-    fonte  = f"ejc_ia_{log.tipo_uso.value}"
-    chave  = f"ai_log_{log.id}"
+    # Revalida o acesso ATUAL ao caso: ser autor histórico do AILog não concede
+    # acesso eterno a um caso que tenha sido reatribuído/restrito.
+    caso = await verificar_acesso_caso(db, cu, log.case_id)
+    client_id = getattr(caso, "client_id", None)
+    if not client_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Caso sem client_id não pode alimentar aprendizado institucional.",
+        )
+
+    entidades = await entidades_do_caso(db, log.case_id)
+    conteudo_seguro = pseudonimizar_texto_auditoria(log.resposta, entidades) or ""
+    if len(conteudo_seguro.strip()) < 50:
+        raise HTTPException(
+            status_code=400,
+            detail="Output ficou insuficiente após pseudonimização para ingestão.",
+        )
+
+    titulo_base = req.titulo_override or (
+        f"IA {log.tipo_uso.value} — {log.created_at.strftime('%d/%m/%Y')}"
+    )
+    titulo = pseudonimizar_texto_auditoria(titulo_base, entidades) or "Aprendizado IA revisado"
+    fonte = f"ejc_ia_{log.tipo_uso.value}"
+    chave = f"ai_log_{log.id}"
 
     resultado = await upsert_documento(
         db,
         titulo=titulo,
         categoria=req.categoria,
-        conteudo=log.resposta,
+        conteudo=conteudo_seguro,
         chave_origem=chave,
         fonte=fonte,
+        client_id=str(client_id),
+        case_id=str(log.case_id),
         extra={
             "rag_status": "aprovado",
             "origem": "ai_log_hitl",
             "status_hitl": log.status_hitl.value,
             "aprovado_por": str(cu.id),
+            "human_reviewed": True,
+            "requires_human_review": False,
+            "escopo": "caso",
+            "fonte_primaria": False,
+            "tipo_fonte": "sintese_ia_revisada",
         },
         confianca="media",
     )
     await db.commit()
 
-    # Estima chunks para retorno informativo
-    chunks_estimados = len(chunk_texto(log.resposta))
+    chunks_estimados = len(chunk_texto(conteudo_seguro))
 
     return {
         "ok": True,
         "ai_log_id": log_id,
-        "resultado_upsert": resultado,   # "novo" | "atualizado" | "inalterado"
+        "resultado_upsert": resultado,
         "chunks_estimados": chunks_estimados,
         "categoria": req.categoria,
         "titulo": titulo,
-        "aviso": "Output ingerido no RAG como conhecimento institucional. Disponível nas próximas consultas.",
+        "escopo": {"client_id": str(client_id), "case_id": str(log.case_id)},
+        "aviso": (
+            "Output revisado ingerido como aprendizado interno do caso. "
+            "Não é fonte oficial e permanece isolado ao cliente/caso."
+        ),
     }

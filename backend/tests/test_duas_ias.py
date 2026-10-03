@@ -520,6 +520,8 @@ class TestIsolamentoCriticaDoGateEIngestao:
         from app.routers import rag as rag_router
         from app.routers.rag import ingerir_ai_log_aprovado, IngerirAILogRequest
         from app.services import ingestion_service
+        from app.core import ownership
+        from app.services.ai import entidades_caso
         from app.models.ai_log import AIStatusHITL, AITipoUso
         from app.services.ai.adversarial import MARCADOR_AILOG
 
@@ -530,13 +532,26 @@ class TestIsolamentoCriticaDoGateEIngestao:
         ):
             capturado["conteudo"] = conteudo
             capturado["extra"] = kw.get("extra")
+            capturado["client_id"] = kw.get("client_id")
+            capturado["case_id"] = kw.get("case_id")
+            capturado["categoria"] = categoria
             return "novo"
 
+        async def fake_acesso(db, cu, case_id):
+            assert case_id == "case-1"
+            return SimpleNamespace(id=case_id, client_id="client-1")
+
+        async def fake_entidades(db, case_id):
+            assert case_id == "case-1"
+            return {}
+
         monkeypatch.setattr(ingestion_service, "upsert_documento", fake_upsert)
+        monkeypatch.setattr(ownership, "verificar_acesso_caso", fake_acesso)
+        monkeypatch.setattr(entidades_caso, "entidades_do_caso", fake_entidades)
         monkeypatch.setattr(rag_router, "chunk_texto", lambda t: ["c1", "c2"])
 
         log = SimpleNamespace(
-            id="log-1", user_id="user-1",
+            id="log-1", user_id="user-1", case_id="case-1",
             status_hitl=AIStatusHITL.revisado,
             tipo_uso=AITipoUso.redacao_peca,
             created_at=_dt.datetime(2026, 7, 5),
@@ -545,13 +560,80 @@ class TestIsolamentoCriticaDoGateEIngestao:
         )
         out = await ingerir_ai_log_aprovado(
             "log-1", IngerirAILogRequest(), db=_ExecDB(log),
-            cu=SimpleNamespace(id="user-1"),
+            cu=SimpleNamespace(id="user-1", role="advogado"),
         )
         assert out["ok"] is True
         assert capturado["conteudo"] == log.resposta
         assert "verificar fonte" not in capturado["conteudo"]
         assert MARCADOR_AILOG not in capturado["conteudo"]
+        assert capturado["categoria"] == "conhecimento_ia"
+        assert capturado["client_id"] == "client-1"
+        assert capturado["case_id"] == "case-1"
+        assert capturado["extra"]["escopo"] == "caso"
+        assert capturado["extra"]["fonte_primaria"] is False
+        assert capturado["extra"]["human_reviewed"] is True
+        assert capturado["extra"]["requires_human_review"] is False
+        assert capturado["extra"]["tipo_fonte"] == "sintese_ia_revisada"
+        assert out["escopo"] == {"client_id": "client-1", "case_id": "case-1"}
 
+
+
+    async def test_ingestao_ailog_sem_caso_falha_fechado(self):
+        """Feedback aprovado sem escopo real não vira conhecimento global."""
+        import datetime as _dt
+        from fastapi import HTTPException
+        from app.routers.rag import ingerir_ai_log_aprovado, IngerirAILogRequest
+        from app.models.ai_log import AIStatusHITL, AITipoUso
+
+        log = SimpleNamespace(
+            id="log-global", user_id="user-1", case_id=None,
+            status_hitl=AIStatusHITL.aplicado,
+            tipo_uso=AITipoUso.outro,
+            created_at=_dt.datetime(2026, 7, 5),
+            resposta="Conteúdo revisado suficientemente longo para testar o bloqueio fail-closed.",
+        )
+        with pytest.raises(HTTPException) as exc:
+            await ingerir_ai_log_aprovado(
+                "log-global", IngerirAILogRequest(), db=_ExecDB(log),
+                cu=SimpleNamespace(id="user-1", role="advogado"),
+            )
+        assert exc.value.status_code == 400
+        assert "vinculado a um caso" in str(exc.value.detail)
+
+    async def test_ingestao_ailog_rejeita_perfil_nao_juridico(self):
+        import datetime as _dt
+        from fastapi import HTTPException
+        from app.routers.rag import ingerir_ai_log_aprovado, IngerirAILogRequest
+        from app.models.ai_log import AIStatusHITL, AITipoUso
+
+        log = SimpleNamespace(
+            id="log-fin", user_id="user-1", case_id="case-1",
+            status_hitl=AIStatusHITL.revisado,
+            tipo_uso=AITipoUso.outro,
+            created_at=_dt.datetime(2026, 7, 5),
+            resposta="Conteúdo revisado suficientemente longo para validar o gate de equipe jurídica.",
+        )
+        with pytest.raises(HTTPException) as exc:
+            await ingerir_ai_log_aprovado(
+                "log-fin", IngerirAILogRequest(), db=_ExecDB(log),
+                cu=SimpleNamespace(id="user-1", role="financeiro"),
+            )
+        assert exc.value.status_code == 403
+
+    def test_conhecimento_ia_e_restrito_na_escrita_e_recuperacao(self):
+        from app.services.ingestion_service import _CATEGORIAS_RESTRITAS
+        from app.services.ai_service import _RESTRICTED_CATS
+
+        assert "conhecimento_ia" in _CATEGORIAS_RESTRITAS
+        assert "conhecimento_ia" in _RESTRICTED_CATS
+
+    def test_ingestao_ailog_nao_aceita_categoria_de_fonte_oficial(self):
+        """Texto de IA jamais pode se rotular como legislação/jurisprudência."""
+        from pydantic import ValidationError
+        from app.routers.rag import IngerirAILogRequest
+
+        with pytest.raises(ValidationError):
+            IngerirAILogRequest(categoria="jurisprudencia")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 4c. Hardening: marcador reservado forjado no texto de entrada é neutralizado
@@ -806,7 +888,7 @@ class TestEndpointCriticaAdversarial:
         db = _EndpointDB()
         c = await critica_adversarial_endpoint(
             CriticaAdversarialRequest(texto_peca=TEXTO_PECA, provedor_origem="ollama"),
-            db=db, cu=SimpleNamespace(id="user-1"),
+            db=db, cu=SimpleNamespace(id="user-1", role="advogado"),
         )
         assert c.disponivel is True and c.provider_diverso is True
         # AILog gravado (trilha LGPD/OAB).
@@ -825,7 +907,7 @@ class TestEndpointCriticaAdversarial:
         db = _EndpointDB()
         c = await critica_adversarial_endpoint(
             CriticaAdversarialRequest(texto_peca=TEXTO_PECA),
-            db=db, cu=SimpleNamespace(id="user-1"),
+            db=db, cu=SimpleNamespace(id="user-1", role="advogado"),
         )
         assert c.disponivel is False
         assert db.added == [] and db.commits == 0  # nada de log sem chamada de IA

@@ -65,7 +65,7 @@ _AVISOU_SEM_EMBEDDINGS = False  # warning único de degradação p/ ILIKE
 # persistido em base_rag/client_id/case_id. `_RESTRICTED_CATS` permanece apenas
 # como trava residual para legado malclassificado sem identificadores.
 _RESTRICTED_CATS = ["peca_interna", "peca_escritorio", "precedente_interno",
-                    "comunicacao_processual"]
+                    "comunicacao_processual", "conhecimento_ia"]
 
 # Contrato único, aplicado a TODAS as pernas de retrieval:
 # 1) global: base_rag=publica + nenhum ownership + categoria não-legada-restrita;

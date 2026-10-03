@@ -41,6 +41,9 @@ _CATEGORIAS_RESTRITAS = {
     "precedente_interno",
     "comunicacao_processual",
     "andamento_processual",
+    # Síntese produzida por IA e aprovada por humano continua sendo
+    # conhecimento INTERNO; nunca pode nascer global sem ownership.
+    "conhecimento_ia",
 }
 
 # Categorias cujo estado de domínio é autoritativo para o estado do RAG. Nelas,
