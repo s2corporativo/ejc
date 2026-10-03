@@ -73,6 +73,7 @@ export function DocumentsList() {
       else next.add(id);
       try {
         localStorage.setItem("juridia-favorites", JSON.stringify([...next]));
+        window.dispatchEvent(new Event("juridia-favorites-changed"));
       } catch {
         // ignore
       }

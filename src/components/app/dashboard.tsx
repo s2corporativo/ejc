@@ -12,6 +12,8 @@ import {
   Zap,
   Target,
   Calendar,
+  Star,
+  BarChart3,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useAppStore } from "@/lib/store";
 import type { DocumentDTO } from "@/lib/types";
+import { useFavoritesCount } from "@/hooks/use-favorites-count";
 
 interface Stats {
   totalUsers: number;
@@ -56,6 +59,17 @@ export function Dashboard() {
     const today = new Date().toDateString();
     return new Date(d.createdAt).toDateString() === today;
   });
+
+  // Favorites count from localStorage (via useSyncExternalStore pattern)
+  const favCount = useFavoritesCount(docs);
+
+  // Template distribution for chart
+  const templateStats = docs.reduce<{ name: string; count: number }[]>((acc, d) => {
+    const existing = acc.find((x) => x.name === d.templateName);
+    if (existing) existing.count++;
+    else acc.push({ name: d.templateName, count: 1 });
+    return acc;
+  }, []).sort((a, b) => b.count - a.count);
 
   const planName = stats?.demo
     ? stats.demo.plan === "individual_2"
@@ -126,8 +140,8 @@ export function Dashboard() {
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
           { icon: FileText, label: "Minutas salvas", value: docs.length, sub: `${todayDocs.length} hoje` },
+          { icon: Star, label: "Favoritas", value: favCount, sub: "marcadas" },
           { icon: Search, label: "Buscas de jurisprudência", value: stats?.searches || 0, sub: "acumulado" },
-          { icon: Target, label: "Templates disponíveis", value: stats?.templates || 0, sub: "categorias" },
           { icon: Sparkles, label: "Habilidades ativas", value: stats?.skills || 0, sub: "skills" },
         ].map((s, i) => (
           <motion.div
@@ -151,6 +165,48 @@ export function Dashboard() {
           </motion.div>
         ))}
       </div>
+
+      {/* Activity chart by template */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <BarChart3 className="h-4 w-4 text-primary" />
+            Minutas por template
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {templateStats.length === 0 ? (
+            <div className="py-6 text-center text-sm text-muted-foreground">
+              Gere minutas para ver sua distribuição por template.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {templateStats.map((t) => {
+                const max = Math.max(...templateStats.map((x) => x.count));
+                const pct = max > 0 ? (t.count / max) * 100 : 0;
+                return (
+                  <div key={t.name} className="flex items-center gap-3">
+                    <div className="w-32 shrink-0 truncate text-xs font-medium">
+                      {t.name}
+                    </div>
+                    <div className="relative h-6 flex-1 overflow-hidden rounded-md bg-secondary">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${pct}%` }}
+                        transition={{ duration: 0.6, ease: "easeOut" }}
+                        className="absolute inset-y-0 left-0 rounded-md bg-gradient-to-r from-primary/70 to-primary"
+                      />
+                      <span className="absolute inset-0 flex items-center justify-end pr-2 text-xs font-medium text-primary-foreground/90">
+                        {t.count}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Quick actions */}
       <div className="mb-6">

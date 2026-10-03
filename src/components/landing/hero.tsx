@@ -10,10 +10,50 @@ export function Hero() {
 
   return (
     <section className="relative overflow-hidden border-b border-border">
+      {/* Background layers */}
       <div className="absolute inset-0 -z-10 bg-dot opacity-40" />
       <div className="absolute inset-x-0 top-0 -z-10 h-96 bg-gradient-to-b from-primary/10 via-transparent to-transparent" />
-      <div className="absolute -right-32 top-10 -z-10 h-96 w-96 rounded-full bg-primary/15 blur-3xl animate-pulse-soft" />
-      <div className="absolute -left-32 bottom-10 -z-10 h-80 w-80 rounded-full bg-accent/30 blur-3xl animate-pulse-soft" />
+      {/* Animated gradient orbs */}
+      <motion.div
+        animate={{ x: [0, 30, 0], y: [0, 20, 0], scale: [1, 1.1, 1] }}
+        transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
+        className="absolute -right-32 top-10 -z-10 h-96 w-96 rounded-full bg-primary/15 blur-3xl"
+      />
+      <motion.div
+        animate={{ x: [0, -40, 0], y: [0, -30, 0], scale: [1, 1.15, 1] }}
+        transition={{ duration: 15, repeat: Infinity, ease: "easeInOut", delay: 2 }}
+        className="absolute -left-32 bottom-10 -z-10 h-80 w-80 rounded-full bg-accent/30 blur-3xl"
+      />
+      <motion.div
+        animate={{ x: [0, 20, 0], y: [0, -40, 0], opacity: [0.3, 0.6, 0.3] }}
+        transition={{ duration: 18, repeat: Infinity, ease: "easeInOut", delay: 1 }}
+        className="absolute left-1/2 top-1/3 -z-10 h-72 w-72 -translate-x-1/2 rounded-full bg-primary/10 blur-3xl"
+      />
+      {/* Floating particles */}
+      <div className="absolute inset-0 -z-10 overflow-hidden">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <motion.div
+            key={i}
+            className="absolute h-1 w-1 rounded-full bg-primary/40"
+            initial={{
+              x: `${(i * 8.3) % 100}%`,
+              y: "100%",
+              opacity: 0,
+            }}
+            animate={{
+              y: "-10%",
+              opacity: [0, 1, 0],
+            }}
+            transition={{
+              duration: 8 + (i % 4),
+              repeat: Infinity,
+              delay: i * 1.2,
+              ease: "linear",
+            }}
+            style={{ left: `${(i * 8.3) % 100}%` }}
+          />
+        ))}
+      </div>
 
       <div className="container-juridia py-20 sm:py-28 lg:py-32">
         <div className="mx-auto max-w-4xl text-center">

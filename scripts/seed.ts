@@ -141,6 +141,37 @@ const templates = [
       { key: "valor", label: "Valor do auto (anonimizado)", type: "text" },
       { key: "fundamentos", label: "Fundamentos da defesa", type: "textarea" }
     ])
+  },
+  {
+    slug: "carta-direito-imagem",
+    name: "Carta — Exercício do Direito de Imagem",
+    category: "contrato",
+    description: "Carta/termo de autorização de uso de imagem (CC art. 20).",
+    icon: "Image",
+    prompt: `Você é um advogado redigindo um termo de autorização de uso de imagem (Código Civil art. 20 e Lei de Direitos Autorais). Estrutura: qualificação do cedente, finalidade do uso, prazo, mídia/veículos autorados, contraprestação (se houver), revogação, foro. Linguagem formal mas acessível.`,
+    fields: JSON.stringify([
+      { key: "cedente", label: "Nome do cedente (anonimizado)", type: "text" },
+      { key: "cedida", label: "Nome da empresa cessionária (anonimizado)", type: "text" },
+      { key: "finalidade", label: "Finalidade do uso da imagem", type: "textarea" },
+      { key: "midias", label: "Mídias/veículos autorados", type: "textarea" },
+      { key: "prazo", label: "Prazo de vigência", type: "text" },
+      { key: "contraprestacao", label: "Contraprestação (valor, se houver)", type: "text" }
+    ])
+  },
+  {
+    slug: "carta-notificacao-extrajudicial",
+    name: "Notificação Extrajudicial",
+    category: "parecer",
+    description: "Carta de notificação extrajudicial com intimação e prazo.",
+    icon: "Mail",
+    prompt: `Você é um advogado redigindo uma notificação extrajudicial. Estrutura: endereçamento ao notificado, qualificação do notificante, exposição dos fatos, fundamento legal/contratual, intimação com prazo, consequências do descumprimento, foro. Linguagem formal e assertiva. A notificação constitui marco interruptivo da prescrição (art. 202, VI, CC).`,
+    fields: JSON.stringify([
+      { key: "notificado", label: "Nome do notificado (anonimizado)", type: "text" },
+      { key: "notificante", label: "Nome do notificante (anonimizado)", type: "text" },
+      { key: "materia", label: "Matéria da notificação", type: "select", options: ["Cobrança", "Descumprimento contratual", "Rescisão", "Direito do consumidor", "Ação reparatória", "Outro"] },
+      { key: "fatos", label: "Exposição dos fatos", type: "textarea" },
+      { key: "prazo", label: "Prazo para resposta (dias)", type: "text" }
+    ])
   }
 ];
 

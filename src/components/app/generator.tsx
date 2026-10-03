@@ -16,6 +16,8 @@ import {
   CheckCircle2,
   HardHat,
   Landmark,
+  Image,
+  Mail,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,6 +53,8 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   Stamp,
   HardHat,
   Landmark,
+  Image,
+  Mail,
 };
 
 export function Generator() {
