@@ -334,7 +334,10 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
         fusion[cid] = fusion.get(cid, 0.0) + 1.0 / (K + rank + 1)
         meta[cid] = r
     try:
-        params = {"q": consulta[:300], "lim": max(limite * 3, 12),
+        # Pool igual ao da perna densa (auditoria RAG 04/09, A-19): com 3× mais
+        # candidatos por perna lexical — e duas pernas lendo a mesma coluna —
+        # o RRF podia empurrar o melhor hit semântico para fora do top-k.
+        params = {"q": consulta[:300], "lim": limite,
                   "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or "",
                   "incl_hist": incluir_historico,
                   **_params_escopo_rag(scope_client_id, scope_case_id)}
@@ -370,7 +373,10 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
                              "categoria": r.categoria, "fonte": r.fonte,
                              "confianca": r.confianca,
                              "versao": getattr(r, "versao", None),
-                             "score": round(float(r.sim), 4)}
+                             # `score` é sempre cosseno (A-20): trigram e FTS
+                             # têm escalas próprias e não são comparáveis.
+                             "score": None, "score_origem": "trigram",
+                             "score_lexical": round(float(r.sim), 4)}
     except Exception as _e:
         logger.warning("Fusao lexical (RRF) falhou, mantendo semantico: %s", descricao_tecnica_segura(_e))
         return semanticos
@@ -381,7 +387,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
     # Falha isolada não afeta as pernas semântica/trigram.
     if getattr(settings, "RAG_FTS_ENABLED", False):
         try:
-            params_f = {"q": consulta[:300], "lim": max(limite * 3, 12),
+            params_f = {"q": consulta[:300], "lim": limite,
                         "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or "",
                         "incl_hist": incluir_historico,
                         **_params_escopo_rag(scope_client_id, scope_case_id)}
@@ -419,7 +425,8 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
                                  "categoria": r.categoria, "fonte": r.fonte,
                                  "confianca": r.confianca,
                                  "versao": getattr(r, "versao", None),
-                                 "score": round(float(r.rank), 4)}
+                                 "score": None, "score_origem": "fts",
+                                 "score_lexical": round(float(r.rank), 4)}
         except Exception as _ef:
             logger.warning("Fusao FTS (RRF) falhou, ignorando esta perna: %s", descricao_tecnica_segura(_ef))
     ordenados = sorted(fusion.items(), key=lambda kv: kv[1], reverse=True)
@@ -565,6 +572,17 @@ async def buscar_contexto_rag(
                 await db.execute(text("SET LOCAL hnsw.ef_search = 100"))
             except Exception:
                 pass  # GUC ausente (índice não-HNSW/pgvector antigo) → segue igual
+            # A-5 (auditoria RAG 04/09): ef_search é teto fixo, cego à
+            # seletividade dos filtros. pgvector >= 0.8 retoma a varredura
+            # quando o filtro descarta candidatos (`iterative_scan`);
+            # `strict_order` preserva a ordenação exata por distância. Em
+            # savepoint: versão que recuse o GUC não aborta a transação da busca
+            # (no 0.6 o valor é aceito e ignorado).
+            try:
+                async with db.begin_nested():
+                    await db.execute(text("SET LOCAL hnsw.iterative_scan = strict_order"))
+            except Exception:
+                pass
             try:
                 rows_v = await db.execute(sql_v, params_v)
                 resultados = [
@@ -573,7 +591,8 @@ async def buscar_contexto_rag(
                      "categoria": r.categoria, "fonte": r.fonte,
                      "confianca": r.confianca,
                      "versao": getattr(r, "versao", None),
-                     "score": round(1 - r.dist, 4)}   # cosine similarity
+                     "score": round(1 - r.dist, 4),   # cosine similarity
+                     "score_origem": "densa"}
                     for r in rows_v
                 ]
                 if resultados:
@@ -635,6 +654,7 @@ async def buscar_contexto_rag(
                 "titulo": r.titulo, "categoria": r.categoria, "fonte": r.fonte,
                 "confianca": r.confianca,
                 "versao": getattr(r, "versao", None),
+                "score": None, "score_origem": "textual",
             }
             for r in rows
         ]
@@ -678,7 +698,12 @@ def _formatar_fontes(fontes: list[dict]) -> str:
             f"[Fonte {i}] {f['titulo']} ({' | '.join(meta)})"
             f"\n{f['conteudo'][:1500]}\n"
         )
-    return "\n".join(linhas)
+    # Conteúdo recuperado é DADO, nunca instrução (auditoria RAG 04/09, M-2):
+    # delimitador com token aleatório por chamada, que o autor do documento
+    # ingerido não conhece e não consegue fechar.
+    from app.services.ai import delimitador
+    return "[FONTES]\n" + delimitador.bloco(
+        "FONTES", "\n".join(linhas[1:]), delimitador.novo_token())
 
 
 # ── Seleção de modelo por tamanho de contexto ─────────────────────────────────

@@ -134,6 +134,11 @@ async def _resumo_status(
     ]
     if client_id is not None:
         filtros.append(KnowledgeDoc.client_id == client_id)
+    else:
+        # Chave irrestrita só grava acervo público (`_validar_escopo_lote`);
+        # consultar status de doc de cliente confirmava existência, doc_id e
+        # versão de outro tenant (auditoria RAG 04/09, M-5).
+        filtros.append(KnowledgeDoc.client_id.is_(None))
     docs = (await db.execute(
         select(KnowledgeDoc).where(*filtros)
     )).scalars().all()

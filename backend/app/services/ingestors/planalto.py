@@ -441,10 +441,18 @@ def montar_chunks(nome_lei: str, blocos: list[tuple[str | None, str]],
         chunks.append(f"{header}\n{corpo}")
         grupo.clear()
 
+    def _header_len(itens: list[tuple[str | None, str]]) -> int:
+        rotulos = [r for r, _ in itens if r]
+        return len(f"{' · '.join(rotulos)} — {nome_lei}" if rotulos else nome_lei) + 1
+
     for rot, corpo in blocos:
-        if len(corpo) > tamanho:
+        # O cabeçalho entra no orçamento do chunk (auditoria RAG 04/09, A-8):
+        # 200 artigos curtos agrupados somavam um cabeçalho que levava o chunk
+        # acima da janela do encoder, truncado em silêncio no embedding.
+        reserva = _header_len([(rot, corpo)]) + len(" (continuação)")
+        if len(corpo) > tamanho - reserva:
             flush()
-            partes = chunk_texto(corpo, tamanho=tamanho)
+            partes = chunk_texto(corpo, tamanho=max(200, tamanho - reserva))
             for i, parte in enumerate(partes):
                 pref = rot or nome_lei
                 header = (f"{pref} — {nome_lei}" if i == 0 and rot
@@ -452,7 +460,9 @@ def montar_chunks(nome_lei: str, blocos: list[tuple[str | None, str]],
                           else nome_lei)
                 chunks.append(f"{header}\n{parte}")
             continue
-        if grupo and sum(len(t) for _, t in grupo) + len(corpo) > tamanho:
+        candidato = grupo + [(rot, corpo)]
+        corpo_total = sum(len(t) for _, t in candidato) + 2 * (len(candidato) - 1)
+        if grupo and corpo_total + _header_len(candidato) > tamanho:
             flush()
         grupo.append((rot, corpo))
     flush()

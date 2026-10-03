@@ -32,6 +32,10 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
     inicio = (date.today() - timedelta(days=DIAS_JANELA)).isoformat()
 
     for tipo in TIPOS:
+        # Contadores do lote só entram no total DEPOIS do commit (auditoria RAG
+        # 04/09, M-9): o rollback desfazia a gravação mas não o contador, e o
+        # detector de coletor morto via `novos` que nunca existiram.
+        novos_lote = total_lote = 0
         try:
             r = await fetch(
                 f"{API}/proposicoes",
@@ -57,7 +61,7 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                     f"Apresentada em: {p.get('dataApresentacao','')[:10]}\n\n"
                     f"Ementa: {ementa}"
                 )
-                total += 1
+                total_lote += 1
                 res = await upsert_documento(
                     db, titulo=titulo, categoria="proposicao_legislativa",
                     conteudo=conteudo, chave_origem=f"camara:{pid}",
@@ -79,8 +83,10 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                     confianca="media",
                 )
                 if res in ("novo", "atualizado"):
-                    novos += 1
+                    novos_lote += 1
             await db.commit()
+            novos += novos_lote
+            total += total_lote
         except Exception as e:
             await db.rollback()
             logger.warning(f"Câmara {tipo}: {type(e).__name__}: {e}")

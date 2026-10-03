@@ -688,6 +688,14 @@ async def _bloco_questoes_estruturado(db, case_id: str | None) -> str:
         return ""  # fail-safe: pesquisa estruturada nunca quebra o pipeline
 
 
+def _rag_delimitado(rag_txt: str) -> str:
+    """Bloco das fontes RAG com delimitador de token aleatório (auditoria RAG
+    04/09, M-2): conteúdo ingerido é dado, nunca instrução."""
+    from app.services.ai import delimitador
+    return delimitador.bloco("FONTES DA BASE INTERNA", rag_txt, delimitador.novo_token(),
+                             limite=4500)
+
+
 async def _emit(event: str, data: dict) -> str:
     """Formata um evento SSE."""
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -975,7 +983,7 @@ async def gerar_peca_pipeline(
             )},
             {"role": "user", "content": (
                 f"Fatos: {fatos_limpos[:1000]}\nPedidos: {pedidos_limpos[:300]}\n"
-                f"{rag_txt[:4500] if rag_txt else 'Sem fontes RAG disponíveis.'}{bloco_questoes}\n\n"
+                f"{_rag_delimitado(rag_txt) or 'Sem fontes RAG disponíveis.'}{bloco_questoes}\n\n"
                 "Identifique jurisprudência e doutrina aplicáveis apenas das fontes acima. "
                 "Formato: tribunal, número/ementa, aplicabilidade ao caso."
             )},
@@ -1159,7 +1167,7 @@ async def gerar_peca_pipeline(
                 f"JURISPRUDÊNCIA (RAG):\n{r4.texto[:1000]}\n\n"
                 f"ARGUMENTOS ORGANIZADOS:\n{r5.texto[:1500]}\n\n"
                 f"RISCOS (para evitar na peça):\n{r6.texto[:800]}\n\n"
-                f"{rag_txt[:4500] if rag_txt else ''}\n"
+                f"{_rag_delimitado(rag_txt)}\n"
                 f"{_formatar_bloco_modelos(modelos_referencia)}\n"
                 f"{'INSTRUÇÕES ADICIONAIS: ' + instrucoes if instrucoes else ''}\n\n"
                 f"Redija a {nome_peca} completa com todos os elementos formais obrigatórios."

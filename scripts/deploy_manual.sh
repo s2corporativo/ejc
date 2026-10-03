@@ -123,6 +123,15 @@ if sudo -n test -f "$activated_marker"; then
     reprovar "marker de ativação existe, mas o gate de vigência não está canonicamente true"
 fi
 
+# Demais gates fail-closed do RAG (auditoria RAG 04/09, M-18): default true no
+# código; desligá-los no .env reabre a recuperação de conteúdo não aprovado ou
+# de súmula não conferida. Deploy não segue com nenhum deles desligado.
+for gate in RAG_EXIGIR_APROVADO RAG_SUMULAS_QUARENTENA; do
+  if sudo -n grep -Eiq "^${gate}=(false|0|no|off)[[:space:]]*$" "$APP_DIR/.env"; then
+    reprovar "$gate está desligado no .env — gate fail-closed do RAG não pode ir desligado a produção"
+  fi
+done
+
 [ "$erros" -eq 0 ] || fail "pré-voo reprovado; nada foi tocado em produção"
 log "Pré-voo aprovado — HEAD $TARGET_SHA, $APP_DIR e runtime presentes."
 

@@ -37,6 +37,7 @@ from app.models.client import Client
 from app.models.document import Document
 from app.services.ai_gateway import chat as gw_chat
 from app.services.ai_guard import registrar_ai_log
+from app.services.ai import delimitador
 from app.services.ai.sanitization_policy import modo_sigilo_por_case_id
 from app.services.ai_service import buscar_contexto_rag, _escopo_cliente_do_caso
 from app.services.citation_check import verificar_citacoes
@@ -508,7 +509,8 @@ async def gerar_razoes_juridicas(
         f"[OBJETIVO / PEDIDO CENTRAL] {objetivo or 'reparação dos danos e demais medidas cabíveis'}\n\n"
         f"[DOCUMENTOS JUNTADOS — referencie pelos rótulos]\n{bloco_docs}\n\n"
         f"[BASE DE CONHECIMENTO (RAG) — fundamente-se e cite a fonte]\n"
-        f"{rag_txt or '(sem fontes recuperadas — não invente; sinalize (verificar))'}"
+        # Conteúdo do RAG é DADO, nunca instrução (auditoria RAG 04/09, M-2).
+        f"{delimitador.bloco('BASE DE CONHECIMENTO', rag_txt, delimitador.novo_token()) or '(sem fontes recuperadas — não invente; sinalize (verificar))'}"
     )
 
     resp = await gw_chat(

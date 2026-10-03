@@ -84,6 +84,9 @@ async def gerar_checklist_ia(db: AsyncSession, case_id: str, gatilho: str = "ger
 
     limpo, _ = sanitizar_pii(f"Área: {area}. Fase: {fase}. Gatilho: {gatilho}. "
                              f"Tese: {caso['tese_principal'] or ''}")
+    # Conteúdo do RAG é DADO, nunca instrução (auditoria RAG 04/09, M-2).
+    from app.services.ai import delimitador
+    ctx_txt = delimitador.bloco("CONTEXTO LEGAL", ctx_txt, delimitador.novo_token())
     user = (f"{limpo}\n\nCONTEXTO LEGAL (base do escritório):\n{ctx_txt or '(sem contexto específico)'}\n\n"
             f"Gere de 6 a 14 itens objetivos para o gatilho '{gatilho}'.")
 
