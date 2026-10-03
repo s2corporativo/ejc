@@ -67,6 +67,28 @@ risco, se a migration pendente é expand-only e se o runtime está sadio.
 sempre reingere, mas fazer isso à mão mexe na base de conhecimento e merece
 decisão explícita.
 
+## Conferência pré-deploy das travas de boot da IA
+
+Desde a auditoria do núcleo de IA (03/10/2026, NIA-03/NIA-04), o backend e o
+worker **recusam subir** em `APP_ENV=production` quando:
+
+1. `AI_REQUIRE_HITL` está desligado (`false`, `0`, `no`) — a flag é só de
+   testes;
+2. `EMBEDDINGS_PROVIDER=http` e o host de `EMBEDDINGS_API_URL` não é interno
+   (nome do compose como `embeddings`, `localhost`, IP privado ou sufixo
+   `.internal/.local/.lan/.localdomain/.svc/.cluster.local`). O FQDN público
+   do próprio servidor e o IP público da VPS são recusados. Exceção apenas com
+   parecer do encarregado de dados: `EMBEDDINGS_HTTP_EXTERNO_AUTORIZADO=true`.
+
+Antes do restart, no diretório do deploy:
+
+```bash
+grep -E '^(AI_REQUIRE_HITL|EMBEDDINGS_PROVIDER|EMBEDDINGS_API_URL|EMBEDDINGS_HTTP_EXTERNO_AUTORIZADO)=' .env
+docker compose exec backend python -c "from app.core.config import get_settings; get_settings()"
+```
+
+O segundo comando precisa terminar sem `ValueError`.
+
 ## O que o script preserva — e por que isso importa
 
 `scripts/deploy_manual.sh` **não é um atalho**: ele porta para fora do YAML os

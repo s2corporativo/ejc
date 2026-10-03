@@ -149,21 +149,23 @@ async def test_advogado_preenche_minuta_sem_mutar_ledger():
     assert db.added == []
 
 
+class _DataCongelada(date):
+    @classmethod
+    def today(cls):
+        return cls(2026, 10, 2)
+
+
 @pytest.mark.asyncio
 async def test_socio_cria_entrada_parcelas_e_exito(monkeypatch):
     db = _FakeDB([[]])
-
-    class DataFixa(date):
-        @classmethod
-        def today(cls):
-            return date(2026, 10, 2)
-
-    monkeypatch.setattr(gdc, "date", DataFixa)
 
     async def _audit(*_args, **_kwargs):
         return None
 
     monkeypatch.setattr(gdc, "criar_audit_log", _audit)
+    # A entrada vence "hoje" (date.today() no serviço). Sem congelar o relógio
+    # o teste só passava no dia em que foi escrito (02/10/2026) — Issue #2002.
+    monkeypatch.setattr(gdc, "date", _DataCongelada)
     res = await gdc._sincronizar_financeiro_contrato(
         db,
         _cliente(),

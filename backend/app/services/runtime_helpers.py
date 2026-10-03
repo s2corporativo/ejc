@@ -29,4 +29,3 @@ async def com_engine_limpo(coro):
         return await coro
     finally:
         await engine.dispose()
-
