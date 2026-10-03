@@ -1382,19 +1382,6 @@ async def gerar_peca_pipeline(
     )
     db.add(log)
     db.add(legal_doc)
-
-    # Estado operacional do caso acompanha o artefato REAL criado pelo pipeline.
-    # Antes, apenas a criação manual em legal_docs.py disparava "peca_criada",
-    # deixando peças geradas pelo Motor de Peça com o caso ainda "aberto".
-    if case_id:
-        from app.models.case import Case
-        from app.services.status_transicao import avancar_status_por_evento
-
-        case = await db.get(Case, case_id)
-        await avancar_status_por_evento(
-            db, case, "peca_criada", user_id=user_id
-        )
-
     await db.commit()
 
     payload_concluido = {
