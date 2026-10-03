@@ -104,15 +104,6 @@ async def vincular_ao_caso(
         data_evento=protocolo.confirmed_at or protocolo.submitted_at, created_by=ator_id,
     ))
     resultado["movimento"] = descricao
-
-    # O protocolo realizado pelo módulo de Ajuizamento deve produzir o mesmo
-    # efeito operacional do registro manual em legal_docs.py. A transição é
-    # monotônica e nunca toca casos encerrados/arquivados.
-    from app.services.status_transicao import avancar_status_por_evento
-
-    await avancar_status_por_evento(
-        db, case, "peca_protocolada", user_id=ator_id
-    )
     return resultado
 
 
