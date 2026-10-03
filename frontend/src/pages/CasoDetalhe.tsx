@@ -1063,29 +1063,10 @@ export default function CasoDetalhe() {
           </div>
         </div>
         <div className="border-t border-slate-100 px-3 py-2">
-          <nav
-            className="ejc-case-primary-tabs"
-            aria-label="Áreas principais do caso"
-          >
-            {CASE_NAV_SECTIONS.map((section) => (
-              <button
-                key={section.label}
-                type="button"
-                onClick={() => setSearchParams({ tab: section.tab })}
-                className={
-                  activeSection.label === section.label ? "is-active" : ""
-                }
-                title={section.descricao}
-              >
-                {section.label}
-              </button>
-            ))}
-          </nav>
-
           {(activeSectionTabs.length > 1 || activeSectionLinks.length > 0) && (
             <nav
-              className="mt-2 flex flex-wrap gap-1.5"
-              aria-label={`Recursos de ${activeSection.label}`}
+              className="flex flex-wrap gap-1.5"
+              aria-label={`Filtros de ${activeSection.label}`}
             >
               {activeSectionTabs.map((key) => {
                 const tab = TABS.find((item) => item.key === key)!;
