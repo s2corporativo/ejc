@@ -15,12 +15,12 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 export interface CaseNavSection {
-  /** Rótulo canônico exibido na barra, na página e no dock. */
+  /** Rótulo canônico exibido na navegação principal do modo caso. */
   label: string;
   /** Aba padrão aberta ao navegar para a seção. */
   tab: string;
   icon: LucideIcon;
-  /** Descrição curta usada no CaseCommandDock. */
+  /** Descrição curta usada como ajuda contextual da área. */
   descricao: string;
   /** Todas as abas (?tab=...) agrupadas nesta seção. */
   tabs: readonly string[];
