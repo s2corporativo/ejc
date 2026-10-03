@@ -3,7 +3,7 @@
 // registrada aqui via POST /nfse/manual. Funciona com NFSE_ENABLED=false —
 // nada de emissão via API de provedor é exibido nesta tela.
 import { useCallback, useEffect, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useLocation, useNavigate, useSearchParams } from "react-router";
 import {
   Ban,
   Download,
@@ -62,6 +62,13 @@ interface FormNota {
   fee_id: string;
 }
 
+type NotaDoHonorario = {
+  fee_id: string;
+  client_id?: string;
+  valor?: string;
+  descricao?: string;
+};
+
 const EMPTY_FORM: FormNota = {
   numero: "",
   data_emissao: "",
@@ -95,6 +102,35 @@ export default function NotasFiscais() {
   const [cancelNota, setCancelNota] = useState<NotaFiscal | null>(null);
   const [motivo, setMotivo] = useState("");
   const [cancelando, setCancelando] = useState(false);
+
+  // Plano ERP (E3): vindo do registro de pagamento em Honorários, abre o
+  // formulário já preenchido com honorário, cliente, valor e descrição. Os
+  // dados chegam pelo state da navegação (fora da URL, que vai para logs).
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const nota = (location.state as { notaDoHonorario?: NotaDoHonorario } | null)
+      ?.notaDoHonorario;
+    if (!nota?.fee_id) return;
+    const hoje = new Date().toLocaleDateString("en-CA", {
+      timeZone: "America/Sao_Paulo",
+    });
+    setForm({
+      ...EMPTY_FORM,
+      fee_id: nota.fee_id,
+      client_id: nota.client_id ?? "",
+      valor: nota.valor ?? "",
+      descricao: nota.descricao ?? "",
+      data_emissao: hoje,
+      competencia: hoje,
+    });
+    setModal(true);
+    // Consome o pedido: recarregar a página não reabre o formulário.
+    navigate(`${location.pathname}${location.search}`, {
+      replace: true,
+      state: null,
+    });
+  }, [location.state, location.pathname, location.search, navigate]);
 
   const load = useCallback(async () => {
     setError(false);
