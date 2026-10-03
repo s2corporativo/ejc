@@ -541,8 +541,8 @@ export default function DefesasRevisoesPanel() {
               </Link>
             )}
             {caseId && (
-              <Link to={`/casos/${caseId}/jornada`} className="btn-ghost">
-                Abrir Jornada do Caso
+              <Link to={`/casos/${caseId}?tab=resumo`} className="btn-ghost">
+                Abrir caso
               </Link>
             )}
           </div>
