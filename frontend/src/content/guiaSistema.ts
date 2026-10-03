@@ -112,19 +112,19 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
     ferramentas: [
       {
         id: "caso-novo",
-        titulo: "Novo Caso",
-        rota: "/casos/novo",
+        titulo: "Nova demanda",
+        rota: "/entrada",
         oQueE:
-          "O assistente guiado que abre um caso ligando cliente e dados básicos em poucos passos.",
+          "A porta única para abrir trabalho jurídico: cadastro rápido ou análise assistida por IA, sem duplicar fluxos.",
         paraQueServe:
-          "Padroniza a entrada de casos para nada essencial ficar de fora e o cliente ser reaproveitado quando já existir, reduzindo retrabalho e cadastro inconsistente.",
+          "Permite começar pelo caminho mais simples e aprofundar apenas quando necessário, preservando confirmação humana antes da criação assistida.",
         comoUsar: [
-          "Clique em Novo Caso, em destaque no menu Principal.",
-          "Informe o cliente — o sistema busca por CPF/CNPJ e reaproveita se já existir.",
-          "Preencha os dados básicos do caso (área, parte contrária, tribunal, valor da causa).",
-          "Conclua o assistente — o caso já nasce pronto para receber prazos, documentos e honorários.",
+          "Abra Nova demanda.",
+          "Use Cadastro rápido para um caso já conhecido ou Analisar com IA quando houver relato/documentos.",
+          "Na análise assistida, revise e confirme os dados antes de criar o caso.",
+          "Depois da criação, o sistema abre diretamente a Visão do caso; o Dossiê Jurídico fica disponível em Estratégia.",
         ],
-        dica: "Preencha a Prioridade (urgente/alta/média/baixa) já na abertura — ela aparece destacada na visão do caso.",
+        dica: "Os links antigos continuam funcionando por compatibilidade, mas novas aberturas devem começar em /entrada.",
         perfil: "advogado",
       },
       {
@@ -149,12 +149,12 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         titulo: "Detalhe do Caso",
         rota: "/casos/:id",
         oQueE:
-          "O workspace de um caso específico, com abas de resumo, partes, documentos, prazos e ações.",
+          "O workspace de um caso específico, organizado em cinco áreas: Visão, Atividades, Documentos, Estratégia e Financeiro.",
         paraQueServe:
           "Reúne tudo de um caso em um único ambiente de trabalho, para você não pular entre telas ao tocar um processo do início ao fim.",
         comoUsar: [
           "Em Casos, clique no caso desejado.",
-          "Navegue pelas abas: Resumo, Timeline, Partes, Documentos, Checklists, Teses.",
+          "Use a barra principal para alternar entre Visão, Atividades, Documentos, Estratégia e Financeiro.",
           "Na aba Resumo, use as ações rápidas: Análise IA, Sincronizar DataJud, lançar horas, encerrar caso.",
           "Use Estratégia para teses, indicadores e dossiês; a próxima ação fica na Visão.",
         ],
