@@ -42,8 +42,8 @@ cliente já gera cronograma de parcelas (#1988).
 
 | # | Achado | Evidência | Impacto |
 |---|---|---|---|
-| E1 | **Custo do caso tem dois cadastros paralelos.** Aba "Centro de Custos" grava em `centro_custos`; aba "Timeline" grava em `case_despesas` (despesa processual, faturável ao cliente) | `CasoDetalhe.tsx:880` (`/centro-custos`); `CasoDetalhe/TabTimeline.tsx:114,199` (`/despesas-processuais`) | Digitação dupla ou dado faltando |
-| E2 | **`case_despesas` não entra em nenhum relatório.** A tabela só é lida pelo próprio router; fechamento mensal, extrato do caso, relatório financeiro do cliente e comissões somam apenas `centro_custos` | `grep case_despesas` → só `routers/despesas_processuais.py`; `finance_governance.py:73`, `routers/extratos.py:32`, `routers/relatorio_cliente.py:72` | **Fechamento mensal subestima a despesa** quando a custa é lançada pela Timeline |
+| E1 | ~~Custo do caso tem dois cadastros paralelos~~ — **corrigido na execução (03/10): não é duplicação.** `centro_custos` é custo absorvido pelo escritório (deduzido da comissão e do rateio de êxito); `case_despesas` é adiantamento **reembolsável** pelo cliente (vira honorário `custas_despesas`). Unificar as tabelas faria o reembolsável reduzir comissão — descartado | `models/case_despesa.py` (docstring); `services/commission_service.py:90` | — |
+| E2 | **O reembolso de custas aparecia como lucro.** O resultado do escritório (base do disponível para distribuição), o snapshot de fechamento, a rentabilidade por caso e o extrato somavam o reembolso pago pelo cliente (fee `custas_despesas`) como receita, mas nunca descontavam o adiantamento (`case_despesas`); o relatório do cliente previa `reembolsos`, mas nenhuma fonte o alimentava | `finance_governance.py` (`resultado_escritorio_competencia`, snapshot), `routers/financeiro/governanca.py` (`rentabilidade`), `routers/extratos.py`, `routers/relatorio_cliente.py` | **Resultado distribuível inflado** pelo valor dos reembolsos — corrigido no PR da Fase 2 |
 | E3 | Recebimento e NFS-e são passos desconectados: registrar pagamento (`POST /fees/{id}/pagamentos`) não oferece a emissão; NFS-e é lançada à parte | `routers/fees.py` sem referência a NFS-e; `routers/nfse.py` | Passo esquecido, retrabalho |
 | E4 | Todo recebimento/despesa do escritório é digitado. Já existe parser de extrato OFX/CSV, porém usado só no litígio bancário de cliente | `services/bank_statement.py` (usado por `routers/bank_analysis.py`) | Maior fonte de digitação do ERP |
 | E5 | Régua de cobrança ao cliente e NFS-e nascem desligadas (`COBRANCA_ENABLED`, `NFSE_ENABLED` = `False`) | `core/config.py`, `services/cobranca_cliente_service.py:273` | Funcionalidade pronta e inerte **[conferir em produção]** |
@@ -57,10 +57,10 @@ só leitura. O aceite de prazo vindo do DJEN exige confirmação humana.
 | # | Achado | Evidência | Impacto |
 |---|---|---|---|
 | A1 | **Captura do DJEN bloqueada por região** quando a saída da VPS é fora do Brasil (CloudFront responde 403). O código já detecta e interrompe o ciclo; a mitigação documentada é `DJEN_HTTP_PROXY_URL` com egress brasileiro | `services/djen_service.py:190-206`; commit `63b606a`; `docs/RUNBOOK_INGESTAO_RAG.md:36-59` | **Sem isso, o pilar "receber intimações" não funciona** **[conferir em produção]** |
-| A2 | Duas fontes de OAB: a captura lê `DJEN_OABS_MONITORADAS` (env); o alerta itera `users.djen_oab_numero` | `PLANO_MESTRE_STATUS.md` item AUD27-P1-8 (pendente) | Intimação capturada sem alerta, ou vice-versa |
+| A2 | ~~Duas fontes de OAB~~ — **já resolvido no código (verificado 03/10).** A captura com alerta lê o cadastro do usuário (`users.djen_oab_numero`/`oab_number`); `DJEN_OABS_MONITORADAS` só complementa o arquivo RAG para OABs sem usuário. Resta apenas conferir os cadastros em produção (AUD27-P1-8, Fase 0) | `services/scheduler.py:1808` | — |
 | A3 | Canais externos nascem desligados: `EMAIL_ENABLED`, `WHATSAPP_ENABLED`, `PUSH_ENABLED` = `False`; sem eles, só o sino interno | `core/config.py:449,465,865`; `services/notification_service.py` | Advogado fora do sistema não é avisado **[conferir em produção]** |
 | A4 | **Audiência pode viver em dois lugares** (`deadlines` tipo `audiencia` e `agenda_eventos` tipo `audiencia`), e o feed de calendário (ICS → Google/celular) lê **apenas `deadlines`** | `routers/calendar_feed.py:188`; `routers/agenda_eventos.py:179`; `models/deadline.py:13` | Audiência lançada pela agenda **não aparece no celular** |
-| A5 | ~12 jobs de aviso entre 06h55 e 09h30, cada um gera notificação própria; há dois briefings matinais que se sobrepõem em prazos: `briefing_adv` (06h55, por advogado) e `brief` (07h00, visão do escritório com prazos + financeiro, `scheduler_financeiro.py:82`) | `services/scheduler.py:1320-1333` | Ruído → aviso importante ignorado |
+| A5 | ~12 jobs de aviso entre 06h55 e 09h30. **Reavaliado (03/10): os dois briefings não são duplicados** — `brief` vai a um único administrador com a visão do escritório; `briefing_adv` vai a cada advogado com os casos dele. Reduzir alertas individuais de prazo foi descartado por risco de preclusão | `services/scheduler.py:1320-1333`, `scheduler_financeiro.py:82` | Sem mudança |
 
 ### 3.3 IA
 
@@ -122,6 +122,9 @@ Sem isto, as fases seguintes podem otimizar algo que nem está ligado.
 
 ### Fase 1 — Agenda e intimações confiáveis
 
+> **Revisado na execução (03/10):** só o item 1 exigiu código (#2010); os itens
+> 2–4 foram verificados e não precisavam de mudança (ver §7-A).
+
 1. **Feed ICS completo**: incluir `agenda_eventos` (com hora/local) além de
    `deadlines` (`routers/calendar_feed.py`). Audiência passa a chegar ao
    celular venha de onde vier.
@@ -142,6 +145,10 @@ alertado em duplicidade; teste de regressão para cada item; nenhum campo novo.
 Risco: baixo-médio (scheduler). Rollback: revert; sem migration.
 
 ### Fase 2 — ERP sem digitação dupla
+
+> **Revisado na execução (03/10):** o item 1 abaixo foi substituído pela correção
+> de E2 sem migration — as tabelas representam conceitos distintos (ver §3.1).
+> O item 3 já estava na `main`.
 
 1. **Custo do caso em um só lugar** (E1/E2): `centro_custos` é o canônico —
    já alimenta fechamento, extrato, relatório do cliente e comissões.
@@ -224,6 +231,20 @@ segundo gera número financeiro errado.
 | Gateway de pagamento/boleto pago, WhatsApp oficial pago | Custo recorrente; PIX estático (`routers/pix.py`) e Evolution já existem |
 | Apagar tabelas (`case_despesas`, `agenda_eventos`) | Regra 2 do `CLAUDE.md`; contração só em migration futura, com backup |
 | Mexer em HITL, gate de citações, PII, RBAC | Regra 3 do `CLAUDE.md` |
+
+## 7-A. Execução (03/10/2026)
+
+| Item | Resultado | PR |
+|---|---|---|
+| A4 — feed ICS sem `agenda_eventos` | Corrigido: audiências e compromissos da agenda chegam ao celular (horário em Brasília, VTIMEZONE) | #2010 |
+| A2 — fonte de OAB | Sem mudança de código (já resolvido); conferir cadastros na Fase 0 | — |
+| A5 — briefings | Sem mudança (não duplicados; alertas de prazo preservados) | — |
+| P1 — audiência canônica | Sem mudança no caminho de gravação: a audiência da agenda já tem alerta 3/1/0 dias e agora entra no ICS; mudar a gravação quebraria contrato de API e conflitaria com #1998 | — |
+| E1 — "custo duplicado" | Reclassificado: não é duplicação (ver §3.1) | — |
+| E2 — reembolso como lucro | Corrigido nas cinco consultas financeiras, sem migration | PR da Fase 2 |
+| E3 — recebimento → NFS-e | Corrigido: após o pagamento, oferta de registro da NFS-e já preenchida (exceto reembolso de custas) | PR da Fase 2 |
+| Financeiro "mais curto" | Já estava na `main` (4 abas principais; NFS-e/Contratos/Recorrentes em "Mais"; Sociedade e Estimador só redirecionam) | — |
+| Fases 3 e 4 | Pendentes — dependem da medição de uso (Fase 0) e da lista de cortes (P4) | — |
 
 ## 8. Decisões do titular
 
