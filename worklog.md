@@ -268,3 +268,31 @@ Stage Summary:
 - Fluxo recomendado: Cliente → Caso → Minuta → Editor → Export.
 - 0 erros console, 0 ESLint, dev server saudável.
 - Próxima fase: vincular minutas a casos no generator, filtros por cliente nas minutas, templates personalizados do escritório (CRUD), export com dados do cliente/caso preenchidos automaticamente.
+
+---
+Task ID: 14 (análise de viabilidade — EJC)
+Agent: main (Z.ai Code)
+Task: Analisar viabilidade dos recursos do EJC (2 zips enviados pelo usuário) para o JuridIA.
+
+Work Log:
+- Recebidos 2 arquivos ZIP do usuário:
+  - ZIP 1 "Opinião sobre as IAs implementadas no EJC": 18 arquivos — integração Manus API v2 (Python FastAPI), webhook RSA-SHA256, structured output, sanitizer, migration 162_manus_tasks.
+  - ZIP 2 "Verificar conhecimento jurídico e núcleo de IA do EJC": 33 arquivos — RAG com pgvector, citation_gate (anti-alucinação), ai_service, gold set evaluation, curadoria de fontes jurídicas.
+- EJC é Python/FastAPI + PostgreSQL/pgvector + 37 routers + OAuth2/JWT. JuridIA é Next.js/SQLite/Prisma + TypeScript. Stacks diferentes.
+- Análise de viabilidade por recurso:
+  1. Manus API: VIÁVEL com adaptação (REST API, fetch em Node, crypto para webhook). Requer chave paga + webhook HTTPS. Prioridade baixa para uso pessoal.
+  2. RAG com pgvector: NÃO DIRETAMENTE VIÁVEL no SQLite. Alternativa: embeddings em JSON + cosine em JS (até ~5k chunks) ou web_search já existente.
+  3. Citation Gate (anti-alucinação): VIÁVEL — o mais portável. Regex de extração, verificação contra base SQLite, fail-closed. PRIORIDADE MÁXIMA.
+  4. Gold Set/Evaluation: VIÁVEL — JSONL + runner TS. Requer curadoria de 75 casos reais pelo escritório.
+  5. Curadoria de Fontes: VIÁVEL — modelo Prisma LegalSource com URL oficial + hash + vigência.
+  6. Sanitização tarja-1: JÁ IMPLEMENTADO no JuridIA.
+  7. HITL + Auditoria: JÁ IMPLEMENTADO no JuridIA.
+- Recomendação: implementar Citation Gate (prioridade máxima) + RAG-lite (prioridade alta) + Gold Set pessoal (média). Não portar pgvector/FastAPI/37 routers.
+
+Stage Summary:
+- Análise de viabilidade concluída para os 2 zips do EJC.
+- Citation Gate é o recurso de maior valor e mais portável — deve ser implementado primeiro.
+- RAG-lite com embeddings em SQLite é viável para volume de escritório individual.
+- 3 recursos já existem no JuridIA (tarja-1, HITL, auditoria).
+- Manus API é viável mas requer chave paga + infra de webhook.
+- Próximo passo: implementar Citation Gate (citation_gate.ts + LegalSource Prisma model) se o usuário confirmar.
