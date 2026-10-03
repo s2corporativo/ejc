@@ -151,16 +151,13 @@ describe("EntradaUnica — tela inicial (A.1)", () => {
   it("renderiza relato, dropzone com limites e botão Analisar desabilitado", async () => {
     montar();
     expect(
-      screen.getByPlaceholderText("Cole aqui o que o cliente contou."),
+      screen.getByLabelText("Relato do cliente"),
     ).toBeTruthy();
-    expect(
-      screen.getByText(/Arraste documentos aqui · ou clique para escolher/),
-    ).toBeTruthy();
-    await waitFor(() =>
-      expect(screen.getByText(/até 40 arquivos, 120 MB/)).toBeTruthy(),
-    );
+    expect(screen.getByRole("button", { name: "Anexar documentos" })).toBeTruthy();
+    expect(screen.getByTestId("entrada-file-input")).toBeTruthy();
+    await waitFor(() => expect(getMock).toHaveBeenCalledWith("/entrada-universal/meta"));
     const botao = screen.getByRole("button", {
-      name: "Analisar",
+      name: "Analisar relato e documentos",
     }) as HTMLButtonElement;
     expect(botao.disabled).toBe(true);
   });
@@ -168,7 +165,7 @@ describe("EntradaUnica — tela inicial (A.1)", () => {
   it("habilita Analisar com relato ≥ 40 caracteres OU ≥ 1 arquivo", () => {
     montar();
     const botao = screen.getByRole("button", {
-      name: "Analisar",
+      name: "Analisar relato e documentos",
     }) as HTMLButtonElement;
 
     preencherRelato(39);
@@ -195,7 +192,7 @@ describe("EntradaUnica — confirmação (tela B)", () => {
     postMock.mockResolvedValueOnce({ data: RESPOSTA_COMPLETA });
     montar();
     preencherRelato(60);
-    fireEvent.click(screen.getByRole("button", { name: "Analisar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Analisar relato e documentos" }));
 
     await screen.findByText("Confira e confirme");
 
@@ -296,7 +293,7 @@ describe("EntradaUnica — confirmação (tela B)", () => {
     });
     montar();
     preencherRelato(60);
-    fireEvent.click(screen.getByRole("button", { name: "Analisar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Analisar relato e documentos" }));
 
     await screen.findByText("Confira e confirme");
     expect(
@@ -317,7 +314,7 @@ describe("EntradaUnica — confirmação (tela B)", () => {
     postMock.mockResolvedValueOnce({ data: RESPOSTA_COMPLETA });
     const primeira = montar();
     preencherRelato(60);
-    fireEvent.click(screen.getByRole("button", { name: "Analisar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Analisar relato e documentos" }));
     await screen.findByText("Confira e confirme");
     primeira.unmount();
 
@@ -350,7 +347,7 @@ describe("EntradaUnica — criação abre o workspace do caso", () => {
     );
 
     preencherRelato(60);
-    fireEvent.click(screen.getByRole("button", { name: "Analisar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Analisar relato e documentos" }));
     await screen.findByText("Confira e confirme");
 
     fireEvent.click(
