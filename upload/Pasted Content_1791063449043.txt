@@ -1,0 +1,1339 @@
+Fiz o levantamento usando documentação pública da própria MinutaIA, manuais institucionais, a extensão oficial, documentos de contratação pública e fontes oficiais. A conclusão principal é esta:
+
+**a MinutaIA não é essencialmente um “ChatGPT jurídico”. É uma plataforma de orquestração jurídica composta por ingestão documental, conhecimento jurídico versionado, múltiplos LLMs, agentes com ferramentas, pesquisa híbrida, verificação de fontes, editor documental e integrações processuais.**
+
+E há informação técnica pública suficiente para reconstruirmos uma arquitetura funcionalmente semelhante sem copiar código proprietário.
+
+## 1. O que consegui comprovar sobre o código/stack
+
+Não encontrei repositório público oficial da MinutaIA com o código-fonte da aplicação. Portanto, seria incorreto afirmar que examinei o backend linha a linha.
+
+Entretanto, um documento oficial de contratação da jAI com o Superior Tribunal Militar revela diretamente parte relevante da arquitetura:
+
+| Componente | MinutaIA — comprovado publicamente |
+|---|---|
+| Framework | **Next.js** |
+| Front-end | **React + TypeScript** |
+| Infraestrutura | **Vercel serverless** |
+| Banco | **Neon** |
+| Base de nuvem | AWS/serverless |
+| LLM Anthropic | Claude via **AWS Bedrock** |
+| LLM Google | Gemini via **Google AI Studio** |
+| LLM OpenAI | GPT via **Azure OpenAI** |
+| Transcrição | Whisper via **Groq** |
+| Estratégia | múltiplos provedores/model routing |
+| Institucional | projetos Vercel/Neon segregados por cliente |
+
+O documento é especialmente importante porque não é material publicitário genérico: é documentação de contratação pública. [STM](https://www2.stm.jus.br/consulta_contrato/index.php/ctrl_busca/visualizar/24298_PROPOSTA_PROCESSO_SEI_029411--25-00.327.pdf) [STM](https://www2.stm.jus.br/consulta_contrato/index.php/ctrl_busca/visualizar/24298_PROPOSTA_PROCESSO_SEI_029411--25-00.327.pdf?utm_source=chatgpt.com)
+
+O próprio manual institucional atualizado informa que a plataforma trabalha atualmente com modelos como **Google Gemini 3, Anthropic Claude 4.5 e OpenAI GPT 5.2**. Isso demonstra que a arquitetura foi feita para trocar modelos sem reconstruir o produto. [MinutaIA](https://minutaia.almg.gov.br/docs?utm_source=chatgpt.com)
+
+Esse é um princípio que eu copiaria conceitualmente: **o sistema não deve depender de um único LLM**.
+
+---
+
+# 2. A arquitetura real por trás da MinutaIA
+
+Minha reconstrução técnica é aproximadamente esta:
+
+```text
+                    USUÁRIO
+                       │
+                       ▼
+              INTERFACE / EDITOR
+             React + Next.js
+                       │
+          ┌────────────┴────────────┐
+          ▼                         ▼
+   CONTEXTO DO CASO          PERFIL DO USUÁRIO
+ documentos/processo         estilo/instruções
+ jurisprudência              modelos próprios
+ legislação                  skills
+ modelos                     preferências
+          │                         │
+          └────────────┬────────────┘
+                       ▼
+             ORQUESTRADOR JURÍDICO
+                       │
+       ┌───────────────┼────────────────┐
+       ▼               ▼                ▼
+  PLANEJADOR       RETRIEVAL         TOOL ROUTER
+       │               │                │
+       │        ┌──────┼──────┐         │
+       │        ▼      ▼      ▼         │
+       │      SKILLS   LEI  JURIS.      │
+       │                               │
+       ▼                               ▼
+     MODEL ROUTER                ferramentas externas
+ Claude / GPT / Gemini          pesquisa / cálculo /
+                               tribunal / documentos
+       │
+       ▼
+   REDATOR POR ETAPAS
+       │
+       ▼
+   VERIFICADOR / AUDITOR
+       │
+       ▼
+ CITATION / PROVENANCE GATE
+       │
+       ▼
+       EDITOR
+       │
+       ▼
+ DOCX / PDF / protocolo
+```
+
+A grande diferença está justamente no **orquestrador**.
+
+Um sistema equivalente não pode simplesmente fazer:
+
+```text
+documentos + prompt → GPT → petição
+```
+
+Esse modelo é muito frágil.
+
+O fluxo deve ser:
+
+```text
+documentos
+→ interpretar
+→ estruturar fatos
+→ identificar matéria
+→ selecionar conhecimento
+→ identificar lacunas
+→ formular estratégia
+→ pesquisar fontes
+→ validar fontes
+→ elaborar roteiro
+→ obter aprovação
+→ redigir por seções
+→ verificar fatos
+→ verificar citações
+→ revisão adversarial
+→ editar
+→ exportar
+```
+
+É exatamente a direção descrita no Modo Agêntico da MinutaIA. [MinutaIA](https://www.minutaia.com.br/blog/agentico)
+
+---
+
+# 3. O verdadeiro diferencial: não é o modelo, é o contexto
+
+Há um aspecto da MinutaIA que considero muito mais importante que usar Claude, GPT ou Gemini.
+
+É a separação entre quatro espécies diferentes de contexto:
+
+| Contexto | Função |
+|---|---|
+| **Documentos** | fatos específicos daquele processo |
+| **Modelos** | estilo e estrutura desejados |
+| **Conhecimento jurídico/skills** | regras jurídicas que orientam a análise |
+| **Fontes oficiais** | legislação e jurisprudência verificáveis |
+
+O manual tradicional da plataforma já apresentava nove áreas principais: início, minuta, documentos, modelos, legislação, jurisprudência, web, biblioteca e “bibliotecários”. [MinutaIA](https://minutaia.almg.gov.br/docs/pagina-inicial?utm_source=chatgpt.com)
+
+Isso mostra que a construção do contexto é uma função de primeira classe do produto.
+
+Não é só um campo de upload.
+
+---
+
+# 4. A biblioteca de conhecimento merece atenção especial
+
+Aqui está, provavelmente, o componente mais importante para um sistema jurídico realmente bom.
+
+Em julho de 2026, a MinutaIA lançou aproximadamente **2.000 “Habilidades” jurídicas** cobrindo 25 áreas e centenas de formas de peças. [minutaia.com.br](https://www.minutaia.com.br/blog/habilidades)
+
+Uma habilidade não é simplesmente um embedding.
+
+Ela é, essencialmente:
+
+```text
+SKILL
+│
+├── identificação
+├── título
+├── descrição
+├── área
+├── subárea
+├── tipo
+│   ├── matéria
+│   └── forma da peça
+│
+├── gatilhos
+├── conteúdo jurídico
+├── legislação aplicável
+├── súmulas
+├── precedentes qualificados
+├── vigência
+├── exceções
+├── divergências
+├── erros a evitar
+├── versão
+├── fonte
+└── data de atualização
+```
+
+A arquitetura descrita por eles é particularmente inteligente.
+
+O modelo **não recebe as 2.000 skills**.
+
+Primeiro analisa apenas algo equivalente a:
+
+```text
+título + descrição + gatilhos
+```
+
+Seleciona as candidatas.
+
+Depois carrega somente o conteúdo integral das skills selecionadas. A própria MinutaIA descreve isso como o equivalente a um advogado olhar as lombadas de uma estante e retirar apenas os livros relevantes. [minutaia.com.br](https://www.minutaia.com.br/blog/habilidades)
+
+Em termos computacionais:
+
+```text
+caso
+ ↓
+classificador jurídico
+ ↓
+áreas prováveis
+ ↓
+retrieval das skills
+ ↓
+top-k skills
+ ↓
+reranking
+ ↓
+skills obrigatórias + opcionais
+ ↓
+contexto do agente
+```
+
+Isso economiza tokens e melhora precisão.
+
+### Eu construiria exatamente esse conceito.
+
+Mas não copiaria as skills da MinutaIA.
+
+Criaria uma biblioteca jurídica própria, com proveniência e versionamento.
+
+Por exemplo:
+
+```yaml
+skill_id: consumidor_negativacao_001
+titulo: Inscrição indevida em cadastro restritivo
+area: consumidor
+subarea: responsabilidade_civil
+
+gatilhos:
+  - negativação
+  - Serasa
+  - SPC
+  - cadastro inadimplentes
+
+fontes:
+  - CC
+  - CDC
+  - Sumula 385 STJ
+
+regras:
+  - verificar inscrição preexistente
+  - verificar legitimidade do débito
+  - analisar dano moral
+  - distinguir cancelamento de indenização
+
+erros_a_evitar:
+  - citar precedente não validado
+  - presumir dano moral em qualquer hipótese
+
+vigencia:
+  verificado_em: 2026-10-03
+```
+
+Isso transforma conhecimento jurídico em **software auditável**.
+
+---
+
+# 5. Skills não são RAG
+
+Essa diferença é crucial.
+
+Um sistema jurídico moderno deveria ter pelo menos três mecanismos separados.
+
+| Camada | Utilização |
+|---|---|
+| RAG documental | descobrir fatos dos autos |
+| Retrieval jurídico | recuperar legislação/jurisprudência |
+| Skills | dizer ao agente **como raciocinar juridicamente** |
+
+Embeddings sozinhos não resolvem isso.
+
+Uma petição pode conter a expressão:
+
+> “inscrição indevida”
+
+O RAG encontra páginas do processo relacionadas.
+
+Mas a skill deve dizer:
+
+> analisar Súmula 385; verificar inscrição legítima preexistente; separar obrigação de cancelamento da pretensão indenizatória etc.
+
+É uma camada diferente.
+
+---
+
+# 6. Jurisprudência: outro componente essencial
+
+A MinutaIA evoluiu a pesquisa para um produto específico, o JurisprudênciaIA.
+
+Há uma informação técnica muito relevante e explicitamente publicada:
+
+**a busca combina BM25 e embeddings.** [MinutaIA](https://www.minutaia.com.br/blog/jurisprudenciaia?utm_source=chatgpt.com)
+
+Ou seja:
+
+```text
+CONSULTA DO USUÁRIO
+       │
+       ├─────► busca lexical/BM25
+       │
+       └─────► busca semântica/embeddings
+                    │
+                    ▼
+              união resultados
+                    │
+                    ▼
+                 ranking
+                    │
+                    ▼
+              análise por IA
+                    │
+                    ▼
+            precedentes relevantes
+```
+
+Para nosso sistema eu melhoraria isso para:
+
+```text
+BM25
++
+vector search
++
+filtros estruturados
++
+precedentes qualificados
++
+reranker
++
+RRF
++
+verificador de fonte
+```
+
+Um documento poderia possuir:
+
+```text
+tribunal
+classe
+numero_processo
+numero_acordao
+orgao_julgador
+relator
+data_julgamento
+data_publicacao
+ementa
+inteiro_teor
+tema
+teses
+URL_oficial
+hash_documento
+```
+
+Isso permite pesquisa híbrida extremamente boa.
+
+---
+
+# 7. A MinutaIA tomou uma decisão correta contra “jurisprudência inventada”
+
+A estratégia do JurisprudênciaIA é fundamental.
+
+Segundo sua documentação, a IA não deve simplesmente escrever uma ementa como texto livre; ela referencia decisões efetivamente recuperadas. [MinutaIA](https://www.minutaia.com.br/blog/jurisprudenciaia?utm_source=chatgpt.com)
+
+Eu usaria uma política ainda mais restritiva:
+
+```text
+LLM NÃO PODE CRIAR UMA CITAÇÃO JURISPRUDENCIAL
+```
+
+O redator receberia algo assim:
+
+```json
+{
+  "source_id": "jur_394581",
+  "tribunal": "STJ",
+  "numero": "...",
+  "ementa": "...",
+  "url_oficial": "...",
+  "verified": true
+}
+```
+
+E poderia produzir apenas:
+
+```text
+{{JURISPRUDENCIA:jur_394581}}
+```
+
+Depois o backend substituiria esse marcador pela referência real.
+
+Isso elimina praticamente toda a classe de alucinação de número de processo.
+
+---
+
+# 8. Referência rastreável de fatos dos autos
+
+Outro mecanismo excelente é o sistema de **Referências Rastreáveis**.
+
+Quando a IA afirma:
+
+> “o contrato foi assinado em 17 de janeiro de 2025”
+
+o sistema pode apontar diretamente:
+
+```text
+documento: contrato.pdf
+página: 17
+trecho: ...
+bbox: x/y/w/h
+```
+
+A MinutaIA afirma permitir abrir a página exata do PDF e destacar o fragmento utilizado. [MinutaIA](https://www.minutaia.com.br/blog/referencias?utm_source=chatgpt.com)
+
+Para criar algo equivalente, nosso banco deveria guardar a proveniência em nível de chunk:
+
+```text
+document_id
+page_number
+chunk_id
+char_start
+char_end
+bbox
+text
+embedding
+hash
+```
+
+Durante a geração:
+
+```text
+afirmação
+→ source_id
+→ document_id
+→ página
+→ fragmento
+```
+
+Essa é uma das funções que mais aumentam a confiança do advogado.
+
+---
+
+# 9. Modo Agêntico
+
+A MinutaIA descreve seis etapas:
+
+| Fase | Função |
+|---|---|
+| Planejamento | compreender processo e estratégia |
+| Perguntas | resolver ambiguidades |
+| Roteiro | estrutura previamente aprovada |
+| Decisões autônomas | pesquisar, calcular e buscar modelos |
+| Redação | escrever seção por seção |
+| Revisão | conferir as citações | :chatgpt-content-reference{index="10"}
+
+
+Eu acrescentaria duas etapas.
+
+Nosso fluxo ficaria:
+
+```text
+1. INGESTÃO
+2. NORMALIZAÇÃO
+3. MAPA DO PROCESSO
+4. DETECÇÃO DE LACUNAS
+5. ESTRATÉGIA
+6. APROVAÇÃO HUMANA
+7. PESQUISA
+8. REDAÇÃO
+9. VERIFICAÇÃO FÁTICA
+10. VERIFICAÇÃO JURÍDICA
+11. RED TEAM
+12. ENTREGA
+```
+
+---
+
+# 10. Não usaria um único agente
+
+Esse é um erro frequente.
+
+Eu criaria agentes especializados.
+
+| Agente | Responsabilidade |
+|---|---|
+| Case Reader | compreender os autos |
+| Fact Extractor | fatos, datas, valores, partes |
+| Issue Spotter | questões jurídicas |
+| Legal Researcher | legislação |
+| Case Law Researcher | jurisprudência |
+| Skill Selector | selecionar conhecimento |
+| Strategist | teses e estratégia |
+| Drafter | redigir |
+| Citation Auditor | verificar referências |
+| Fact Auditor | verificar fatos |
+| Devil's Advocate | atacar a própria tese |
+| Editor | revisar linguagem |
+| Formatter | DOCX/PDF |
+
+O “agente principal” funciona como coordenador.
+
+---
+
+# 11. Model routing
+
+Outro segredo do produto é não tentar usar o mesmo modelo para tudo.
+
+O documento do STM confirma Claude, Gemini, GPT e Whisper em provedores diferentes. [STM](https://www2.stm.jus.br/consulta_contrato/index.php/ctrl_busca/visualizar/24298_PROPOSTA_PROCESSO_SEI_029411--25-00.327.pdf?utm_source=chatgpt.com)
+
+Uma arquitetura nossa poderia ter:
+
+```text
+AI Gateway
+│
+├── classify()
+├── extract()
+├── summarize()
+├── reason()
+├── research()
+├── draft()
+├── verify()
+├── vision()
+└── transcribe()
+```
+
+Por trás:
+
+```text
+task → router → provider → model
+```
+
+Não:
+
+```text
+app → GPT
+```
+
+Isso permite trocar modelos quando surgir outro melhor.
+
+---
+
+# 12. “Perfil de IA” é mais simples do que parece
+
+A plataforma analisa documentos anteriores do usuário para identificar:
+
+- estilo;
+- formalidade;
+- construção dos parágrafos;
+- palavras evitadas;
+- cargo;
+- assinatura. [MinutaIA](https://www.minutaia.com.br/blog/perfil-ia?utm_source=chatgpt.com)
+
+
+Tecnicamente isso deveria virar configuração estruturada:
+
+```json
+{
+  "tone": "tecnico",
+  "paragraph_length": "medio",
+  "prefer_active_voice": true,
+  "avoid": [
+    "gerundismo",
+    "expressões excessivamente rebuscadas"
+  ],
+  "citation_style": "...",
+  "signature_template": "..."
+}
+```
+
+Não é necessário fine-tuning.
+
+É **context engineering persistente**.
+
+---
+
+# 13. Modelos e Modo Molde
+
+Também achei muito interessante o Modo Molde.
+
+Em vez de:
+
+```text
+modelo → prompt → documento novo
+```
+
+faz:
+
+```text
+modelo original
+      +
+caso atual
+      ↓
+lista de alterações
+      ↓
+patch
+      ↓
+modelo atualizado
+```
+
+A própria empresa explica que o modelo gera uma lista de substituições pontuais em vez de recriar o texto inteiro. [MinutaIA](https://www.minutaia.com.br/blog/molde?utm_source=chatgpt.com)
+
+Eu implementaria isso usando operações estruturadas:
+
+```json
+[
+  {
+    "operation": "replace",
+    "node_id": "p32",
+    "old": "...",
+    "new": "..."
+  }
+]
+```
+
+É muito melhor do que pedir ao LLM para reescrever uma petição de 50 páginas.
+
+---
+
+# 14. O editor também é parte da inteligência
+
+A MinutaIA refez seu editor em 2026.
+
+Cada parágrafo passou a ter **identidade estável**, o que permite que a IA modifique apenas um trecho, preservando o restante. [MinutaIA](https://www.minutaia.com.br/blog/novo-editor)
+
+Isso sugere uma estrutura semelhante a:
+
+```text
+Document
+ ├─ node_001 heading
+ ├─ node_002 paragraph
+ ├─ node_003 paragraph
+ ├─ node_004 table
+ └─ node_005 paragraph
+```
+
+Ao invés de salvar:
+
+```text
+document = giant_html_string
+```
+
+Isso permite:
+
+```text
+edit(node_003)
+```
+
+sem reescrever o documento inteiro.
+
+É exatamente o tipo de arquitetura que eu recomendaria.
+
+---
+
+# 15. Editor que eu construiria
+
+O núcleo poderia ser baseado em ProseMirror/Tiptap ou Lexical.
+
+Cada documento teria:
+
+```text
+Document
+ ├── metadata
+ ├── page settings
+ ├── header
+ ├── footer
+ ├── nodes
+ ├── footnotes
+ ├── comments
+ ├── suggestions
+ └── versions
+```
+
+A IA nunca retornaria um documento inteiro quando o usuário pedir:
+
+> “fortaleça o tópico de dano moral”.
+
+Ela retornaria:
+
+```json
+{
+  "node_id": "para_891",
+  "operation": "replace",
+  "content": "..."
+}
+```
+
+O usuário poderia:
+
+```text
+ACEITAR | REJEITAR
+```
+
+É precisamente o comportamento que o novo editor da MinutaIA oferece. [MinutaIA](https://www.minutaia.com.br/blog/novo-editor)
+
+---
+
+# 16. Processo de até milhares de páginas
+
+A empresa afirma processamento de processos de até aproximadamente **6.000 páginas**. [MinutaIA](https://www.minutaia.com.br/)
+
+Não há documentação pública suficiente para afirmar exatamente como implementam internamente essa parte.
+
+Mas dificilmente é apenas:
+
+```text
+PDF → 6.000 páginas → prompt
+```
+
+Eu usaria uma arquitetura hierárquica.
+
+```text
+PDF
+ ↓
+PAGES
+ ↓
+CHUNKS
+ ↓
+document summaries
+ ↓
+document map
+ ↓
+case map
+ ↓
+issue map
+```
+
+Depois o agente não lê tudo indiscriminadamente.
+
+Ele navega:
+
+```text
+CaseMap
+├── partes
+├── pedidos
+├── defesa
+├── provas
+├── decisões
+├── recursos
+├── cronologia
+└── documentos relevantes
+```
+
+Quando precisar verificar algo:
+
+```text
+retrieve(chunks)
+```
+
+Isso é mais confiável e muito mais barato.
+
+---
+
+# 17. Resumo estruturado
+
+A MinutaIA já usa algo parecido conceitualmente no “Resumo Avançado”, dividindo informações em partes, cronologia, pedidos, provas, decisões, valores, riscos e próximos passos. [MinutaIA](https://www.minutaia.com.br/blog/resumo-avancado?utm_source=chatgpt.com)
+
+Eu transformaria isso em **estrutura de banco**, não apenas em um resumo visual:
+
+```text
+case_facts
+case_parties
+case_claims
+case_events
+case_evidence
+case_decisions
+case_deadlines
+case_values
+case_legal_issues
+case_risks
+```
+
+Então o conhecimento do processo deixa de existir apenas dentro do contexto temporário do LLM.
+
+---
+
+# 18. Prints dos autos
+
+A função de setembro de 2026 também é interessante.
+
+A IA identifica uma imagem relevante dentro de um processo — comprovante, extrato, assinatura, foto — recorta aquela região e insere no documento com página de origem. [MinutaIA](https://www.minutaia.com.br/blog/prints)
+
+Nossa arquitetura precisaria guardar:
+
+```text
+page_image
+layout blocks
+bounding boxes
+image regions
+OCR
+```
+
+Então a IA poderia emitir:
+
+```json
+{
+  "insert_image": {
+    "document": "extrato.pdf",
+    "page": 14,
+    "bbox": [x1,y1,x2,y2]
+  }
+}
+```
+
+O backend faria o recorte, não o LLM.
+
+---
+
+# 19. Segurança contra prompt injection
+
+Esta parte merece ser copiada conceitualmente.
+
+A MinutaIA descreveu publicamente uma defesa em duas camadas.
+
+Antes da geração, analisa elementos anormais em PDFs como texto invisível, transparência, elementos fora da página e texto microscópico. Depois usa outro mecanismo de auditoria para detectar desvio das instruções. [MinutaIA](https://www.minutaia.com.br/blog/prompt-injection?utm_source=chatgpt.com)
+
+O princípio que deveríamos adotar é:
+
+```text
+DOCUMENTO = DADO NÃO CONFIÁVEL
+```
+
+Nunca:
+
+```text
+DOCUMENTO = INSTRUÇÃO
+```
+
+O pipeline deveria distinguir explicitamente:
+
+```text
+SYSTEM INSTRUCTIONS
+USER INSTRUCTIONS
+TRUSTED SKILLS
+TRUSTED SOURCES
+UNTRUSTED DOCUMENT CONTENT
+```
+
+Isso é fundamental em IA jurídica.
+
+---
+
+# 20. Anonimização local
+
+O tarja-1 é tecnicamente muito interessante.
+
+Ele anonimiza dados **localmente**, substituindo, por exemplo:
+
+```text
+Maria da Silva
+CPF 123...
+```
+
+por:
+
+```text
+[NOME_0001]
+[CPF_0001]
+```
+
+A IA trabalha apenas com marcadores.
+
+Depois o computador do usuário restaura os dados originais. [MinutaIA](https://www.minutaia.com.br/blog/tarja-1)
+
+O cofre fica local.
+
+Arquiteturalmente:
+
+```text
+Documento
+   ↓
+local NER
+   ↓
+pseudonimização
+   ↓
+[NOME_001]
+   ↓
+cloud AI
+   ↓
+[NOME_001]
+   ↓
+cofre local
+   ↓
+nome real
+```
+
+É excelente para segredo de justiça.
+
+---
+
+# 21. Extensão dos sistemas judiciais
+
+O MinutaIA Conecta é uma extensão Chrome e atualmente anuncia suporte a PJe, Eproc, Projudi, SEEU, e-SAJ, STF, STJ, SEI e JPe. [Chrome Web Store](https://chromewebstore.google.com/detail/pjeia-intelig%C3%AAncia-artifi/kimheklbcampgaeojcniknnhlmgfddac)
+
+A extensão possui cerca de 80 mil usuários na Chrome Web Store no registro consultado e oferece:
+
+- leitura dos autos;
+- OCR;
+- chat contextual;
+- ações rápidas;
+- geração;
+- transferência de inteiro teor para MinutaIA. [Chrome Web Store](https://chromewebstore.google.com/detail/pjeia-intelig%C3%AAncia-artifi/kimheklbcampgaeojcniknnhlmgfddac)
+
+
+Eu separaria completamente essa extensão do core da aplicação:
+
+```text
+browser extension
+       │
+       ▼
+Adapter PJe
+Adapter eproc
+Adapter eSAJ
+Adapter Projudi
+...
+       │
+       ▼
+Canonical Process Format
+       │
+       ▼
+Legal AI API
+```
+
+Assim uma mudança no HTML do PJe não afeta todo o sistema.
+
+---
+
+# 22. Processamento em lote
+
+Também não é simplesmente “for loop”.
+
+A MinutaIA explicitamente descreve processamento assíncrono e paralelo. [MinutaIA](https://www.minutaia.com.br/blog/lote?utm_source=chatgpt.com)
+
+Para criar algo robusto:
+
+```text
+API
+ ↓
+job
+ ↓
+queue
+ ↓
+workers
+ ├─ processo 1
+ ├─ processo 2
+ ├─ processo 3
+ └─ processo n
+ ↓
+results
+```
+
+Tecnologias possíveis:
+
+```text
+Redis
++
+Celery / Dramatiq / Temporal
+```
+
+ou arquitetura serverless equivalente.
+
+Para operação jurídica séria, eu prefiro **Temporal** ou um sistema de workflows persistentes a jobs frágeis.
+
+---
+
+# 23. A pesquisa de legislação
+
+A documentação institucional demonstra que as normas estão relacionadas a fontes oficiais e podem ser adicionadas seletivamente ao contexto. [MinutaIA](https://minutaia.goiania.go.gov.br/docs/legislacao)
+
+Aqui eu criaria um banco legislativo normalizado:
+
+```text
+norma
+artigo
+paragrafo
+inciso
+alinea
+vigencia_inicio
+vigencia_fim
+alteracoes
+fonte_oficial
+hash
+```
+
+Isso permite responder:
+
+> “Qual era a redação vigente na data do fato?”
+
+Esse recurso seria superior a grande parte das IAs jurídicas atuais.
+
+---
+
+# 24. Governança e LGPD
+
+A própria política da MinutaIA informa não utilização de autos ou minutas para treinamento e tratamento temporário de documentos, além de possibilidade de biblioteca quando expressamente escolhida pelo usuário. [MinutaIA](https://www.minutaia.com.br/politica-de-privacidade?utm_source=chatgpt.com)
+
+Para um produto nosso, LGPD não pode entrar no final.
+
+Precisa entrar no modelo de dados.
+
+A Lei 13.709/2018 exige medidas de governança compatíveis com natureza, volume, sensibilidade e riscos do tratamento. [Planalto](https://planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709compilado.htm?utm_source=chatgpt.com)
+
+Além disso, se a solução for usada dentro do Poder Judiciário, a Resolução CNJ 615/2025 — posteriormente alterada pela Resolução 674/2026 — estabelece requisitos próprios de governança de IA. [Atos CNJ](https://atos.cnj.jus.br/atos/detalhar/6001?utm_source=chatgpt.com)
+
+Precisaremos desde a primeira versão de:
+
+```text
+tenant isolation
+RBAC
+audit log
+provenance
+encryption
+retention rules
+data deletion
+provider policies
+human review
+model/version log
+prompt/version log
+```
+
+---
+
+# 25. O banco que eu usaria
+
+Não copiaria necessariamente Neon.
+
+Para um produto jurídico desse porte, faria:
+
+```text
+PostgreSQL 16+
++
+pgvector
++
+OpenSearch
++
+Redis
++
+S3-compatible object storage
+```
+
+Funções:
+
+| Tecnologia | Responsabilidade |
+|---|---|
+| PostgreSQL | dados estruturados |
+| pgvector | embeddings |
+| OpenSearch | BM25 e filtros |
+| Redis | cache/locks/stream |
+| S3 | PDFs/DOCX/imagens |
+| queue/workflow | tarefas longas |
+
+Para começar menor, dá para eliminar OpenSearch e fazer PostgreSQL FTS + pgvector.
+
+---
+
+# 26. Estrutura de dados central
+
+O produto deveria ter aproximadamente esta hierarquia:
+
+```text
+Organization
+ └─ User
+    ├─ Profile
+    ├─ Skills
+    └─ Library
+
+Client
+ └─ Case
+    ├─ Process
+    ├─ Documents
+    │   ├─ Pages
+    │   └─ Chunks
+    │
+    ├─ Facts
+    ├─ Events
+    ├─ Evidence
+    ├─ Legal Issues
+    ├─ Research
+    ├─ Strategies
+    └─ Documents Generated
+```
+
+E para conhecimento:
+
+```text
+Knowledge
+├─ Legislation
+├─ Jurisprudence
+├─ Skills
+├─ Models
+├─ Doctrine
+└─ Internal theses
+```
+
+Isso é muito mais importante que a tela inicial.
+
+---
+
+# 27. O que eu NÃO faria
+
+Aqui está o principal erro que devemos evitar:
+
+> tentar recriar agora as dezenas de recursos da MinutaIA.
+
+Ela tem anos de evolução e escala.
+
+Eu começaria pelo núcleo que cria vantagem competitiva.
+
+| Prioridade | Módulo |
+|---:|---|
+| **P0** | ingestão de autos |
+| **P0** | mapa estruturado do processo |
+| **P0** | referências rastreáveis |
+| **P0** | biblioteca de skills |
+| **P0** | legislação oficial |
+| **P0** | jurisprudência real |
+| **P0** | geração por roteiro |
+| **P0** | citation gate |
+| P1 | modelos/molde |
+| P1 | perfil de estilo |
+| P1 | agente de pesquisa |
+| P1 | red-team jurídico |
+| P1 | editor com sugestões |
+| P2 | extensão PJe/eproc |
+| P2 | lote |
+| P2 | anonimização local |
+| P3 | Visual Law |
+| P3 | áudio/podcast |
+
+---
+
+# 28. Onde poderíamos superar a MinutaIA
+
+Não tentaria criar uma cópia visual.
+
+Eu atacaria pontos mais profundos.
+
+### Grafo jurídico do processo
+
+Transformar:
+
+```text
+PDF → texto
+```
+
+em:
+
+```text
+pessoa
+ ↕
+contrato
+ ↕
+evento
+ ↕
+prova
+ ↕
+pedido
+ ↕
+tese
+ ↕
+precedente
+```
+
+Isso permite raciocínio muito melhor.
+
+### Temporalidade jurídica
+
+Guardar:
+
+```text
+lei vigente em X
+jurisprudência vigente em Y
+skill versão Z
+```
+
+### Contradiction engine
+
+Comparar:
+
+```text
+inicial × contestação
+documento × alegação
+depoimento × depoimento
+pedido × prova
+```
+
+### Evidence matrix
+
+```text
+FATO | QUEM ALEGA | PROVA | FOLHA | CONTESTADO | CONFIANÇA
+```
+
+### Argument graph
+
+```text
+pedido
+ └─ requisito jurídico
+     ├─ fato necessário
+     ├─ prova
+     ├─ norma
+     └─ precedente
+```
+
+Isso começa a aproximar o sistema de **raciocínio jurídico verificável**, e não simplesmente geração de texto.
+
+---
+
+# 29. Como eu estruturaria o nosso sistema
+
+Eu dividiria em quatro grandes produtos, mas utilizando o mesmo backend:
+
+```text
+LEGAL BRAIN
+conhecimento + skills + jurisprudência + legislação
+
+LEGAL READER
+processos + OCR + fatos + cronologia + provas
+
+LEGAL AGENT
+estratégia + pesquisa + redação + auditoria
+
+LEGAL EDITOR
+documento + IA + sugestões + Word/PDF
+```
+
+Depois:
+
+```text
+LEGAL CONNECT
+PJe / eproc / SAJ / Projudi
+```
+
+---
+
+# 30. Arquitetura tecnológica recomendada
+
+Minha proposta não seria copiar Next.js/Vercel só porque a MinutaIA usa.
+
+Eu escolheria:
+
+```text
+FRONTEND
+React + TypeScript
+Next.js
+
+EDITOR
+Tiptap / ProseMirror
+
+BACKEND
+Python
+FastAPI
+
+DATABASE
+PostgreSQL + pgvector
+
+SEARCH
+Postgres FTS inicialmente
+OpenSearch quando necessário
+
+WORKFLOWS
+Temporal
+
+CACHE
+Redis
+
+OBJECT STORAGE
+S3 / MinIO
+
+AI GATEWAY
+OpenAI
+Anthropic
+Google
+Maritaca
+outros plugáveis
+
+OBSERVABILITY
+OpenTelemetry
+Langfuse
+Sentry
+
+SECURITY
+RBAC
+tenant isolation
+audit trail
+encryption
+```
+
+Para inteligência jurídica, Python traz hoje um ecossistema melhor para parsing documental, OCR, embeddings, ML, agentes e processamento jurídico do que colocar tudo dentro de Next.js.
+
+---
+
+# 31. Minha conclusão
+
+Depois deste levantamento, minha leitura é:
+
+**não precisamos descobrir ou copiar o código da MinutaIA para construir algo equivalente.**
+
+Já conseguimos identificar a maior parte de sua **arquitetura conceitual**.
+
+O produto pode ser resumido assim:
+
+```text
+                    MINUTA-LIKE
+                        │
+        ┌───────────────┼───────────────┐
+        │               │               │
+      AUTOS          CONHECIMENTO     USUÁRIO
+        │               │               │
+     fatos           skills           estilo
+     provas         legislação        modelos
+     páginas       jurisprudência    preferências
+        └───────────────┼───────────────┘
+                        │
+                  AGENTE JURÍDICO
+                        │
+             planeja → pesquisa
+                        │
+               consulta ferramentas
+                        │
+                 cria estratégia
+                        │
+                  gera roteiro
+                        │
+                 redige seções
+                        │
+                  verifica tudo
+                        │
+                    RED TEAM
+                        │
+                      EDITOR
+                        │
+                   DOCX / PDF
+```
+
+E o componente mais valioso, na minha avaliação, **não é GPT, Claude ou Gemini**. São quatro elementos trabalhando juntos:
+
+**skills jurídicas versionadas + recuperação híbrida de fontes + rastreabilidade factual + orquestração agêntica com supervisão humana.**
+
+Para o seu caso, eu não criaria necessariamente um segundo ecossistema jurídico separado. A estrutura pode ser incorporada como o **núcleo de inteligência jurídica do EJC**, aproveitando clientes, casos, processos, documentos e RAG que já existem e construindo por cima a camada tipo MinutaIA. Isso reduziria bastante duplicação e faria o EJC evoluir de ERP jurídico com IA para uma verdadeira plataforma de produção e raciocínio jurídico. 
+
+O próximo trabalho que vale a pena fazer é **transformar esta engenharia reversa funcional em uma especificação técnica completa do nosso sistema**, incluindo banco de dados, tabelas, APIs, serviços, agentes, skills, fluxo de processamento de documentos, engine jurisprudencial, editor, modelo de segurança e uma sequência de implementação por módulos. Isso já pode virar o projeto executivo para começar o desenvolvimento.

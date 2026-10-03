@@ -1,0 +1,74 @@
+# Worklog — Projeto JuridIA (Clone do MinutaIA)
+
+## Análise do Site Original (minutaia.com.br)
+
+O MinutaIA é uma LegalTech SaaS brasileira que usa IA generativa para produzir minutas/documentos jurídicos (petições, sentenças, despachos, contratos). Foi adquirida pelo Jusbrasil em agosto de 2026. Principais funcionalidades mapeadas:
+
+- **Geração de minutas com IA**: petições, sentenças, despachos, contratos etc.
+- **Múltiplos perfis de IA combinados** em cada etapa da geração.
+- **Processamento do inteiro teor** do processo em uma única operação (até 6 mil páginas).
+- **Jurisprudência inteligente** com pesquisa assistida por IA nos principais tribunais (TJ, STF, STJ etc.).
+- **Aprendizado de estilo**: aprende o estilo individual de redação do usuário.
+- **Anonimização local (tarja-1)**: detecta CPFs, nomes, endereços, valores e substitui por marcadores `[NOME_0001]` ANTES de enviar à IA; desanonimiza no retorno localmente.
+- **Conformidade LGPD e Resolução CNJ 615/2025**.
+- **Privacidade**: criptografia TLS + AES-256, sem treinar IA com dados dos usuários.
+- **Habilidades (skills)**: 2.000 pacotes de conhecimento jurídico orientando a geração.
+- **Editor**: páginas reais com timbrado, cabeçalho, rodapé, notas de rodapé, comentários, histórico de versões, tabelas, sumário, IA que sugere em vez de reescrever.
+- **Geração em Lote** com geração em etapas.
+- **Prints do Processo**: insere imagens do processo como figura.
+- **JurisprudênciaIA**: site público de pesquisa de jurisprudência conversando com IA.
+- **Conecta**: extensão Chrome que se integra a PJe, SEEU, Eproc, STF, Projudi, STJ, e-SAJ, SEI, JPe. OCR incluso.
+- **Estatísticas**: +90 mil usuários, +35 milhões de minutas geradas, +150 instituições públicas, 26+DF estados, +5 mil escritórios.
+- **Planos**: Individual I (R$140/mês, 100 minutas), Individual II (R$280, 200), Individual III (R$560, 400). Mensal/semestral (-10%)/anual (-25%).
+
+## Decisão de Arquitetura
+
+Como a rota única visível é `/`, vou construir uma SPA-style com **duas views controladas por estado**:
+1. **Landing**: hero + stats + features + tarja-1 + privacidade + novidades + integrações + planos + mídia + footer sticky.
+2. **Plataforma (App)**: dashboard com gerador de minutas (template, fatos, skills, preview anonimizado, editor + IA sugestões), busca de jurisprudência, geração em lote, lista de documentos salvos.
+
+**Stack**: Next.js 16 App Router, TS, Tailwind 4, shadcn/ui, Prisma+SQLite, z-ai-web-dev-sdk (LLM + web_search no backend), framer-motion.
+
+## Status Atual
+- Schema Prisma sendo desenhado.
+- Próximos passos: seed de dados, APIs, frontend landing + app.
+
+---
+Task ID: 1-7 (build completo)
+Agent: main (Z.ai Code)
+Task: Construir clone do MinutaIA chamado "JuridIA" — LegalTech de IA para geração de minutas jurídicas brasileiras com anonimização local (tarja-1), busca de jurisprudência, geração em lote, editor e planos.
+
+Work Log:
+- Analisado o site original minutaia.com.br via web-reader + web-search: mapeadas funcionalidades (anonimização tarja-1, múltiplos perfis de IA, jurisprudência inteligente, habilidades/skills, editor com sugestões, geração em lote, Conecta para PJe/Eproc/etc, conformidade LGPD + CNJ 615/2025, planos individuais R$140/R$280/R$560).
+- Definida arquitetura: SPA de rota única `/` com duas views (landing + app) via store Zustand persistida. Stack: Next.js 16 App Router + TS + Tailwind 4 + shadcn/ui + Prisma/SQLite + z-ai-web-dev-sdk (LLM + web_search no backend) + framer-motion.
+- Schema Prisma criado: User, Template, Skill, Document, JurisprudenceSearch, NewsItem. Aplicado com `bun run db:push`.
+- Seed: 6 templates (Petição Inicial Cível, Sentença, Apelação, Contrato de Prestação de Serviços, Parecer Jurídico, Despacho), 11 skills (CPC estrutura/competência, dano moral, LGPD, CP, CLT, CTN, CDC, CC responsabilidade civil, família alimentos, CNJ 615/2025), 5 novidades (Geração em Lote, Novo Editor, Prints do Processo, Habilidades, JurisprudênciaIA), 1 usuário demo.
+- Utilitário `src/lib/anonymize.ts`: detecção local de CPF, CNPJ, RG, telefone, e-mail, CEP, PIS, placa, conta bancária, valores R$, e nomes próprios (heurística com stop-words jurídicas). Funções `anonymize`, `deanonymize`, `detect`. Marcadores `[TIPO_0001]`.
+- Tipos compartilhados em `src/lib/types.ts` (TemplateDTO, SkillDTO, NewsDTO, DocumentDTO, GenerateMinutaRequest/Response, JurisprudenceResult/Response).
+- 7 API routes: `/api/templates`, `/api/skills`, `/api/news`, `/api/stats`, `/api/anonymize`, `/api/generate-minuta` (LLM com anonimização pré + desanonimização pós), `/api/jurisprudence` (web_search com cache 1h + persistência), `/api/documents` (GET/PATCH/DELETE).
+- Store Zustand persistido (`src/lib/store.ts`): view, appTab, currentDocId, selectedTemplateSlug, selectedSkillSlugs, authOpen, user.
+- Theme provider (next-themes) + useMounted hook (useSyncExternalStore) + ThemeToggle.
+- Header sticky com glass effect, navegação, login e "Acessar Plataforma". Sheet mobile.
+- Footer sticky (`mt-auto` + `min-h-screen flex flex-col`) com 4 colunas e social.
+- AuthDialog com login Google/email (simulado, ativa conta demo).
+- Landing (9 seções): Hero (com gradientes e badge de stats), Stats (4 cards buscando /api/stats), Features (6 cards), Anonymization (demo interativa tarja-1 com textarea + output + 3 pilares), Privacy (4 pilares), Integrations (9 sistemas + 5 features + extensão), News (6 cards de /api/news), Pricing (3 planos com toggle mensal/semestral/anual e tabs individual/corporativo/enterprise), Media (3 cards).
+- App (5 tabs): Generator (seletor de templates, formulário dinâmico por template, skills sugeridas + catálogo em Sheet, geração com animação de etapas anon→skills→llm→restoring, auto-navega para editor), Editor (textarea estilo "página" + preview renderizado + tab marcadores + tab metadados + pedir sugestão IA + localizar/substituir + download .txt/.md + salvar via PATCH), JurisprudenceIA (modo IA/palavra-chave + queries sugeridas + resultados reais do web_search), Batch (CRUD de casos + geração em lote com primeiro modelo aprovado), DocumentsList (grid de minutas salvas com filtro + abrir/excluir).
+- Paleta CSS customizada (verde-escuro legal + amber, sem indigo/azul) em claro/escuro. Utilities: container-juridia, bg-dot, gradient-text, glass, doc-page (página com serifa), marker-chip, scrollbar-juridia, animações marquee/pulse-soft.
+- ESLint limpo (0 erros, 0 warnings).
+- Dev server iniciado com `setsid -f next dev -p 3000 -H 0.0.0.0` (binding 0.0.0.0 é essencial para o gateway Caddy na porta 81 alcançar o localhost:3000).
+- Self-verification com agent-browser (via http://21.0.7.103:81/):
+  - Landing renderiza 100% (title "JuridIA — Inteligência Artificial para o Direito Brasileiro", h1 "O futuro do Direito brasileiro começa aqui", body 98540 chars, todas as seções presentes).
+  - Click "Acessar Plataforma" → app view com 5 tabs.
+  - Templates carregam (6 cards), seleção "Petição Inicial (Cível)" funciona.
+  - Formulário preenchido (autor "João Carlos da Silva", réu "Banco XYZ S.A.", valor "R$ 50.000,00").
+  - "Gerar minuta com IA" → LLM gera petição real em português jurídico (35s), marcadores [CPF_0001]/[RG_0001]/[ENDERECO_0001] preservados, nome restaurado localmente, auto-switch para Editor.
+  - Editor mostra título "Petição Inicial (Cível) — 03/10/2026" com tabs Editar/Visualizar/Marcadores/Metadados.
+  - Anonimização (tarja-1): click "Anonimizar localmente" → output com [NOME_0001], [CPF_0001], [RG_0001] + 12 marker chips + mapa detalhado.
+  - JurisprudênciaIA: query "cliente inscrito indevidamente..." → 7 resultados reais (ex: TJ-SC Apelação) com links "Abrir fonte".
+  - Footer: body min-h-screen flex-col + mt-auto funciona (footerAtBottom=true).
+- APIs: stats/templates/skills/news/documents/anonymize/generate-minuta/jurisprudence todas HTTP 200.
+
+Stage Summary:
+- Projeto JuridIA totalmente funcional end-to-end. Clone do MinutaIA com todas as features principais: landing completa, plataforma de geração de minutas com IA + anonimização local (tarja-1), busca de jurisprudência real, geração em lote, editor com sugestões, 6 templates, 11 skills, planos, e footer sticky.
+- Dev server sobrevive entre comandos bash usando `setsid -f` (fork completo) + bind 0.0.0.0. Acesso externo via gateway Caddy porta 81.
+- Próxima fase: cron webDevReview a cada 15 min para revisão/QA contínuos e adição incremental de features.

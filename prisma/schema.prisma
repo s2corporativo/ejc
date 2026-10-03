@@ -1,0 +1,89 @@
+// Prisma schema — JuridIA (clone do MinutaIA)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  plan      String   @default("free") // free | individual_1 | individual_2 | individual_3 | enterprise
+  minutasUsed     Int      @default(0)
+  minutasLimit    Int      @default(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  documents Document[]
+}
+
+model Template {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  category    String   // peticao | sentenca | despacho | contrato | parecer | recurso
+  description String
+  prompt      String   // system prompt base
+  fields      String   // JSON string com campos do formulário
+  icon        String   @default("FileText")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Skill {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  category    String   // civil | penal | trabalhista | tributario | consumer | family
+  description String
+  content     String   // texto legivel que orienta o modelo (estilo "habilidades")
+  locked      Boolean  @default(false) // # fixa inegociável
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Document {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title            String
+  templateSlug     String
+  templateName     String
+  rawFacts         String   // fatos brutos informados pelo usuário
+  anonymizedFacts String   // fatos com marcadores [NOME_0001] etc.
+  markers          String   // JSON mapa marcador -> valor original
+  generatedContent String   // minuta gerada (com marcadores restaurados)
+  skillSlugs       String   // JSON array de skills usadas
+  status           String   @default("draft") // draft | generated | archived
+  batchId          String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([userId])
+  @@index([batchId])
+}
+
+model JurisprudenceSearch {
+  id        String   @id @default(cuid())
+  userId    String?
+  query     String
+  mode      String   @default("ai") // ai | keyword
+  results   String   // JSON array
+  createdAt DateTime @default(now())
+}
+
+model NewsItem {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  summary     String
+  body        String
+  category    String   // recurso | novoproduto | recado | parceria
+  date        DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
