@@ -148,42 +148,60 @@ afterEach(() => {
 });
 
 describe("EntradaUnica — tela inicial (A.1)", () => {
-  it("renderiza relato, dropzone com limites e botão Analisar desabilitado", async () => {
+  it("renderiza a entrada progressiva compacta com relato e anexos", async () => {
     montar();
+    expect(screen.getByLabelText("Relato do cliente")).toBeTruthy();
     expect(
-      screen.getByLabelText("Relato do cliente"),
+      screen.getByRole("button", { name: "Anexar documentos" }),
     ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Anexar documentos" })).toBeTruthy();
     expect(screen.getByTestId("entrada-file-input")).toBeTruthy();
-    await waitFor(() => expect(getMock).toHaveBeenCalledWith("/entrada-universal/meta"));
-    const botao = screen.getByRole("button", {
-      name: "Analisar relato e documentos",
-    }) as HTMLButtonElement;
-    expect(botao.disabled).toBe(true);
+    expect(
+      screen.getByRole("button", { name: "Analisar relato e documentos" }),
+    ).toBeTruthy();
+    await waitFor(() =>
+      expect(getMock).toHaveBeenCalledWith("/entrada-universal/meta"),
+    );
   });
 
-  it("habilita Analisar com relato ≥ 40 caracteres OU ≥ 1 arquivo", () => {
+  it("só dispara análise com relato ≥ 40 caracteres OU ≥ 1 arquivo", async () => {
     montar();
     const botao = screen.getByRole("button", {
       name: "Analisar relato e documentos",
-    }) as HTMLButtonElement;
+    });
 
     preencherRelato(39);
-    expect(botao.disabled).toBe(true);
+    fireEvent.click(botao);
+    expect(postMock).not.toHaveBeenCalled();
 
+    postMock.mockResolvedValueOnce({
+      data: { rascunho_id: "r-valid", cliente: {}, area: {}, documentos: [] },
+    });
     preencherRelato(40);
-    expect(botao.disabled).toBe(false);
+    fireEvent.click(botao);
+    await waitFor(() =>
+      expect(postMock).toHaveBeenCalledWith(
+        "/entrada/analisar",
+        expect.any(FormData),
+        expect.any(Object),
+      ),
+    );
 
-    // Sem relato, um arquivo basta.
-    preencherRelato(0);
-    expect(botao.disabled).toBe(true);
+    cleanup();
+    postMock.mockReset();
+    postMock.mockResolvedValueOnce({
+      data: { rascunho_id: "r-file", cliente: {}, area: {}, documentos: [] },
+    });
+    montar();
     const input = screen.getByTestId("entrada-file-input");
     fireEvent.change(input, {
       target: {
         files: [new File(["x"], "doc.pdf", { type: "application/pdf" })],
       },
     });
-    expect(botao.disabled).toBe(false);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Analisar relato e documentos" }),
+    );
+    await waitFor(() => expect(postMock).toHaveBeenCalledTimes(1));
   });
 });
 
