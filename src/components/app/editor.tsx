@@ -14,6 +14,8 @@ import {
   X,
   FileText,
   Printer,
+  Type,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,6 +48,10 @@ export function Editor() {
   const [suggestion, setSuggestion] = useState<string | null>(null);
   const [suggLoading, setSuggLoading] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
+
+  // Word count and reading time (computed)
+  const wordCount = content.split(/\s+/).filter(Boolean).length;
+  const readMin = Math.max(1, Math.round(wordCount / 200));
 
   // Histórico de versões (in-memory)
   interface Version {
@@ -165,6 +171,38 @@ export function Editor() {
     a.download = `${title.replace(/[^\w\s-]/g, "")}.md`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  // Exporta um documento .doc (HTML com namespace Word, abre no Word/Google Docs)
+  function downloadDocx() {
+    const htmlBody = contentToHtml(content);
+    const fullHtml = `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${esc(title)}</title>
+    <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
+    <style>
+      @page Section1 { size: 21cm 29.7cm; margin: 2.5cm 2.5cm 2.5cm 2.5cm; }
+      div.Section1 { page: Section1; }
+      body { font-family: 'Times New Roman', Georgia, serif; font-size: 12pt; line-height: 1.75; color: #1a1a1a; }
+      h1 { font-size: 16pt; text-transform: uppercase; margin: 0 0 12pt; text-align: center; }
+      h2 { font-size: 13pt; text-transform: uppercase; margin: 18pt 0 8pt; }
+      h3 { font-size: 12pt; margin: 14pt 0 6pt; }
+      p { margin: 0 0 8pt; text-align: justify; text-indent: 1.25cm; }
+      p:first-of-type { text-indent: 0; }
+      ul, ol { margin: 0 0 8pt 1.5cm; }
+      .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 8pt; margin-bottom: 16pt; }
+      .footer { margin-top: 24pt; border-top: 1px solid #ccc; padding-top: 8pt; text-align: center; font-size: 9pt; color: #666; }
+    </style></head><body><div class="Section1">
+    <div class="header"><h1>${esc(title)}</h1></div>
+    ${htmlBody}
+    <div class="footer">Gerado por JuridIA — Inteligência Artificial para o Direito Brasileiro · ${new Date().toLocaleDateString("pt-BR")}</div>
+    </div></body></html>`;
+    const blob = new Blob(["\ufeff", fullHtml], { type: "application/msword" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${title.replace(/[^\w\s-]/g, "")}.doc`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: "Documento .doc exportado", description: "Abra no Word ou Google Docs." });
   }
 
   function downloadTxt() {
@@ -319,6 +357,24 @@ export function Editor() {
                 <span>{doc.skillSlugs.length} skill(s) aplicada(s)</span>
               </>
             )}
+            <span>·</span>
+            <span className="flex items-center gap-1">
+              <Type className="h-3 w-3" />
+              {wordCount.toLocaleString("pt-BR")} palavras
+            </span>
+            <span>·</span>
+            <span className="flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              {readMin} min de leitura
+            </span>
+            {dirty && (
+              <>
+                <span>·</span>
+                <Badge variant="outline" className="gap-1 text-[10px] text-amber-600">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> não salvo
+                </Badge>
+              </>
+            )}
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -429,6 +485,9 @@ export function Editor() {
 
           <Button variant="outline" size="sm" onClick={printPdf}>
             <Printer className="mr-1.5 h-4 w-4" /> PDF
+          </Button>
+          <Button variant="outline" size="sm" onClick={downloadDocx}>
+            <Download className="mr-1.5 h-4 w-4" /> .doc
           </Button>
           <Button variant="outline" size="sm" onClick={downloadTxt}>
             <Download className="mr-1.5 h-4 w-4" /> .txt

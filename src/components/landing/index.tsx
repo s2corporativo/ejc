@@ -11,6 +11,7 @@ import { Testimonials } from "./testimonials";
 import { News } from "./news";
 import { Pricing } from "./pricing";
 import { Faq } from "./faq";
+import { CtaNewsletter } from "./cta-newsletter";
 import { Media } from "./media";
 
 export function Landing() {
@@ -27,6 +28,7 @@ export function Landing() {
       <News />
       <Pricing />
       <Faq />
+      <CtaNewsletter />
       <Media />
     </>
   );

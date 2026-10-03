@@ -165,3 +165,35 @@ Stage Summary:
 - Command palette com comando de configurações.
 - 0 erros console, 0 ESLint, dev server saudável.
 - Próxima fase sugerida: autenticação NextAuth real, persistência de versões no DB, favoritos/marcadores em minutas, export DOCX, busca full-text nos documentos, painel admin de templates.
+
+---
+Task ID: 11 (cron webDevReview #4)
+Agent: cron webDevReview (15min)
+Task: Continuar QA e adicionar features. Priorizar busca full-text, favoritos, export DOCX, CTA/newsletter, contador de palavras.
+
+Work Log:
+- Lido worklog anterior (review #3): Settings tab, /api/suggest real LLM, Testimonials, skeleton loading, command palette atualizado.
+- Dev server confirmado ativo (PID 4517, HTTP 200, 0 erros no dev.log, todas APIs HTTP 200, /api/suggest 405 GET esperado).
+- QA via agent-browser (após limpar localStorage): landing 12 seções, H1 correto, 7 tabs no app, 0 erros de console.
+- DOCUMENTS LIST reescrito com: (1) BUSCA FULL-TEXT em título + templateName + generatedContent + anonymizedFacts + skillSlugs, com highlight de matches via <mark> estilizado; (2) FAVORITOS persistidos em localStorage (toggle por estrela, filtro "Favoritas" com badge de contagem, favoritos aparecem primeiro na ordenação padrão); (3) ORDENAÇÃO por atualizado/criado/título/tamanho via Select; (4) STATS no header (total de minutas, favoritas, palavras); (5) card aprimorado com badges (template, favorita), data, palavra count, tempo de leitura, animação framer-motion stagger; (6) estado vazio diferenciado (busca vs. sem docs); (7) botão "Limpar filtros".
+- EDITOR atualizado com: (1) CONTADOR DE PALAVRAS em tempo real (wordCount = content.split); (2) TEMPO DE LEITURA estimado (200 pal/min); (3) BADGE "não salvo" com pulse quando dirty; (4) EXPORT .DOC (HTML com namespace Word XML, @page Section1, Times New Roman, justificado com indent, abre direto no Word/Google Docs); (5) nova toolbar com PDF | .doc | .txt | .md | Salvar.
+- NOVA SEÇÃO "CTA + Newsletter" na landing (src/components/landing/cta-newsletter.tsx): card dividido em 2 colunas — CTA "Pronto para acelerar sua advocacia?" com botões "Testar gratuitamente" e "Ver plataforma" + 3 checks (3 minutas grátis, sem cartão, LGPD), e formulário de newsletter com validação de email, estado submitted com feedback positivo. Landing agora tem 13 seções.
+- ESLint limpo (0 erros, 0 warnings).
+- Verificação final via agent-browser:
+  - Landing: 13 seções, CTA com título correto, newsletter submete e mostra "Inscrição confirmada!".
+  - Documents: 3 minutas, busca "PETIÇÃO" → 3 resultados com highlight mark, favoritos toggle funciona, filtro "Favoritas" mostra 1 doc, ordenação via Select.
+  - Editor: "652 palavras" e "3 min de leitura" exibidos no header, botão .doc presente.
+  - 0 erros de console em todos os testes.
+
+Stage Summary:
+- Busca full-text com highlight implementada nos documentos.
+- Sistema de favoritos persistido em localStorage com filtro e ordenação prioritária.
+- Ordenação multi-critério (atualizado/criado/título/tamanho) via Select.
+- Stats no header dos documentos (total, favoritas, palavras).
+- Contador de palavras e tempo de leitura em tempo real no editor.
+- Badge "não salvo" com pulse indicator no editor.
+- Export .doc (Word/Google Docs compatível) adicionado ao editor.
+- Seção CTA + Newsletter na landing com validação e feedback.
+- 13 seções na landing, 7 tabs no app, 9 templates, 17 skills.
+- 0 erros console, 0 ESLint, dev server saudável.
+- Próxima fase sugerida: autenticação NextAuth real, persistência de versões no DB, painel admin de templates, integração PJe real, mobile app.
