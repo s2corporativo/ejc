@@ -54,6 +54,63 @@ def _matches_stem(text: str, stem: str) -> bool:
     return re.search(rf"(?<!\w){re.escape(token)}\w*", text) is not None
 
 
+_CLAUSE_BREAK = re.compile(r"[.;:,!?()\[\]\n]")
+_NEGATORS = frozenset({"nao", "sem", "nunca", "jamais", "nem", "nenhum", "nenhuma"})
+_CONTRAST = frozenset({"mas", "porem", "contudo", "todavia", "entretanto"})
+_NEGATION_WINDOW = 3
+
+# Questão de outra área só entra com indício mais forte que um termo isolado.
+_MIN_SCORE = 1
+_MIN_SCORE_OUT_OF_AREA = 2
+
+
+def _is_negated(text: str, start: int) -> bool:
+    """Negação simples: negador até 3 palavras antes do termo, na mesma oração.
+
+    Vírgula/ponto/dois-pontos e conjunções adversativas encerram o alcance.
+    """
+
+    segment = _CLAUSE_BREAK.split(text[:start])[-1]
+    window = segment.split()[-_NEGATION_WINDOW:]
+    for idx in range(len(window) - 1, -1, -1):
+        if window[idx] in _CONTRAST:
+            window = window[idx + 1 :]
+            break
+    return any(word in _NEGATORS for word in window)
+
+
+def _split_negated(
+    text: str, pattern: str, terms: tuple[str, ...]
+) -> tuple[list[str], list[str]]:
+    """Separa termos com ocorrência afirmada dos que só aparecem sob negação."""
+
+    affirmed: list[str] = []
+    negated: list[str] = []
+    for term in terms:
+        token = _norm(term)
+        if not token:
+            continue
+        hits = list(re.finditer(pattern.format(re.escape(token)), text))
+        if not hits:
+            continue
+        if any(not _is_negated(text, hit.start()) for hit in hits):
+            affirmed.append(term)
+        else:
+            negated.append(term)
+    return affirmed, negated
+
+
+def _confidence(score: int, *, out_of_area: bool) -> float:
+    """Confiança lexical determinística: 1 - 0.6**score (0.40, 0.64, 0.78...)."""
+
+    if score <= 0:
+        return 0.0
+    value = 1.0 - 0.6**score
+    if out_of_area:
+        value *= 0.5
+    return round(value, 2)
+
+
 def _matches_phrase(text: str, phrase: str) -> bool:
     """Casa uma expressão multi-termo como sequência de palavras inteiras."""
 
@@ -269,45 +326,66 @@ def identify_legal_issues(
     """Identifica questões candidatas sem decidir mérito ou inferir fatos.
 
     Regras transversais continuam elegíveis em qualquer área canônica. Regras de
-    ramo só são consideradas quando compatíveis com a área informada.
+    ramo compatíveis com a área informada entram com indício mínimo; regras de
+    outra área (área mista) só entram com indício mais forte e confiança
+    reduzida, sem descartar a questão de maior pontuação. Termos sob negação
+    simples ("não houve", "sem", "nunca") não contam como indício e ficam em
+    ``negated_terms``. Sem indício suficiente, cai em ``saneamento_inicial``
+    (fail-safe: pedir esclarecimento, nunca afirmar enquadramento).
     """
 
     normalized = _norm(text)
     normalized_area = _norm(area).replace(" ", "_") if area else ""
-    found: list[LegalIssue] = []
+    candidates: list[tuple[int, int, LegalIssue]] = []
+    all_negated: list[str] = []
 
-    for rule in _RULES:
-        if normalized_area and not rule.transversal and normalized_area not in rule.areas:
+    for order, rule in enumerate(_RULES):
+        out_of_area = bool(
+            normalized_area and not rule.transversal and normalized_area not in rule.areas
+        )
+        kw, kw_neg = _split_negated(normalized, r"(?<!\w){}(?!\w)", rule.keywords)
+        st, st_neg = _split_negated(normalized, r"(?<!\w){}\w*", rule.stems)
+        # Frases já carregam a própria polaridade ("não possui contrato" é
+        # indício de lacuna) e, na regra de prova, a negação do substantivo
+        # ("sem prova") é justamente a lacuna: negação não se aplica a elas.
+        ph = tuple(p for p in rule.phrases if _matches_phrase(normalized, p))
+        if rule.key == "prova_onus_lacunas":
+            kw, kw_neg = kw + kw_neg, []
+            st, st_neg = st + st_neg, []
+        matched = tuple(kw) + tuple(st) + ph
+        negated = tuple(kw_neg) + tuple(st_neg)
+        all_negated.extend(negated)
+        score = len(matched)
+        if score < (_MIN_SCORE_OUT_OF_AREA if out_of_area else _MIN_SCORE):
             continue
-        matched_keywords = tuple(
-            keyword for keyword in rule.keywords if _matches_keyword(normalized, keyword)
-        )
-        matched_stems = tuple(
-            stem for stem in rule.stems if _matches_stem(normalized, stem)
-        )
-        matched_phrases = tuple(
-            phrase for phrase in rule.phrases if _matches_phrase(normalized, phrase)
-        )
-        matched = matched_keywords + matched_stems + matched_phrases
-        if not matched:
-            continue
-        found.append(
-            LegalIssue(
-                key=rule.key,
-                title=rule.title,
-                area=normalized_area or (rule.areas[0] if rule.areas else "transversal"),
-                question=rule.question,
-                matched_terms=matched,
-                required_questions=rule.required_questions,
-                required_evidence=rule.required_evidence,
-                risks=rule.risks,
+        candidates.append(
+            (
+                score,
+                order,
+                LegalIssue(
+                    key=rule.key,
+                    title=rule.title,
+                    area=(
+                        rule.areas[0]
+                        if out_of_area
+                        else normalized_area or (rule.areas[0] if rule.areas else "transversal")
+                    ),
+                    question=rule.question,
+                    matched_terms=matched,
+                    required_questions=rule.required_questions,
+                    required_evidence=rule.required_evidence,
+                    risks=rule.risks,
+                    score=score,
+                    confidence=_confidence(score, out_of_area=out_of_area),
+                    negated_terms=negated,
+                ),
             )
         )
-        if len(found) >= max(1, limit):
-            break
 
-    if found:
-        return tuple(found)
+    if candidates:
+        # O limite preserva as de maior pontuação; a saída mantém a ordem das regras.
+        kept = sorted(candidates, key=lambda c: (-c[0], c[1]))[: max(1, limit)]
+        return tuple(issue for _, _, issue in sorted(kept, key=lambda c: c[1]))
 
     return (
         LegalIssue(
@@ -326,5 +404,6 @@ def identify_legal_issues(
                 "identificação das partes",
             ),
             risks=("conclusão sem enquadramento suficiente",),
+            negated_terms=tuple(dict.fromkeys(all_negated)),
         ),
     )
