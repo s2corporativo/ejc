@@ -73,7 +73,10 @@ async def construir_snapshot_referencia(db, competencia: str, *, pre_fechamento:
           COALESCE((SELECT SUM(cc.valor) FROM centro_custos cc
                     WHERE cc.deleted_at IS NULL AND CAST(cc.tipo AS text)='despesa' AND cc.pago=TRUE
                       AND COALESCE(cc.data_pagamento,cc.data_lancamento)>=:inicio
-                      AND COALESCE(cc.data_pagamento,cc.data_lancamento)<:fim),0) AS despesas_casos,
+                      AND COALESCE(cc.data_pagamento,cc.data_lancamento)<:fim),0)
+          + COALESCE((SELECT SUM(cd.valor) FROM case_despesas cd
+                    WHERE cd.deleted_at IS NULL
+                      AND cd.data>=:inicio AND cd.data<:fim),0) AS despesas_casos,
           COALESCE((SELECT SUM(a.valor_advogado) FROM case_receipt_allocations a
                     JOIN fee_payments fp ON fp.id=a.fee_payment_id
                     WHERE fp.data_pagamento>=:inicio AND fp.data_pagamento<:fim),0) AS comissoes_geradas,
@@ -323,12 +326,24 @@ async def resultado_escritorio_competencia(db, competencia: str) -> Decimal:
                 ),
                 despesas AS (
                     SELECT case_id, COALESCE(SUM(valor),0) AS valor
-                    FROM centro_custos
-                    WHERE deleted_at IS NULL
-                      AND CAST(tipo AS text)='despesa'
-                      AND pago=TRUE
-                      AND COALESCE(data_pagamento,data_lancamento) >= :inicio
-                      AND COALESCE(data_pagamento,data_lancamento) < :fim
+                    FROM (
+                        SELECT case_id, valor
+                        FROM centro_custos
+                        WHERE deleted_at IS NULL
+                          AND CAST(tipo AS text)='despesa'
+                          AND pago=TRUE
+                          AND COALESCE(data_pagamento,data_lancamento) >= :inicio
+                          AND COALESCE(data_pagamento,data_lancamento) < :fim
+                        UNION ALL
+                        -- Despesa processual reembolsável (case_despesas) é saída de
+                        -- caixa do escritório na data do adiantamento; o reembolso do
+                        -- cliente entra como receita (fee custas_despesas). Sem esta
+                        -- parcela o reembolso aparecia como lucro (plano ERP, E2).
+                        SELECT case_id, valor
+                        FROM case_despesas
+                        WHERE deleted_at IS NULL
+                          AND data >= :inicio AND data < :fim
+                    ) d
                     GROUP BY case_id
                 ),
                 comissoes_base AS (
