@@ -9,6 +9,8 @@ um estado equivalente: divergência exige reconciliação explícita, nunca perd
 silenciosa ou sobrescrita. Migrations anteriores permanecem imutáveis.
 """
 
+import json
+
 from alembic import op
 import sqlalchemy as sa
 
@@ -196,6 +198,11 @@ def _validar(q):
         ):
             raise RuntimeError("Preliminares: RLS existente exige preservação explícita antes do cutover")
     for antiga, nova, _, renomes in FONTES:
+        if op.get_bind().execute(sa.text("""
+            SELECT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid=to_regclass(:name) AND NOT tgisinternal)
+                OR EXISTS(SELECT 1 FROM pg_rewrite WHERE ev_class=to_regclass(:name))
+        """), {"name": q(antiga)}).scalar_one():
+            raise RuntimeError("Preliminares: trigger/regra legada exige revisão antes do cutover")
         atual = {c["name"] for c in inspector.get_columns(antiga)}
         if atual != set(COLUNAS[antiga]):
             raise RuntimeError("Preliminares: schema legado divergente; reconciliação necessária")
@@ -258,11 +265,14 @@ def _espelhos(q):
                 fallback = f'DELETE FROM {q(old + "_legado_171")} WHERE id=NEW.id;' if nova != "preliminares" else ""
             writes.append(f"IF origem_atual='{source}' THEN {_upsert(q, fonte)} ELSE {fallback} END IF;")
         name = f"espelhar_171_{nova}"
-        _sql(f"""CREATE FUNCTION {q(name)}() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS $$
-            DECLARE origem_atual text;
+        _sql(f"""CREATE FUNCTION {q(name)}() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+            DECLARE origem_atual pg_catalog.text;
             BEGIN
-                IF TG_RELID <> '{relation}'::regclass THEN
+                IF TG_RELID <> '{relation}'::pg_catalog.regclass THEN
                     RAISE EXCEPTION 'Espelho restrito à tabela canônica';
+                END IF;
+                IF TG_OP='TRUNCATE' THEN
+                    RAISE EXCEPTION 'TRUNCATE proibido durante o espelhamento de rollback';
                 END IF;
                 IF TG_OP='UPDATE' AND OLD.id IS DISTINCT FROM NEW.id THEN
                     RAISE EXCEPTION 'ID de preliminar imutável';
@@ -296,6 +306,7 @@ def _espelhos(q):
         _sql(
             f"CREATE TRIGGER {name} AFTER INSERT OR UPDATE OR DELETE ON {q(nova)} FOR EACH ROW EXECUTE FUNCTION {q(name)}()"
         )
+        _sql(f"CREATE TRIGGER impedir_truncate_171_{nova} BEFORE TRUNCATE ON {q(nova)} FOR EACH STATEMENT EXECUTE FUNCTION {q(name)}()")
 
 
 def _acl(q, name):
@@ -307,14 +318,16 @@ def _acl(q, name):
     grants = conn.execute(
         sa.text("""
         SELECT coalesce(r.rolname, 'PUBLIC') AS role, a.privilege_type,
-               a.is_grantable, NULL::text AS column_name
+               a.is_grantable, NULL::text AS column_name, grantor.rolname AS grantor_role
         FROM pg_class c CROSS JOIN LATERAL aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
-        LEFT JOIN pg_roles r ON r.oid=a.grantee WHERE c.oid=to_regclass(:name)
+        LEFT JOIN pg_roles r ON r.oid=a.grantee
+        JOIN pg_roles grantor ON grantor.oid=a.grantor WHERE c.oid=to_regclass(:name)
         UNION ALL
         SELECT coalesce(r.rolname, 'PUBLIC'), a.privilege_type,
-               a.is_grantable, att.attname
+               a.is_grantable, att.attname, grantor.rolname
         FROM pg_attribute att CROSS JOIN LATERAL aclexplode(att.attacl) a
         LEFT JOIN pg_roles r ON r.oid=a.grantee
+        JOIN pg_roles grantor ON grantor.oid=a.grantor
         WHERE att.attrelid=to_regclass(:name) AND att.attnum>0
     """),
         {"name": q(name)},
@@ -322,23 +335,91 @@ def _acl(q, name):
     return owner, grants
 
 
-def _restaurar_acl(q, name, acl):
-    owner, grants = acl
+def _revogar_acl(q, name):
     quote = op.get_bind().dialect.identifier_preparer.quote_identifier
-    # Revoga grants vindos de default privileges da nova view, antes de
-    # reproduzir exatamente o acesso legado. Nunca concede grants na base.
     _, defaults = _acl(q, name)
     for role in {g.role for g in defaults}:
         target = "PUBLIC" if role == "PUBLIC" else quote(role)
-        _sql(f"REVOKE ALL PRIVILEGES ON {q(name)} FROM {target}")
-    for role, privilege, grantable, column in grants:
-        if privilege not in {"SELECT", "INSERT", "UPDATE", "DELETE"}:
-            continue  # TRUNCATE/REFERENCES/TRIGGER não são operações de views.
-        target = "PUBLIC" if role == "PUBLIC" else quote(role)
-        cols = f" ({quote(column)})" if column else ""
-        option = " WITH GRANT OPTION" if grantable else ""
-        _sql(f"GRANT {privilege}{cols} ON {q(name)} TO {target}{option}")
-    _sql(f"ALTER VIEW {q(name)} OWNER TO {quote(owner)}")
+        _sql(f"REVOKE ALL PRIVILEGES ON {q(name)} FROM {target} CASCADE")
+    for role, _, _, column, _ in defaults:
+        if column:
+            target = "PUBLIC" if role == "PUBLIC" else quote(role)
+            _sql(f"REVOKE ALL PRIVILEGES ({quote(column)}) ON {q(name)} FROM {target} CASCADE")
+
+
+def _restaurar_acl(q, name, acl, *, view=True):
+    owner, grants = acl
+    quote = op.get_bind().dialect.identifier_preparer.quote_identifier
+    kind = "VIEW" if view else "TABLE"
+    _sql(f"ALTER {kind} {q(name)} OWNER TO {quote(owner)}")
+    _revogar_acl(q, name)
+    executor = op.get_bind().execute(sa.text("SELECT current_user")).scalar_one()
+    pending = [g for g in grants if not view or g[1] in {"SELECT", "INSERT", "UPDATE", "DELETE"}]
+    while pending:
+        progress = False
+        for grant in list(pending):
+            role, privilege, grantable, column, grantor = grant
+            params = {"role": grantor, "table": q(name), "privilege": privilege + " WITH GRANT OPTION"}
+            if column:
+                params["column"] = column
+                check = "SELECT has_column_privilege(:role,:table,:column,:privilege)"
+            else:
+                check = "SELECT has_table_privilege(:role,:table,:privilege)"
+            if not op.get_bind().execute(sa.text(check), params).scalar_one():
+                continue
+            target = "PUBLIC" if role == "PUBLIC" else quote(role)
+            cols = f" ({quote(column)})" if column else ""
+            option = " WITH GRANT OPTION" if grantable else ""
+            # O executor autorizado a trocar o owner concede em seu nome,
+            # sem exigir USAGE de schema que o owner antigo pode não possuir.
+            # Grants delegados precisam do papel original para manter a cadeia.
+            if grantor != owner:
+                _sql(f"SET LOCAL ROLE {quote(grantor)}")
+            _sql(f"GRANT {privilege}{cols} ON {q(name)} TO {target}{option}")
+            if grantor != owner:
+                _sql(f"SET LOCAL ROLE {quote(executor)}")
+            pending.remove(grant)
+            progress = True
+        if not progress:
+            raise RuntimeError("Preliminares: cadeia de ACL exige reconciliação")
+
+
+def _isolar_espelhos(q, acls):
+    # O executor de migrations é principal confiável; nunca executar com
+    # credencial compartilhada com consumidores SQL não confiáveis.
+    owner = op.get_bind().execute(sa.text("SELECT current_user")).scalar_one()
+    quote = op.get_bind().dialect.identifier_preparer.quote_identifier
+    for antiga, _, _, _ in FONTES:
+        name = antiga + "_legado_171"
+        _sql(f"ALTER TABLE {q(name)} OWNER TO {quote(owner)}")
+        _revogar_acl(q, name)
+        _sql(f"GRANT ALL PRIVILEGES ON {q(name)} TO {quote(owner)}")
+    # Metadados de ACL, sem conteúdo de casos; conservados até o downgrade.
+    metadata = json.dumps({n: [o, [list(g) for g in grants]] for n, (o, grants) in acls.items()})
+    literal = op.get_bind().execute(sa.text("SELECT quote_literal(:value)"), {"value": metadata}).scalar_one()
+    _sql(f"COMMENT ON FUNCTION {q('espelhar_171_preliminares')}() IS {literal}")
+
+
+def _projecao_legada(q, fonte, *, incluir_origem=False):
+    antiga, nova, origem, _ = fonte
+    columns = [f"{canonical} AS {old}" for old, canonical in _pares(fonte)]
+    if nova == "preliminares":
+        if incluir_origem:
+            columns.append("origem")
+        predicate = f"origem='{origem}'"
+    else:
+        predicate = f"EXISTS (SELECT 1 FROM {q('preliminares')} p WHERE p.id={q(nova)}.preliminar_id AND p.origem='{origem}')"
+    return f'SELECT {", ".join(columns)} FROM {q(nova)} WHERE {predicate}'
+
+
+def _validar_espelhos(q):
+    # Nunca executar a definição de view alterável por um owner legado.
+    for fonte in FONTES:
+        antiga = fonte[0]
+        columns = ", ".join(COLUNAS[antiga])
+        left = _projecao_legada(q, fonte)
+        right = f"SELECT {columns} FROM {q(antiga + '_legado_171')}"
+        _abortar_se(f"({left} EXCEPT ALL {right}) UNION ALL ({right} EXCEPT ALL {left})")
 
 
 def _views(q, defaults, acls):
@@ -347,14 +428,8 @@ def _views(q, defaults, acls):
     # RLS preexistente aborta em _validar, antes de qualquer transformação.
     for fonte in FONTES:
         antiga, nova, origem, _ = fonte
-        columns = [f"{canonical} AS {old}" for old, canonical in _pares(fonte)]
-        if nova == "preliminares":
-            columns.append("origem")
-            predicate = f"origem='{origem}'"
-        else:
-            predicate = f"EXISTS (SELECT 1 FROM {q('preliminares')} p WHERE p.id={q(nova)}.preliminar_id AND p.origem='{origem}')"
         _sql(
-            f'CREATE VIEW {q(antiga)} WITH (security_barrier=true) AS SELECT {", ".join(columns)} FROM {q(nova)} WHERE {predicate} WITH LOCAL CHECK OPTION'
+            f'CREATE VIEW {q(antiga)} WITH (security_barrier=true) AS {_projecao_legada(q, fonte, incluir_origem=True)} WITH LOCAL CHECK OPTION'
         )
         for col, default in defaults[antiga].items():
             _sql(f"ALTER VIEW {q(antiga)} ALTER COLUMN {col} SET DEFAULT {default}")
@@ -379,19 +454,25 @@ def upgrade():
         owner = acls[antiga][0]
         dependencies = {nova} if nova == "preliminares" else {nova, "preliminares"}
         for target in dependencies:
-            if (
-                not op.get_bind()
-                .execute(
-                    sa.text("SELECT has_table_privilege(:owner, :table, 'SELECT')"),
-                    {"owner": owner, "table": q(target)},
-                )
-                .scalar_one()
-            ):
-                raise RuntimeError("Preliminares: owner legado sem acesso canônico; reconciliação de ACL necessária")
+            required = {"SELECT"}
+            if target == nova:
+                required |= {g.privilege_type for g in acls[antiga][1]
+                             if g.privilege_type in {"INSERT", "UPDATE", "DELETE"}}
+            for privilege in required:
+                if (
+                    not op.get_bind()
+                    .execute(
+                        sa.text("SELECT has_table_privilege(:owner, :table, :privilege)"),
+                        {"owner": owner, "table": q(target), "privilege": privilege},
+                    )
+                    .scalar_one()
+                ):
+                    raise RuntimeError("Preliminares: owner legado sem acesso canônico; reconciliação de ACL necessária")
     _backfill(q)
     for name in names[: len(FONTES)]:
         _sql(f"ALTER TABLE {q(name)} RENAME TO {name}_legado_171")
     _espelhos(q)
+    _isolar_espelhos(q, acls)
     _views(q, defaults, acls)
 
 
@@ -401,11 +482,19 @@ def downgrade():
     # Mesmo lock usado pelo upgrade; dados novos já estão nos espelhos.
     names = list(CANONICAS) + [f[0] + "_legado_171" for f in FONTES]
     _sql(f'LOCK TABLE {", ".join(q(n) for n in names)} IN ACCESS EXCLUSIVE MODE')
+    _validar_espelhos(q)
+    metadata = op.get_bind().execute(sa.text("SELECT obj_description(to_regprocedure(:function), 'pg_proc')"),
+                                    {"function": q('espelhar_171_preliminares') + "()"}).scalar_one()
+    acls = json.loads(metadata)
+    if set(acls) != {f[0] for f in FONTES}:
+        raise RuntimeError("Preliminares: metadados de rollback incompatíveis")
     for antiga, _, _, _ in reversed(FONTES):
         _sql(f"DROP VIEW {q(antiga)}")
     for nova in CANONICAS:
         name = f"espelhar_171_{nova}"
         _sql(f"DROP TRIGGER {name} ON {q(nova)}")
+        _sql(f"DROP TRIGGER impedir_truncate_171_{nova} ON {q(nova)}")
         _sql(f"DROP FUNCTION {q(name)}()")
     for antiga, _, _, _ in FONTES:
         _sql(f'ALTER TABLE {q(antiga + "_legado_171")} RENAME TO {antiga}')
+        _restaurar_acl(q, antiga, acls[antiga], view=False)

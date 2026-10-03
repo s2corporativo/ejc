@@ -291,7 +291,124 @@ def test_funcoes_de_espelho_nao_sao_api_de_usuario(banco):
             text("SELECT prosecdef, proconfig FROM pg_proc WHERE oid=to_regprocedure(:fn)"), {"fn": function}
         ).one()
         assert row.prosecdef
-        assert row.proconfig == ["search_path=pg_catalog"]
+        assert row.proconfig == ["search_path=pg_catalog, pg_temp"]
         assert not banco.execute(
             text("SELECT has_function_privilege(:role,:fn,'EXECUTE')"), {"role": role, "fn": function}
         ).scalar()
+
+
+def test_tipo_temporario_nao_executa_codigo_no_contexto_do_definer(banco):
+    role = "test_preliminar_temp_" + uuid4().hex
+    schema = banco.execute(text("SELECT current_schema()")).scalar_one()
+    banco.execute(text(f'CREATE ROLE "{role}"'))
+    banco.execute(text(f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"'))
+    banco.execute(text(f'GRANT SELECT, INSERT ON raio_x_analises TO "{role}"'))
+    migrar(banco)
+    banco.execute(text(f'SET LOCAL ROLE "{role}"'))
+    banco.execute(text("CREATE TEMP TABLE captura_definer(actor pg_catalog.text)"))
+    banco.execute(text("""CREATE FUNCTION pg_temp.validar_texto(v pg_catalog.text) RETURNS boolean
+        LANGUAGE plpgsql AS $$ BEGIN
+        INSERT INTO pg_temp.captura_definer VALUES (current_user); RETURN true; END $$"""))
+    banco.execute(text("CREATE DOMAIN pg_temp.text AS pg_catalog.text CHECK (pg_temp.validar_texto(VALUE))"))
+    banco.execute(text("INSERT INTO raio_x_analises(id,titulo,created_by) VALUES ('r2','Ficticio','u2')"))
+    assert not banco.execute(text("SELECT actor FROM pg_temp.captura_definer")).scalars().all()
+    banco.execute(text("RESET ROLE"))
+
+
+def test_espelho_isolado_restaura_owner_e_acl_no_downgrade(banco):
+    legado(banco)
+    role = "test_preliminar_mirror_owner_" + uuid4().hex
+    banco.execute(text(f'CREATE ROLE "{role}"'))
+    banco.execute(text(f'ALTER TABLE legal_chat_sessions OWNER TO "{role}"'))
+    banco.execute(text(f'GRANT ALL ON preliminares TO "{role}"'))
+    migrar(banco)
+    assert not banco.execute(text("SELECT has_table_privilege(:r,'legal_chat_sessions_legado_171','INSERT')"), {"r": role}).scalar_one()
+    assert not banco.execute(text("SELECT has_table_privilege(:r,'legal_chat_sessions_legado_171','TRIGGER')"), {"r": role}).scalar_one()
+    migrar(banco, "downgrade")
+    assert banco.execute(text("SELECT has_table_privilege(:r,'legal_chat_sessions','INSERT')"), {"r": role}).scalar_one()
+    assert banco.execute(text("SELECT has_table_privilege(:r,'legal_chat_sessions','TRIGGER')"), {"r": role}).scalar_one()
+    assert banco.execute(text("SELECT r.rolname FROM pg_class c JOIN pg_roles r ON r.oid=c.relowner WHERE c.oid='legal_chat_sessions'::regclass")).scalar_one() == role
+
+
+def test_trigger_legado_exige_revisao_antes_do_cutover(banco):
+    banco.execute(text("CREATE FUNCTION hook_legado() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$"))
+    banco.execute(text("CREATE TRIGGER hook_legado AFTER INSERT ON legal_chat_sessions FOR EACH ROW EXECUTE FUNCTION hook_legado()"))
+    with pytest.raises(RuntimeError, match="trigger|regra"):
+        migrar(banco)
+    schema = banco.execute(text("SELECT current_schema()")).scalar_one()
+    assert not inspect(banco).get_view_names(schema=schema)
+
+
+def test_owner_com_select_sem_escrita_canonica_aborta_antes_do_cutover(banco):
+    role = "test_preliminar_select_owner_" + uuid4().hex
+    banco.execute(text(f'CREATE ROLE "{role}"'))
+    banco.execute(text(f'ALTER TABLE legal_chat_sessions OWNER TO "{role}"'))
+    banco.execute(text(f'GRANT SELECT ON preliminares TO "{role}"'))
+    with pytest.raises(RuntimeError, match="ACL"):
+        migrar(banco)
+    schema = banco.execute(text("SELECT current_schema()")).scalar_one()
+    assert not inspect(banco).get_view_names(schema=schema)
+
+
+def test_truncate_canonico_e_rejeitado_sem_ressuscitar_dados(banco):
+    legado(banco)
+    migrar(banco)
+    with banco.begin_nested() as savepoint:
+        with pytest.raises(DBAPIError, match="TRUNCATE"):
+            banco.execute(text("TRUNCATE preliminar_documentos"))
+        savepoint.rollback()
+    assert banco.execute(text("SELECT count(*) FROM preliminar_documentos")).scalar_one() == 2
+    migrar(banco, "downgrade")
+    assert banco.execute(text("SELECT count(*) FROM raio_x_documentos")).scalar_one() == 1
+
+
+def test_downgrade_aborta_se_espelho_foi_adulterado(banco):
+    legado(banco)
+    migrar(banco)
+    banco.execute(text("UPDATE legal_chat_sessions_legado_171 SET titulo='Divergente' WHERE id='s1'"))
+    with banco.begin_nested() as savepoint:
+        with pytest.raises(DBAPIError, match="divergência"):
+            migrar(banco, "downgrade")
+        savepoint.rollback()
+    assert set(LEGADAS) <= set(inspect(banco).get_view_names())
+
+
+def test_downgrade_nao_executa_callback_de_view_legada(banco):
+    legado(banco)
+    role = "test_preliminar_view_owner_" + uuid4().hex
+    schema = banco.execute(text("SELECT current_schema()")).scalar_one()
+    banco.execute(text(f'CREATE ROLE "{role}"'))
+    banco.execute(text(f'GRANT USAGE, CREATE ON SCHEMA "{schema}" TO "{role}"'))
+    banco.execute(text(f'ALTER TABLE legal_chat_sessions OWNER TO "{role}"'))
+    banco.execute(text(f'GRANT ALL ON preliminares TO "{role}"'))
+    migrar(banco)
+    banco.execute(text("CREATE TEMP TABLE captura_view(actor text)"))
+    banco.execute(text(f'SET LOCAL ROLE "{role}"'))
+    banco.execute(text("""CREATE FUNCTION callback_view() RETURNS boolean LANGUAGE plpgsql AS $$
+        BEGIN INSERT INTO pg_temp.captura_view VALUES (current_user); RETURN true; END $$"""))
+    fonte = next(f for f in carregar().FONTES if f[0] == "legal_chat_sessions")
+    columns = ",".join(f"c.{new} AS {old}" for old, new in carregar()._pares(fonte))
+    banco.execute(text(f"CREATE OR REPLACE VIEW legal_chat_sessions AS SELECT {columns},c.origem FROM preliminares c WHERE c.origem='sala_juridica' AND callback_view()"))
+    banco.execute(text("RESET ROLE"))
+    migrar(banco, "downgrade")
+    assert not banco.execute(text("SELECT actor FROM pg_temp.captura_view")).scalars().all()
+
+
+def test_acl_delegada_e_restaurada_com_grantor_original(banco):
+    delegador = "test_preliminar_grantor_" + uuid4().hex
+    leitor = "test_preliminar_grantee_" + uuid4().hex
+    schema = banco.execute(text("SELECT current_schema()")).scalar_one()
+    for role in (delegador, leitor):
+        banco.execute(text(f'CREATE ROLE "{role}"'))
+        banco.execute(text(f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"'))
+    banco.execute(text(f'GRANT SELECT ON legal_chat_sessions TO "{delegador}" WITH GRANT OPTION'))
+    banco.execute(text(f'SET LOCAL ROLE "{delegador}"'))
+    banco.execute(text(f'GRANT SELECT ON legal_chat_sessions TO "{leitor}"'))
+    banco.execute(text("RESET ROLE"))
+    migrar(banco)
+    migrar(banco, "downgrade")
+    assert banco.execute(text("SELECT has_table_privilege(:r,'legal_chat_sessions','SELECT')"), {"r": leitor}).scalar_one()
+    banco.execute(text(f'SET LOCAL ROLE "{delegador}"'))
+    banco.execute(text(f'REVOKE SELECT ON legal_chat_sessions FROM "{leitor}"'))
+    banco.execute(text("RESET ROLE"))
+    assert not banco.execute(text("SELECT has_table_privilege(:r,'legal_chat_sessions','SELECT')"), {"r": leitor}).scalar_one()
