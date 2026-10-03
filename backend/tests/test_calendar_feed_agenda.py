@@ -94,3 +94,41 @@ def test_consulta_da_agenda_respeita_responsavel_exclusao_e_conclusao():
     assert "responsavel_id = :uid" in fonte
     assert "deleted_at IS NULL" in fonte
     assert "concluido = FALSE" in fonte
+
+
+# ── Revisão de segurança: injeção via CR/controle e campos sem teto ──────────
+
+def _linhas_sem_escape(ics: str) -> list[str]:
+    """Linhas físicas do VEVENT (separadas por CRLF), como um cliente as lê."""
+    return ics.split("\r\n")
+
+
+def test_cr_solto_nao_injeta_propriedade_nem_vevent():
+    for campo in ("titulo", "local", "descricao"):
+        malicioso = "x\rEND:VEVENT\rBEGIN:VEVENT\rURL:http://evil"
+        ics = calendar_feed._vevent_agenda(_evento(**{campo: malicioso}))
+        assert "\r" not in ics.replace("\r\n", "")
+        linhas = _linhas_sem_escape(ics)
+        assert linhas.count("BEGIN:VEVENT") == 1
+        assert linhas.count("END:VEVENT") == 1
+        assert not any(linha.startswith("URL:") for linha in linhas)
+
+
+def test_crlf_vira_quebra_escapada():
+    ics = calendar_feed._vevent_agenda(_evento(descricao="linha 1\r\nlinha 2"))
+    assert "DESCRIPTION:linha 1\\nlinha 2\r\n" in ics
+
+
+def test_caracteres_de_controle_sao_removidos_e_tab_preservado():
+    assert calendar_feed._ics_escape("a\x00b\x07c\x1bd\x7fe\tf") == "abcde\tf"
+
+
+def test_campos_longos_sao_truncados():
+    ics = calendar_feed._vevent_agenda(_evento(descricao="a" * 5000, local="b" * 5000))
+    assert "a" * calendar_feed._MAX_CAMPO_ICS in ics
+    assert "a" * (calendar_feed._MAX_CAMPO_ICS + 1) not in ics
+    assert "b" * (calendar_feed._MAX_CAMPO_ICS + 1) not in ics
+
+
+def test_consulta_da_agenda_tem_teto_de_linhas():
+    assert "LIMIT 500" in inspect.getsource(calendar_feed.feed_ics)

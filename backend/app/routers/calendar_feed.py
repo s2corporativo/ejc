@@ -70,9 +70,17 @@ async def obter_url_calendario(
     }
 
 
+# RFC 5545 §3.3.11: TEXT não admite caracteres de controle além de HTAB.
+# CR solto é o vetor de injeção de propriedades/VEVENTs em clientes que o
+# tratam como fim de linha (revisão de segurança da Fase 1).
+_CONTROLE_ICS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+
+
 def _ics_escape(value: str) -> str:
+    texto = (value or "").replace("\r\n", "\n").replace("\r", "\n")
+    texto = _CONTROLE_ICS.sub("", texto)
     return (
-        (value or "")
+        texto
         .replace("\\", "\\\\")
         .replace(";", "\\;")
         .replace(",", "\\,")
@@ -105,6 +113,10 @@ _VTIMEZONE_SAO_PAULO = (
     "END:STANDARD\r\n"
     "END:VTIMEZONE\r\n"
 )
+
+# Campos livres da agenda não têm teto no schema; o feed é público (por token)
+# e montado em memória no worker único — corta o excesso.
+_MAX_CAMPO_ICS = 1000
 
 _HORA_RE = re.compile(r"^\s*(\d{1,2})[:hH](\d{2})")
 
@@ -164,7 +176,9 @@ def _vevent_agenda(evento) -> str:
         quando = f"DTSTART;VALUE=DATE:{data.strftime('%Y%m%d')}\r\n"
         alarme = "-P1D"
     local = (
-        f"LOCATION:{_ics_escape(evento['local'])}\r\n" if evento["local"] else ""
+        f"LOCATION:{_ics_escape(evento['local'][:_MAX_CAMPO_ICS])}\r\n"
+        if evento["local"]
+        else ""
     )
     return (
         "BEGIN:VEVENT\r\n"
@@ -173,7 +187,8 @@ def _vevent_agenda(evento) -> str:
         + quando
         + f"SUMMARY:{emoji} {_ics_escape(evento['titulo'])}\r\n"
         + local
-        + f"DESCRIPTION:{_ics_escape(evento['descricao'] or 'EJC')}\r\n"
+        + "DESCRIPTION:"
+        + f"{_ics_escape((evento['descricao'] or 'EJC')[:_MAX_CAMPO_ICS])}\r\n"
         "BEGIN:VALARM\r\n"
         f"TRIGGER:{alarme}\r\n"
         "ACTION:DISPLAY\r\n"
@@ -301,6 +316,7 @@ async def feed_ics(user_id: str, token: str):
                        AND concluido = FALSE
                        AND data_evento BETWEEN :inicio AND :fim
                      ORDER BY data_evento, hora
+                     LIMIT 500
                     """
                 ),
                 {"uid": user_id, "inicio": hoje, "fim": hoje + timedelta(days=120)},
