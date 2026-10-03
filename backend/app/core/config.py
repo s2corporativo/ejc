@@ -3,6 +3,7 @@
 # NUNCA hardcodar segredos neste arquivo.
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
+import ipaddress
 import logging
 import os
 from pathlib import Path
@@ -20,6 +21,45 @@ NFSE_REGIMES_TRIBUTARIOS_VALIDOS = frozenset({
     "simples_nacional", "lucro_presumido", "lucro_real",
 })
 
+
+
+_SUFIXOS_HOST_INTERNO = (".internal", ".local", ".lan", ".localdomain", ".svc",
+                         ".cluster.local")
+
+
+_REDES_NAO_LOCAIS = tuple(
+    ipaddress.ip_network(r) for r in (
+        "192.0.0.0/24", "192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24",
+        "2001:db8::/32",
+    )
+)
+
+
+def _host_interno(url: str | None) -> bool:
+    """True quando a URL aponta para a rede interna: serviço do compose (nome
+    sem ponto), loopback/IP privado ou sufixo de DNS interno. Na dúvida (URL
+    ilegível), False — quem decide é o gate fail-closed do chamador."""
+    from urllib.parse import urlsplit
+
+    try:
+        host = (urlsplit((url or "").strip()).hostname or "").lower()
+    except ValueError:
+        return False
+    if not host:
+        return False
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        # Nome (não IP): serviço do compose (sem ponto), localhost ou sufixo
+        # de DNS interno. IP é avaliado ANTES: "::" também não tem ponto.
+        return (host == "localhost" or "." not in host
+                or host.endswith(_SUFIXOS_HOST_INTERNO))
+    # `is_private` do Python inclui faixas que não são rede local (endereço
+    # não especificado, blocos de documentação/IETF) — fora (revisão do
+    # security-auditor, R-b).
+    if ip.is_unspecified or any(ip in rede for rede in _REDES_NAO_LOCAIS):
+        return False
+    return ip.is_private or ip.is_loopback or ip.is_link_local
 
 
 class Settings(BaseSettings):
@@ -689,6 +729,9 @@ class Settings(BaseSettings):
     EMBEDDINGS_ENABLED: bool = True
     EMBEDDINGS_PROVIDER: str = "local"  # local | http
     EMBEDDINGS_API_URL: str = "http://embeddings:8010/embed"
+    # Exceção consciente (parecer do encarregado) para EMBEDDINGS_API_URL fora
+    # da rede interna em produção — ver _validar_seguranca_producao (NIA-04).
+    EMBEDDINGS_HTTP_EXTERNO_AUTORIZADO: bool = False
     EMBEDDINGS_TIMEOUT: int = 120
     # Modelo e dimensão do embedding. O default precisa constar em
     # TextEmbedding.list_supported_models() da versão PINADA do fastembed;
@@ -1520,6 +1563,32 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "MANUS_AUTO_ROUTING_ENABLED deve permanecer false: Manus é "
                     "somente Raciocínio Profundo por seleção explícita."
+                )
+            # ── HITL (auditoria do núcleo de IA 03/10, NIA-03) ────────────────
+            # `hitl_policy` documenta a flag como exclusiva de testes; sem esta
+            # trava, um `.env` com AI_REQUIRE_HITL=false desligava a revisão
+            # humana obrigatória em produção sem aviso algum.
+            if not self.AI_REQUIRE_HITL:
+                raise ValueError(
+                    "AI_REQUIRE_HITL=false em produção: toda saída de IA exige "
+                    "revisão humana (OAB/EJC). A flag existe apenas para testes; "
+                    "remova-a do .env ou defina AI_REQUIRE_HITL=true."
+                )
+            # ── Embeddings HTTP só em host interno (NIA-04) ───────────────────
+            # O provider `http` recebe o texto INTEGRAL dos documentos, sem a
+            # barreira de PII do gateway e fora do kill-switch de provedores
+            # externos. Endereço público exige decisão consciente e auditável.
+            if ((self.EMBEDDINGS_PROVIDER or "").strip().lower() == "http"
+                    and not _host_interno(self.EMBEDDINGS_API_URL)
+                    and not self.EMBEDDINGS_HTTP_EXTERNO_AUTORIZADO):
+                raise ValueError(
+                    "EMBEDDINGS_API_URL aponta para host fora da rede interna com "
+                    "EMBEDDINGS_PROVIDER=http: o texto integral dos documentos "
+                    "sairia do servidor sem sanitização de dados pessoais (LGPD "
+                    "art. 33/46). Use o serviço interno (ex.: "
+                    "http://embeddings:8010/embed) ou, havendo parecer do "
+                    "encarregado de dados, defina "
+                    "EMBEDDINGS_HTTP_EXTERNO_AUTORIZADO=true."
                 )
 
             # ── Soberania Maritaca (opt-in) — exige modelos "-br-sp" ──────────
