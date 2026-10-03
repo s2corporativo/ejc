@@ -78,16 +78,93 @@ class _MatcherCartao:
         return _CARTAO_TRECHO.sub(_troca, texto)
 
 
+# ── CNPJ: numérico (legado) e ALFANUMÉRICO (IN RFB nº 2.229/2024) ─────────────
+# Desde julho/2026 a Receita atribui CNPJ com raiz e ordem ALFANUMÉRICAS
+# (letras maiúsculas + dígitos) e DV numérico — ex. oficial "12.ABC.345/01DE-35".
+# O regex só-dígitos deixava esse CNPJ passar em claro rumo ao provider
+# externo, com a 2ª barreira dizendo "sem PII residual" (mesma entrada).
+#
+# Regra de decisão sobre o candidato:
+#   • só dígitos            → mesmo comportamento de antes (qualquer formatação);
+#   • com letra + máscara   → CNPJ ("XX.XXX.XXX/XXXX-DD" é sinal forte);
+#   • com letra, sem máscara → só se o DV conferir (evita mascarar código
+#     alfanumérico qualquer de 14 posições terminado em 2 dígitos).
+# DV: valor do caractere = ASCII − 48; pesos e módulo 11 iguais ao numérico.
+_CNPJ_CANDIDATO = re.compile(
+    r'\b[0-9A-Z]{2}\.?[0-9A-Z]{3}\.?[0-9A-Z]{3}/?[0-9A-Z]{4}-?\d{2}\b'
+)
+_CNPJ_MASCARA_COMPLETA = re.compile(
+    r'[0-9A-Z]{2}\.[0-9A-Z]{3}\.[0-9A-Z]{3}/[0-9A-Z]{4}-\d{2}'
+)
+_PESOS_DV_CNPJ = (6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2)
+
+
+def _dv_cnpj_confere(base14: str) -> bool:
+    valores = [ord(c) - 48 for c in base14]
+    for n in (12, 13):
+        resto = sum(v * p for v, p in zip(valores[:n], _PESOS_DV_CNPJ[13 - n:])) % 11
+        if valores[n] != (0 if resto < 2 else 11 - resto):
+            return False
+    return True
+
+
+class _MatcherCNPJ:
+    """CNPJ numérico ou alfanumérico com cara de `re.Pattern` (`sub`/`search`/
+    `finditer`) — mesmo contrato do `_MatcherCartao`, para que TODO consumidor
+    de `_PATTERNS` (inclusive o pseudonymizer) receba a regra certa."""
+
+    __slots__ = ()
+
+    @staticmethod
+    def _e_cnpj(trecho: str) -> bool:
+        compacto = re.sub(r'[./-]', '', trecho)
+        if compacto.isdigit():
+            return True
+        return bool(_CNPJ_MASCARA_COMPLETA.fullmatch(trecho)) or _dv_cnpj_confere(compacto)
+
+    def finditer(self, texto: str):
+        return (m for m in _CNPJ_CANDIDATO.finditer(texto) if self._e_cnpj(m.group(0)))
+
+    def search(self, texto: str):
+        return next(self.finditer(texto), None)
+
+    def sub(self, repl, texto: str) -> str:
+        def _troca(m: re.Match) -> str:
+            if not self._e_cnpj(m.group(0)):
+                return m.group(0)
+            return repl(m) if callable(repl) else repl
+        return _CNPJ_CANDIDATO.sub(_troca, texto)
+
+
+_UFS = (r'(?:AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|'
+        r'RO|RR|SC|SP|SE|TO)')
+
+
 # ── Padrões de PII (ordem importa: mais específico primeiro) ─────────────────
 _PATTERNS: list[tuple[re.Pattern, str]] = [
-    # CPF: 000.000.000-00 ou 00000000000
-    (re.compile(r'\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b'), '[CPF]'),
-    # CNPJ: 00.000.000/0000-00 ou 14 dígitos
-    (re.compile(r'\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b'), '[CNPJ]'),
+    # CPF: 000.000.000-00, 00000000000 ou agrupado por espaço simples
+    # (000 000 000 00 — cópia de formulário/OCR escapava da barreira). A forma
+    # com espaço exige os TRÊS separadores e não pode estar colada a outro
+    # grupo numérico: espaço opcional avulso mordia o miolo de cartão agrupado
+    # ("3782 822463 10005" virava "3782 [CPF]", quebrando o matcher de cartão).
+    (re.compile(
+        r'\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b'
+        r'|(?<!\d )(?<!\d)\d{3} \d{3} \d{3}[ -]\d{2}(?!\d)(?! \d)'
+    ), '[CPF]'),
+    # CNPJ: numérico (00.000.000/0000-00 ou 14 dígitos) e alfanumérico
+    # (IN RFB 2.229/2024) — ver _MatcherCNPJ.
+    (_MatcherCNPJ(), '[CNPJ]'),
     # Número de processo CNJ: 0000000-00.0000.0.00.0000
     (re.compile(r'\b\d{7}-?\d{2}\.?\d{4}\.?\d\.?\d{2}\.?\d{4}\b'), '[PROCESSO]'),
-    # RG: 00.000.000-0 (padrão MG/SP)
-    (re.compile(r'\bRG[:\s]*\d{1,2}\.?\d{3}\.?\d{3}-?[\dXx]\b', re.I), 'RG [RG]'),
+    # RG: 00.000.000-0 (padrão MG/SP), também com UF ("MG-12.345.678") e com
+    # os rótulos "identidade"/"C.I.". Sem rótulo, só a forma UF + pontuação
+    # completa — nº pontuado solto é ambíguo demais para mascarar.
+    (re.compile(
+        r'\b(?:RG|C\.?I\.?|(?:carteira\s+de\s+)?identidade)[:\s]*(?:n[ºo°]?\.?\s*)?'
+        rf'(?:{_UFS}[-\s]?)?\d{{1,2}}\.?\d{{3}}\.?\d{{3}}(?:-?[\dXx])?\b'
+        rf'|\b{_UFS}-?\d{{1,2}}\.\d{{3}}\.\d{{3}}(?:-[\dXx])?\b',
+        re.I,
+    ), 'RG [RG]'),
     # E-mail
     (re.compile(r'\b[\w.+-]+@[\w-]+\.[\w.]+\b'), '[EMAIL]'),
     # Cartão de crédito — ANTES do telefone, de propósito.
@@ -109,8 +186,8 @@ _PATTERNS: list[tuple[re.Pattern, str]] = [
     # dígitos — segunda linha de defesa para o que o cartão (agora acima) já
     # deveria ter consumido.
     (re.compile(r'(?<!\d)(\+?55\s?)?\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}\b'), '[TELEFONE]'),
-    # CEP: 00000-000
-    (re.compile(r'\b\d{5}-?\d{3}\b'), '[CEP]'),
+    # CEP: 00000-000, 00000000 e a forma pontuada dos Correios 00.000-000.
+    (re.compile(r'\b\d{2}\.?\d{3}-?\d{3}\b'), '[CEP]'),
     # PIX chave aleatória (UUID)
     (re.compile(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b', re.I), '[CHAVE_PIX]'),
     # ── P0-474: padrões adicionais (APPEND-ONLY — índices 0-6 são referenciados
@@ -125,6 +202,27 @@ _PATTERNS: list[tuple[re.Pattern, str]] = [
         r'(?:d[aeo]s?\s+)?[A-ZÀ-Ý][^,\n;]{2,60}'
         r'(?:,\s*(?:n[ºo°]?\.?\s*)?\d+[-\w]*)?',
     ), '[ENDERECO]'),
+    # ── Auditoria do núcleo de IA (03/10/2026): lacunas confirmadas por sonda
+    #    empírica. APPEND-ONLY (índices acima seguem referenciados). ──────────
+    # Celular SEM DDD: "99999-9999". Exige o 9 inicial + separador: a forma
+    # genérica "\d{4}-\d{4}" casaria intervalo de anos ("2024-2025").
+    (re.compile(r'(?<![\d.\-/])9\d{4}[-\s]\d{4}(?!\d)'), '[TELEFONE]'),
+    # Título de eleitor / PIS-PASEP-NIT-NIS — só com rótulo (12/11 dígitos
+    # soltos são ambíguos e o de 11 já cai no CPF).
+    (re.compile(
+        r'\bt[íi]tulo\s+(?:de\s+)?eleitor(?:al)?[\s:]*(?:n[ºo°]?\.?\s*)?'
+        r'\d{4}\s?\d{4}\s?\d{4}\b'
+        r'|\b(?:PIS|PASEP|NIT|NIS)(?:/PASEP)?[\s:]*(?:n[ºo°]?\.?\s*)?'
+        r'\d{3}\.?\d{5}\.?\d{2}-?\d\b',
+        re.I,
+    ), '[DOC_ID]'),
+    # Dados bancários com rótulo: "agência 1234-5", "conta corrente 12345-6".
+    (re.compile(
+        r'\b(?:ag[êe]ncia|ag\.)\s*(?:n[ºo°]?\.?\s*|:\s*)?\d{3,5}(?:-[\dXx])?\b'
+        r'|\bconta(?:\s+(?:corrente|poupan[çc]a|sal[áa]rio))?\s*'
+        r'(?:n[ºo°]?\.?\s*|:\s*)?\d{4,12}(?:-[\dXx])?\b',
+        re.I,
+    ), '[DADOS_BANCARIOS]'),
 ]
 
 # Variante interna: pula CPF (0) e CNPJ (1), que ficam visíveis de propósito, e
@@ -251,6 +349,9 @@ def validar_sem_pii(texto: str, *, permitir_14: bool = True) -> list[str]:
         'CHAVE_PIX': _PATTERNS[8][0],
         'OAB': _PATTERNS[9][0],
         'ENDERECO': _PATTERNS[10][0],
+        'TELEFONE_SEM_DDD': _PATTERNS[11][0],
+        'DOCUMENTO': _PATTERNS[12][0],
+        'DADOS_BANCARIOS': _PATTERNS[13][0],
     }
     for nome, pattern in checks.items():
         if pattern.search(texto):

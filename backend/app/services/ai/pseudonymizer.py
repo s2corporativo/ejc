@@ -40,6 +40,8 @@ _TIPO_POR_PLACEHOLDER = {
     "[CHAVE_PIX]": "CHAVE_PIX",
     "[OAB]": "OAB",
     "[ENDERECO]": "ENDERECO",
+    "[DOC_ID]": "DOCUMENTO",
+    "[DADOS_BANCARIOS]": "DADOS_BANCARIOS",
 }
 
 # Entidades nomeadas (nomes próprios) → tipo do marcador. As chaves são as
