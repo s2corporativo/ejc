@@ -37,6 +37,7 @@ from app.models.client import Client
 from app.models.document import Document
 from app.services.ai_gateway import chat as gw_chat
 from app.services.ai_guard import registrar_ai_log
+from app.services.ai.sanitization_policy import modo_sigilo_por_case_id
 from app.services.ai_service import buscar_contexto_rag, _escopo_cliente_do_caso
 from app.services.citation_check import verificar_citacoes
 from app.services.document_format import padronizar_documento_juridico
@@ -145,6 +146,9 @@ async def gerar_legenda_ia(
         return ""
 
     texto_limpo, houve_pii = sanitizar_pii(base_texto[:_OCR_MAX])
+    # Piso de sigilo do caso (auditoria RAG 04/09, A-3). Fora do try: não
+    # saber se o caso é sigiloso não pode virar "pode ir ao externo".
+    modo_sigilo = await modo_sigilo_por_case_id(db, case_id)
     user = (
         f"[TÍTULO DO DOCUMENTO]\n{titulo}\n\n"
         f"[TIPO]\n{tipo or 'não informado'}\n\n"
@@ -159,6 +163,7 @@ async def gerar_legenda_ia(
             task_type="chat_rapido",   # prosa → recebe base anti-alucinação
             temperature=0.2,
             max_tokens=160,
+            modo_sanitizacao=modo_sigilo,
         )
     except Exception as exc:  # provedor indisponível não pode derrubar o PDF inteiro
         logger.warning("Legenda IA indisponível para '%s': %s", titulo, exc)
@@ -515,6 +520,8 @@ async def gerar_razoes_juridicas(
         temperature=0.3,
         max_tokens=4000,
         nivel_inteligencia=nivel,
+        # Fatos do caso + RAG: piso de sigilo do caso (auditoria RAG 04/09, A-3).
+        modo_sanitizacao=await modo_sigilo_por_case_id(db, case_id),
     )
     texto = padronizar_documento_juridico(resp.texto)
 

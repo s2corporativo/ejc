@@ -278,6 +278,7 @@ async def gerar_dossie(
             # (task estrategia = EXTERNO_PSEUDONIMIZADO). A pré-sanitização acima
             # cobre a PII estrutural; `entidades` cobre os nomes.
             from app.services.ai.entidades_caso import entidades_do_caso
+            from app.services.ai.sanitization_policy import modo_sigilo_por_case_id
             entidades = await entidades_do_caso(db, case_id)
 
             resp = await gw_chat(
@@ -292,6 +293,8 @@ async def gerar_dossie(
                 temperature=0.3,
                 max_tokens=3500,
                 entidades=entidades or None,
+                # Piso de sigilo do caso (auditoria RAG 04/09, A-3).
+                modo_sanitizacao=await modo_sigilo_por_case_id(db, case_id),
             )
             conteudo_md = resp.texto
             modelo_ia   = resp.modelo

@@ -127,10 +127,14 @@ _FILTRO_VIGENTE_RAG = "AND (kd.vigente = TRUE OR :incl_hist)"
 # consultas de recuperação: um documento explicitamente bloqueado/recusado/
 # reprovado/pendente NUNCA entra no prompt. Por padrão, exige aprovação
 # explícita; o acervo legado sem curadoria fica em quarentena.
+# Comparação normalizada (lower/btrim) e chave legada `confianca` incluídas
+# (auditoria RAG 04/09, A-13 e M-11): 'Recusado ' ou `confianca='bloqueado'`
+# eram exibidos como bloqueio no painel mas passavam pelo gate.
 _FILTRO_GATE_RAG = (
     "AND NOT ("
-    "COALESCE(kd.extra->>'confidence_level','') = 'bloqueado' "
-    "OR COALESCE(kd.extra->>'rag_status','') IN "
+    "lower(btrim(COALESCE(kd.extra->>'confidence_level',''))) = 'bloqueado' "
+    "OR lower(btrim(COALESCE(kd.extra->>'confianca',''))) = 'bloqueado' "
+    "OR lower(btrim(COALESCE(kd.extra->>'rag_status',''))) IN "
     "('bloqueado','recusado','reprovado','pendente'))"
 )
 # Regime estrito (default): quando RAG_EXIGIR_APROVADO=true, só documentos
@@ -145,14 +149,24 @@ _FILTRO_APROVADO_RAG = "AND COALESCE(kd.extra->>'rag_status','') = 'aprovado'"
 _FILTRO_SUMULAS_QUARENTENA = (
     "AND NOT ("
     "(COALESCE(kd.chave_origem,'') LIKE 'sumula:%' OR COALESCE(kd.fonte,'') = 'sumula') "
-    "AND COALESCE((kd.extra->>'conferido')::boolean, false) = false"
+    "AND NOT (lower(btrim(COALESCE(kd.extra->>'conferido',''))) "
+    "IN ('true','t','1','yes','y','on'))"
     ")"
 )
 # Corpus FICTÍCIO (Bíblia EJC): extra->>'ficticio'='true'. É material de
 # estrutura/metodologia, NUNCA fundamentação — excluído por padrão das buscas
 # amplas; só entra quando o call site pede incluir_ficticio=True (geração de
 # peça a partir de modelos).
-_FILTRO_FICTICIO_RAG = "AND COALESCE((kd.extra->>'ficticio')::boolean, false) = false"
+#
+# Sem cast `::boolean` (auditoria RAG 04/09, A-6): um valor não conversível
+# ('sim', objeto) lançava 22P02, abortava a transação e zerava as quatro pernas
+# da busca em silêncio. A comparação textual é fail-closed nas duas pontas:
+# súmula só sai da quarentena com marcador verdadeiro inequívoco, e doc só é
+# tratado como NÃO fictício quando o marcador está ausente ou é falso inequívoco.
+_FILTRO_FICTICIO_RAG = (
+    "AND lower(btrim(COALESCE(kd.extra->>'ficticio','false'))) "
+    "IN ('false','f','0','no','n','off','')"
+)
 
 # ── Situação JURÍDICA na recuperação (Issue #636 / P0.1 #952) ────────────────
 # Curadoria RAG e vigência normativa são dimensões distintas. Uma norma pode

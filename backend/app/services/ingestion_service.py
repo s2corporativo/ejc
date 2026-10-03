@@ -299,6 +299,11 @@ def _vigencia_de_curadoria(anterior: dict) -> bool:
     )
 
 
+def _recusado(extra: dict) -> bool:
+    """Recusa do curador, com a mesma normalização do gate de recuperação."""
+    return str(extra.get("rag_status") or "").strip().lower() == "recusado"
+
+
 async def upsert_documento(
     db: AsyncSession,
     *,
@@ -391,7 +396,7 @@ async def upsert_documento(
                         mesclado[campo] = anterior[campo]
                     else:
                         mesclado.pop(campo, None)
-            if anterior.get("rag_status") == "recusado":
+            if _recusado(anterior):
                 mesclado["rag_status"] = "recusado"
             elif (
                 preservar_aprovacao_rag
@@ -449,6 +454,12 @@ async def upsert_documento(
                     extra_nova_versao[campo] = anterior[campo]
                 else:
                     extra_nova_versao.pop(campo, None)
+        # RECUSA do curador sobrevive também à troca de versão (auditoria RAG
+        # 04/09, A-9): o atalho "inalterado" já a preservava, mas aqui o extra
+        # do ingestor (Planalto grava `rag_status=aprovado`) devolvia ao RAG,
+        # no primeiro re-feed com texto alterado, um diploma já rejeitado.
+        if _recusado(anterior):
+            extra_nova_versao["rag_status"] = "recusado"
         db.add(KnowledgeDoc(
             id=doc_id, titulo=titulo, categoria=categoria,
             fonte=fonte, tribunal=tribunal, extra=extra_nova_versao,

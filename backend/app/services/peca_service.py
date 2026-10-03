@@ -807,6 +807,20 @@ async def gerar_peca_pipeline(
     # aqui (o gateway os pseudonimiza de forma reversível e reidrata a resposta);
     # só a PII ESTRUTURAL é removida. Sem entidades, mantém o mascaramento
     # IRREVERSÍVEL dos nomes via nomes_proteger.
+    # Piso de sigilo (auditoria RAG 04/09, A-3): a esteira junta fatos do caso
+    # e contexto RAG, mas não informava o sigilo ao gateway — caso marcado
+    # `sigilo_reforcado` (crime sexual/menor) ou área de sigilo reforçado saía
+    # pseudonimizado ao provedor externo. LOCAL_COMPLETO só ELEVA o modo da
+    # tarefa (reforcar_sigilo no gateway); sem IA local, a etapa é bloqueada.
+    from app.services.ai.sanitization_policy import (
+        ModoSanitizacao, modo_sigilo_por_case_id, rotulo_de_sigilo_reforcado,
+    )
+    modo_sigilo = (
+        await modo_sigilo_por_case_id(db, case_id) if db is not None else None
+    )
+    if modo_sigilo is None and rotulo_de_sigilo_reforcado(area_direito):
+        modo_sigilo = ModoSanitizacao.LOCAL_COMPLETO
+
     _nomes_mascarar = None if entidades else nomes_proteger
     fatos_limpos, houve_pii_fatos = sanitizar_pii(descricao_fatos, _nomes_mascarar)
     pedidos_limpos, houve_pii_pedidos = sanitizar_pii(pedidos, _nomes_mascarar)
@@ -832,6 +846,8 @@ async def gerar_peca_pipeline(
     )
 
     r1 = await gw_chat(
+
+        modo_sanitizacao=modo_sigilo,
         messages=[
             {"role": "system", "content": (
                 # Blindagem anti-alucinação (P0.2): etapa intermediária alimenta a
@@ -880,6 +896,8 @@ async def gerar_peca_pipeline(
     especializacao = _especializacao_area(area_direito)
 
     r2 = await gw_chat(
+
+        modo_sanitizacao=modo_sigilo,
         messages=[
             {"role": "system", "content": (
                 # Blindagem anti-alucinação (P0.2) — aditiva, não altera o formato.
@@ -947,6 +965,8 @@ async def gerar_peca_pipeline(
     bloco_questoes = await _bloco_questoes_estruturado(db, case_id)
 
     r4 = await gw_chat(
+
+        modo_sanitizacao=modo_sigilo,
         messages=[
             {"role": "system", "content": (
                 "Você é pesquisador de jurisprudência. Baseado EXCLUSIVAMENTE nas fontes RAG "
@@ -972,6 +992,8 @@ async def gerar_peca_pipeline(
     yield await _emit("step", {"etapa": 5, "titulo": "Organizando argumentos", "status": "em_andamento"})
 
     r5 = await gw_chat(
+
+        modo_sanitizacao=modo_sigilo,
         messages=[
             {"role": "system", "content": (
                 # Blindagem anti-alucinação (P0.2) — aditiva, não altera o formato.
@@ -1002,6 +1024,8 @@ async def gerar_peca_pipeline(
     yield await _emit("step", {"etapa": 6, "titulo": "Identificando riscos processuais", "status": "em_andamento"})
 
     r6 = await gw_chat(
+
+        modo_sanitizacao=modo_sigilo,
         messages=[
             {"role": "system", "content": (
                 # Blindagem anti-alucinação (P0.2) — aditiva, não altera o formato.
@@ -1122,6 +1146,7 @@ async def gerar_peca_pipeline(
     from app.services.system_prompts.inventario import impressao as _impressao
     prompt_versao_peca = _impressao(system_redator)
     r7 = await gw_chat(
+        modo_sanitizacao=modo_sigilo,
         messages=[
             {"role": "system", "content": system_redator},
             {"role": "user", "content": (
@@ -1185,6 +1210,9 @@ async def gerar_peca_pipeline(
                 provedor_origem=r7.provedor,
                 case_id=case_id,
                 entidades=entidades or None,
+                # Mesmo piso das etapas r1–r7, inclusive o derivado da ÁREA,
+                # que `criticar_peca` sozinho não enxerga (security-auditor).
+                modo_sanitizacao=modo_sigilo,
             )
             autocritica_info["executada"] = True
             autocritica_info["critica_disponivel"] = bool(critica.disponivel)
@@ -1193,6 +1221,7 @@ async def gerar_peca_pipeline(
             tokens_autocritica_out += critica.tokens_output or 0
             if critica.disponivel and apontamentos_acionaveis(critica.relatorio):
                 r_rev = await gw_chat(
+                    modo_sanitizacao=modo_sigilo,
                     messages=[
                         {"role": "system", "content": (
                             # Base anti-alucinação + MESMO system do redator
