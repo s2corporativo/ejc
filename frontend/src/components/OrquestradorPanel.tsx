@@ -1,7 +1,8 @@
 // ── OrquestradorPanel — Orquestrador Jurídico do Caso (§16) ──────────────────
 // Consome GET /cases/{id}/orquestrador (estado derivado dos artefatos reais,
-// próximo passo, pendências, jornada de 16 etapas e linha do tempo) e executa
-// transições via POST /cases/{id}/orquestrador/avancar.
+// próximo passo e pendências derivadas dos artefatos reais) e executa
+// transições via POST /cases/{id}/orquestrador/avancar. A jornada detalhada
+// permanece no contrato por compatibilidade, mas não é navegação primária.
 //
 // Regras espelhadas do backend (legal_case_orchestrator.py):
 //   • Atos jurídicos (aprovações, confirmação de termo) NUNCA são executados
@@ -34,8 +35,8 @@ import {
 import { useAuth } from "../stores/auth";
 
 // Mesmo limiar do backend (routers/orquestrador.py::_pode_avancar — advogado+).
-// Abaixo disso o painel fica em MODO LEITURA: próximo passo e jornada visíveis,
-// execução desabilitada (o /avancar devolveria 403 de qualquer forma).
+// Abaixo disso o painel fica em MODO LEITURA: próxima ação e pendências ficam
+// visíveis, mas a execução é desabilitada (o /avancar devolveria 403).
 const ROLES_EXECUCAO = ["superadmin", "admin", "socio", "advogado"];
 
 // Rótulos pt-BR das ações da whitelist do backend (ACOES_VALIDAS).
@@ -75,11 +76,11 @@ function rotaFluxoHumano(
 ): { to: string; label: string } | null {
   switch (acao) {
     case "aprovar_snapshot":
-      return { to: `/casos/${caseId}/jornada`, label: "Abrir jornada do caso" };
+      return { to: `/casos/${caseId}?tab=resumo`, label: "Revisar inteligência do caso" };
     case "aprovar_tese":
     case "aprovar_estrategia":
       return {
-        to: `/casos/${caseId}?tab=teses-sugeridas`,
+        to: `/casos/${caseId}?tab=teses`,
         label: "Abrir matriz de teses",
       };
     case "aprovar_proposta":
