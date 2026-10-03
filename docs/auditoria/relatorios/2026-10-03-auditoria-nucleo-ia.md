@@ -56,7 +56,7 @@ a suíte não alcançava.
 
 ## 3. Achados
 
-### NIA-01 — P1 — Barreira de PII deixava formatos reais em claro (CORRIGIDO neste PR)
+### NIA-01 — P1 — Barreira de PII deixava formatos reais em claro (CORRIGIDO — #2003)
 
 Sonda empírica sobre `sanitizar_pii`, `validar_sem_pii` e `pseudonimizar`
 (caminho padrão do gateway para provedor externo). Todos os itens abaixo
@@ -83,7 +83,7 @@ referenciados permanecem. Regressão: `tests/test_sanitizer_lacunas_auditoria_ia
 diploma legal, montante, súmula). Uma primeira versão do padrão de CPF mordia
 cartão AmEx agrupado — pega pela suíte existente e corrigida antes do push.
 
-### NIA-02 — P2 — Nomes parciais e não capitalizados escapam da pseudonimização (PARCIALMENTE CORRIGIDO)
+### NIA-02 — P2 — Nomes parciais e não capitalizados escapam da pseudonimização (PARCIALMENTE CORRIGIDO — #2003; restante em #2001)
 
 Sonda com `entidades={"cliente": ["Ana Paula Souza"], "parte_contraria": ["Banco Exemplo S.A."]}`:
 - prenome isolado posterior (`Ana disse…`) segue em claro;
@@ -101,7 +101,7 @@ completos (uma variante nunca morde o nome completo de outra entidade).
 minúsculas — "Vitória", "Rosa", "Glória" são palavras comuns do texto
 jurídico; mascará-las degrada o prompt (teste de não regressão incluído).
 
-### NIA-03 — P2 — `AI_REQUIRE_HITL=false` não é barrado no boot de produção
+### NIA-03 — P2 — `AI_REQUIRE_HITL=false` não é barrado no boot de produção (CORRIGIDO — #2006)
 
 `hitl_policy.py` declara que a flag "existe apenas para ambientes de teste — em
 produção permanece True", mas `_validar_seguranca_producao` não a verifica. Com
@@ -109,7 +109,7 @@ a flag desligada, `requer_revisao` cai para `False` (o rótulo `is_rascunho`
 continua). É mudança de configuração (regra 8 → `security-auditor`). Proposta:
 falhar o boot de produção com `AI_REQUIRE_HITL=false`.
 
-### NIA-04 — P3 — `EMBEDDINGS_API_URL` não é restrito a host interno
+### NIA-04 — P3 — `EMBEDDINGS_API_URL` não é restrito a host interno (CORRIGIDO — #2006)
 
 Com `EMBEDDINGS_PROVIDER=http`, o texto integral (documentos de cliente) vai sem
 sanitização e fora do kill-switch `AI_EXTERNAL_PROVIDERS_ALLOWED` para a URL
@@ -117,7 +117,7 @@ configurada. O default é interno (`http://embeddings:8010/embed`), mas nada
 impede apontar para serviço externo. Proposta: validar host privado/compose no
 boot ou submeter o provider `http` externo ao kill-switch.
 
-### NIA-05 — P3 — `chat_agentico` não aplica o piso `reforcar_sigilo` da tarefa
+### NIA-05 — P3 — `chat_agentico` não aplica o piso `reforcar_sigilo` da tarefa (CORRIGIDO — #2005)
 
 `chat()` e `executar_tarefa_ia()` fazem `reforcar_sigilo(modo_para_task(task), modo)`;
 `chat_agentico` só usa `modo_para_task` quando `modo_sanitizacao is None`. Hoje
@@ -125,7 +125,7 @@ sem efeito (o único chamador passa o modo do caso e usa `task_type="estrategia"
 mas um chamador futuro que passe modo explícito com `task_type` sigiloso
 perderia o piso. Proposta: alinhar ao contrato dos outros dois caminhos.
 
-### NIA-06 — P3 — Cache ignora o modo efetivo informado pelo chamador
+### NIA-06 — P3 — Cache ignora o modo efetivo informado pelo chamador (CORRIGIDO — #2005)
 
 `ai_cache._tarefa_cacheavel` decide pela tarefa normalizada, não pelo modo
 efetivo (`modo_sanitizacao` do caso). Só se materializa se
@@ -133,24 +133,43 @@ efetivo (`modo_sanitizacao` do caso). Só se materializa se
 `LOCAL_COMPLETO`: a resposta local, em claro, seria gravada no Redis. Proposta:
 incluir o modo efetivo na decisão de cacheabilidade.
 
-### NIA-07 — P3 — Falha do grounding ao vivo não marca `revisao_obrigatoria`
+### NIA-07 — P3 — Falha do grounding ao vivo não marca `revisao_obrigatoria` (CORRIGIDO — #2005)
 
 Em `response_validator.validar`, a exceção da verificação de citações (passo 1)
 marca `revisao_obrigatoria=True`; a do grounding (passo 1.5) só acrescenta alerta.
 Proposta: tratar as duas indisponibilidades da mesma forma.
 
-### NIA-08 — P3 — Formatos de PII ainda não cobertos (CORRIGIDO, exceto telefone fixo)
+### NIA-08 — P3 — Formatos de PII ainda não cobertos (CORRIGIDO — #2003, exceto telefone fixo)
 
 Corrigidos: placa Mercosul (`ABC1D23`) e antiga com rótulo (`placa ABC-1234`;
 sem rótulo colidiria com `ISO-9001`), passaporte com rótulo e numeração
 processual anterior ao padrão CNJ (`0024.12.345678-9`). Mantido fora:
 telefone fixo sem DDD — a forma `\d{4}-\d{4}` colide com intervalo de anos.
 
+## 3.1 Situação das correções (03/10/2026)
+
+| Achado | Situação | PR |
+|---|---|---|
+| NIA-01 | Corrigido | #2003 |
+| NIA-02 | Parcial: variantes seguras de nome; prenome isolado e minúsculas aguardam decisão do titular | #2003 / #2001 |
+| NIA-03 | Corrigido (boot de produção recusa HITL desligado) | #2006 |
+| NIA-04 | Corrigido (boot recusa embeddings HTTP externo; aprovado pelo `security-auditor` com ressalvas não bloqueantes) | #2006 |
+| NIA-05 | Corrigido | #2005 |
+| NIA-06 | Corrigido (cache de resposta fica na prática inativo nos modos default) | #2005 |
+| NIA-07 | Corrigido | #2005 |
+| NIA-08 | Corrigido, exceto telefone fixo sem DDD | #2003 |
+| Teste do financeiro dependente da data | Corrigido | #2004 |
+
+**Antes do deploy** (travas de boot do #2006): conferir o `.env` de produção
+conforme `RUNBOOK_DEPLOY_MANUAL.md`, seção "Conferência pré-deploy das travas
+de boot da IA".
+
 ## 4. Fora do escopo do núcleo de IA
 
 - `tests/test_clientes_contrato_financeiro.py::test_socio_cria_entrada_parcelas_e_exito`
   falha na `main` @ `049fd6c` (comparação de `data_vencimento` das parcelas),
-  reproduzido sem as alterações deste PR. Registrado em Issue própria.
+  reproduzido sem as alterações deste PR. Registrado na Issue #2002 e corrigido
+  no #2004 (o teste fixava a data do dia em que foi escrito).
 
 ## 5. Limitações
 
