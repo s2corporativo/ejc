@@ -139,9 +139,10 @@ describe("OrquestradorPanel — próxima ação simplificada", () => {
       screen.getByText("Snapshot de inteligência ainda não aprovado."),
     ).toBeTruthy();
 
-    // A jornada interna e a timeline continuam no contrato da API, mas deixam
-    // de competir com o status operacional na interface.
-    expect(screen.queryByText("Base fática registrada")).toBeNull();
+    // A jornada completa continua disponível, mas recolhida em "Ver detalhes";
+    // a timeline não compete mais com a próxima ação na superfície principal.
+    expect(screen.getByText("Ver detalhes da jornada")).toBeTruthy();
+    expect(screen.getByText("Base fática registrada")).toBeTruthy();
     expect(screen.queryByText("Análise completa do intake")).toBeNull();
     expect(visaoOrquestrador).toHaveBeenCalledWith("caso-1");
   });
@@ -185,7 +186,9 @@ describe("OrquestradorPanel — próxima ação simplificada", () => {
       expect(
         (await screen.findAllByText(/Revisar e aprovar o snapshot/)).length,
       ).toBeGreaterThan(0);
-      expect(screen.getByText(status === "encerrado" ? "Encerrado" : "Arquivado")).toBeTruthy();
+      expect(
+        screen.getByText(status === "encerrado" ? "Encerrado" : "Arquivado"),
+      ).toBeTruthy();
       abrirAcoes();
 
       const botao = screen.getByRole("button", {
