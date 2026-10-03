@@ -11,9 +11,14 @@
 //    _extracao). O snapshot remove todas elas e a extração viaja em campo
 //    próprio (`extracao`), que é JSON puro e pode ser reaplicada no caso.
 import type { ExtracaoPayload } from "./api";
+import {
+  RASCUNHO_INTAKE_KEY,
+  registrarLimpezaRascunho,
+  storageLocal,
+} from "./rascunho/contrato";
 
 /** Chave única do rascunho de intake documental no localStorage. */
-export const RASCUNHO_KEY = "ejc_intake_rascunho";
+export const RASCUNHO_KEY = RASCUNHO_INTAKE_KEY;
 
 /**
  * Validade do rascunho (48h). O rascunho carrega dados pessoais extraídos de
@@ -94,14 +99,21 @@ export function pendenciaDeRascunho(
   };
 }
 
-/** localStorage de forma tolerante (modo privado/SSR podem lançar). */
-function storage(): Storage | null {
+/**
+ * Limpeza registrada no contrato único — o logout (qualquer caminho) chama
+ * limparTodosRascunhos(), que chega aqui. Mesma chave, mesmo efeito de
+ * limparRascunho(); a duplicidade é proposital: o registro é estático e não
+ * referencia funções do módulo.
+ */
+registrarLimpezaRascunho(() => {
+  const s = storageLocal();
+  if (!s) return;
   try {
-    return typeof localStorage !== "undefined" ? localStorage : null;
+    s.removeItem(RASCUNHO_KEY);
   } catch {
-    return null;
+    // ignore
   }
-}
+});
 
 /**
  * Constrói o snapshot serializável do form: remove as chaves auxiliares "_"
@@ -130,7 +142,7 @@ export function snapshotForm(
 export function salvarRascunho(
   rascunho: Omit<IntakeRascunho, "salvoEm">,
 ): void {
-  const s = storage();
+  const s = storageLocal();
   if (!s) return;
   try {
     const payload: IntakeRascunho = { ...rascunho, salvoEm: Date.now() };
@@ -142,7 +154,7 @@ export function salvarRascunho(
 
 /** Lê o rascunho salvo; retorna null se ausente, malformado ou vencido (TTL). */
 export function carregarRascunho(): IntakeRascunho | null {
-  const s = storage();
+  const s = storageLocal();
   if (!s) return null;
   try {
     const raw = s.getItem(RASCUNHO_KEY);
@@ -195,7 +207,7 @@ export function atualizarRascunho(
 
 /** Remove o rascunho — chamar apenas no sucesso total ou ao descartar. */
 export function limparRascunho(): void {
-  const s = storage();
+  const s = storageLocal();
   if (!s) return;
   try {
     s.removeItem(RASCUNHO_KEY);

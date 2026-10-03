@@ -4,6 +4,7 @@
 // chamadas usam withCredentials para o navegador enviar o cookie.
 import axios from "axios";
 import { toast } from "../components/Toast";
+import { limparTodosRascunhos } from "./rascunho/registro";
 import type { AuthTokens, Deadline } from "../types";
 
 const API_BASE_URL = "/api/v1";
@@ -397,10 +398,12 @@ export function logout(redirectTo?: unknown) {
   axios.post("/api/auth/logout", {}, { withCredentials: true }).catch(() => {});
   setAccessToken(null);
   localStorage.removeItem("ejc_user");
-  // Rascunho de intake carrega dados pessoais extraídos de documentos — não
-  // pode sobreviver ao fim da sessão (LGPD). Limpa pela CHAVE para não criar
-  // ciclo de import em runtime (intakeRascunho importa apenas types daqui).
-  localStorage.removeItem("ejc_intake_rascunho");
+  // Contrato único de rascunho (lib/rascunho/contrato.ts): TODOS os rascunhos
+  // de entrada carregam PII e nenhum sobrevive ao fim da sessão (LGPD).
+  // Antes da unificação, este caminho — o REAL do botão "Sair" — limpava
+  // apenas o intake e deixava o rascunho da Entrada Única (sessionStorage,
+  // mesma aba) e a fila do cadastro manual (localStorage) sobreviverem.
+  limparTodosRascunhos();
   window.location.href =
     typeof redirectTo === "string" && redirectTo.startsWith("/login?")
       ? redirectTo

@@ -4,8 +4,7 @@ import api, {
   refreshAccessToken,
   setAccessToken,
 } from "../lib/api";
-import { RASCUNHO_KEY } from "../lib/intakeRascunho";
-import { limparCadastroManual } from "./cadastroManual";
+import { limparTodosRascunhos } from "../lib/rascunho/registro";
 import type { User } from "../types";
 
 export type AuthStatus = "initializing" | "authenticated" | "unauthenticated";
@@ -13,23 +12,6 @@ export type AuthStatus = "initializing" | "authenticated" | "unauthenticated";
 type SecurityState = {
   permissions?: string[];
 };
-
-// B3 (auditoria do Bloco 3): o rascunho da Entrada Única vive em
-// sessionStorage e pode conter dados pessoais do relato — não pode sobreviver
-// ao fim da sessão numa estação compartilhada. Prefixo espelha
-// pages/EntradaUnica/rascunhoStorage.ts (sem import de pages/ em stores/).
-function limparRascunhosEntrada() {
-  try {
-    for (let i = sessionStorage.length - 1; i >= 0; i--) {
-      const chave = sessionStorage.key(i);
-      if (chave && chave.startsWith("ejc_entrada_rascunho")) {
-        sessionStorage.removeItem(chave);
-      }
-    }
-  } catch {
-    /* storage indisponível não pode quebrar o logout */
-  }
-}
 
 function readStoredUser(): User | null {
   try {
@@ -123,9 +105,10 @@ export const useAuth = create<AuthState>((set, get) => ({
 
       if (responseStatus === 401 || responseStatus === 403) {
         setAccessToken(null);
-        localStorage.removeItem(RASCUNHO_KEY);
-        limparRascunhosEntrada();
-        limparCadastroManual();
+        // Contrato único de rascunho: limpa intake + Entrada Única + cadastro
+        // manual num só ponto (as limpezas são registradas por módulo em
+        // lib/rascunho/contrato.ts — nada de chave/prefixo espelhado aqui).
+        limparTodosRascunhos();
         persistUser(null);
         set({ user: null, status: "unauthenticated" });
         return;
@@ -146,10 +129,10 @@ export const useAuth = create<AuthState>((set, get) => ({
   },
   clearSession: () => {
     setAccessToken(null);
-    // O rascunho de intake carrega dados pessoais extraídos de documentos —
-    // não pode sobreviver ao fim da sessão em estação compartilhada (LGPD).
-    localStorage.removeItem(RASCUNHO_KEY);
-    limparRascunhosEntrada();
+    // Todos os rascunhos de entrada carregam PII (intake documental, relato
+    // da Entrada Única, fila do cadastro manual) — nada sobrevive ao fim da
+    // sessão em estação compartilhada (LGPD). Via contrato único:
+    limparTodosRascunhos();
     persistUser(null);
     set({ user: null, status: "unauthenticated" });
   },
