@@ -129,13 +129,12 @@ export const TABS = [
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
-// Fase 1 (plano de simplificação): as ~25 abas do workspace são organizadas
-// nas CINCO seções canônicas de config/caseNav.ts — os MESMOS rótulos da
-// barra persistente (CaseContextBar) e do dock (CaseCommandDock). Cada aba
-// mantém a mesma key e o mesmo conteúdo — só muda o agrupamento; deep-links
-// (?tab=...) antigos continuam funcionando porque a seção ativa é derivada da
-// aba (GROUPS.find abaixo). O antigo grupo "Histórico e encerramento"
-// (memoria) foi absorvido por Atividades.
+// As ~25 capacidades do workspace são organizadas nas CINCO áreas canônicas de
+// config/caseNav.ts. A navegação principal vive no CaseContextBar; aqui ficam
+// somente os filtros internos da área ativa. Cada aba mantém a mesma key e o
+// mesmo conteúdo, preservando deep-links ?tab=... e redirects legados.
+// O antigo grupo "Histórico e encerramento" (memoria) foi absorvido por
+// Atividades.
 // `links` são rotas irmãs do caso (páginas próprias) expostas na seção
 // pertinente para não parecerem sistemas separados. A rota /casos/:id/jornada
 // deixou de ser link porque a jornada agora vive embutida na Visão.
