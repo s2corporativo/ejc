@@ -4,7 +4,6 @@ import React, { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams, useNavigate } from "react-router";
 import {
   Sparkles,
-  ChevronDown,
   ChevronLeft,
   RefreshCw,
   ShieldCheck,
@@ -926,21 +925,13 @@ export default function CasoDetalhe() {
     }
   };
 
-  const primaryCaseTabs: { key: TabKey; label: string }[] = [
-    { key: "resumo", label: "Visão geral" },
-    { key: "timeline", label: "Timeline" },
-    { key: "documentos", label: "Documentos" },
-    { key: "teses", label: "Estratégia" },
-    { key: "pecas", label: "Peças" },
-    { key: "prazos", label: "Prazos" },
-    { key: "financeiro", label: "Financeiro" },
-  ];
-  const primaryFlowTabs = new Set<TabKey>(
-    primaryCaseTabs.map((item) => item.key),
+  const activeSection =
+    CASE_NAV_SECTIONS.find((section) => section.tabs.includes(activeTab)) ??
+    CASE_NAV_SECTIONS[0];
+  const activeSectionTabs = filtrarTabsW3(activeSection.tabs).filter(
+    (tab): tab is TabKey => TABS.some((item) => item.key === tab),
   );
-  const tabsMais = filtrarTabsW3(TABS.map((tab) => tab.key)).filter(
-    (tab) => !primaryFlowTabs.has(tab),
-  );
+  const activeSectionLinks = GROUP_LINKS[activeSection.label] ?? [];
   const activeTabLabel =
     TABS.find((t) => t.key === activeTab)?.label ?? "Resumo";
   const numeroProcesso =
@@ -1071,63 +1062,59 @@ export default function CasoDetalhe() {
             </button>
           </div>
         </div>
-        <div className="ejc-case-nav-row border-t border-slate-100 px-3 py-2">
+        <div className="border-t border-slate-100 px-3 py-2">
           <nav
             className="ejc-case-primary-tabs"
             aria-label="Áreas principais do caso"
           >
-            {primaryCaseTabs.map((item) => (
+            {CASE_NAV_SECTIONS.map((section) => (
               <button
-                key={item.key}
+                key={section.label}
                 type="button"
-                onClick={() => setSearchParams({ tab: item.key })}
-                className={activeTab === item.key ? "is-active" : ""}
+                onClick={() => setSearchParams({ tab: section.tab })}
+                className={
+                  activeSection.label === section.label ? "is-active" : ""
+                }
+                title={section.descricao}
               >
-                {item.label}
+                {section.label}
               </button>
             ))}
           </nav>
-          <details className="group relative ejc-case-more">
-            <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:border-primary-300 hover:bg-primary-50">
-              Mais
-              <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
-            </summary>
-            <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50/90 p-3 shadow-sm">
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                Recursos complementares do caso
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {tabsMais.map((k) => {
-                  const t = TABS.find((x) => x.key === k)!;
-                  return (
-                    <button
-                      key={k}
-                      type="button"
-                      onClick={() => setSearchParams({ tab: k })}
-                      className={`h-8 rounded-full px-3 text-xs font-medium transition-colors ${
-                        activeTab === k
-                          ? "bg-slate-950 text-white"
-                          : "border border-slate-200 bg-white text-slate-600 hover:border-primary-300 hover:text-slate-950"
-                      }`}
-                    >
-                      {t.label}
-                    </button>
-                  );
-                })}
-                {Object.values(GROUP_LINKS)
-                  .flat()
-                  .map((link) => (
-                    <Link
-                      key={link.label}
-                      to={link.to(caso.id)}
-                      className="flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-primary-700 transition-colors hover:border-primary-300 hover:bg-primary-50"
-                    >
-                      {link.label}
-                    </Link>
-                  ))}
-              </div>
-            </div>
-          </details>
+
+          {(activeSectionTabs.length > 1 || activeSectionLinks.length > 0) && (
+            <nav
+              className="mt-2 flex flex-wrap gap-1.5"
+              aria-label={`Recursos de ${activeSection.label}`}
+            >
+              {activeSectionTabs.map((key) => {
+                const tab = TABS.find((item) => item.key === key)!;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setSearchParams({ tab: key })}
+                    className={`h-8 rounded-full px-3 text-xs font-medium transition-colors ${
+                      activeTab === key
+                        ? "bg-slate-950 text-white"
+                        : "border border-slate-200 bg-white text-slate-600 hover:border-primary-300 hover:text-slate-950"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+              {activeSectionLinks.map((link) => (
+                <Link
+                  key={link.label}
+                  to={link.to(caso.id)}
+                  className="flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-primary-700 transition-colors hover:border-primary-300 hover:bg-primary-50"
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </nav>
+          )}
         </div>
       </div>
 
