@@ -814,16 +814,6 @@ async def converter_em_caso(
                 db.add(task)
                 created_tasks.append(task.id)
 
-        # Documentos transferidos já colocam o caso em instrução, exatamente
-        # como a Entrada Única e a GED. Evita que a origem Raio-X crie um caso
-        # "aberto" embora a base documental já esteja vinculada.
-        if official_documents:
-            from app.services.status_transicao import avancar_status_por_evento
-
-            await avancar_status_por_evento(
-                db, case, "documento_vinculado", user_id=user.id
-            )
-
         analise.status = "convertido_em_caso"
         analise.convertido_case_id = case.id
         analise.converted_at = datetime.now(timezone.utc)
