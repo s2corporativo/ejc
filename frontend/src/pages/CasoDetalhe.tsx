@@ -60,6 +60,7 @@ import {
 } from "../config/caseNav";
 import { RAMOS } from "./ramos/ramosConfig";
 import type { FerramentaConfig } from "./ramos/ramosConfig";
+import { officeBranding } from "../config/officeBranding";
 import TabPartes from "./CasoDetalhe/TabPartes";
 import TabFerramentas from "./CasoDetalhe/TabFerramentas";
 import TabResumo, { AvisoCasoEncerrado } from "./CasoDetalhe/TabResumo";
@@ -1185,11 +1186,15 @@ export default function CasoDetalhe() {
 
         <aside
           className="ejc-case-ai-rail"
-          aria-label="EJC Intelligence do caso"
+          aria-label="Inteligência jurídica do caso"
         >
           <div className="ejc-case-ai-rail-head">
             <div>
-              <span>EJC Intelligence</span>
+              <img
+                src={officeBranding.logoPath}
+                alt={officeBranding.officeName}
+                className="mb-1 h-5 w-auto max-w-[145px] object-contain"
+              />
               <strong>Assistente contextual</strong>
             </div>
             <Sparkles size={18} aria-hidden="true" />

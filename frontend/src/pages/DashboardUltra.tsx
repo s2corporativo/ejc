@@ -647,7 +647,11 @@ export default function DashboardUltra() {
           <div className="ejc-dash__entry-compact">
             <div>
               <span className="ejc-dash__entry-kicker">
-                De Paula Teixeira · Legal Intelligence Workspace
+                <img
+                  src={officeBranding.logoPath}
+                  alt={officeBranding.officeName}
+                  className="h-6 w-auto max-w-[170px] object-contain"
+                />
               </span>
               <strong>Começar novo trabalho</strong>
               <small>
@@ -735,7 +739,11 @@ export default function DashboardUltra() {
                 </span>
                 <div className="ejc-dash__entry-copy">
                   <span className="ejc-dash__entry-kicker">
-                    De Paula Teixeira · Inteligência Jurídica
+                    <img
+                      src={officeBranding.logoPath}
+                      alt={officeBranding.officeName}
+                      className="h-6 w-auto max-w-[170px] object-contain"
+                    />
                   </span>
                   <h1>Leitura e análise do caso com IA</h1>
                   <p>

@@ -3,6 +3,7 @@ import { toast } from "../components/Toast";
 import { useNavigate, useSearchParams } from "react-router";
 import { isAxiosError } from "axios";
 import api from "../lib/api";
+import { officeBranding } from "../config/officeBranding";
 
 export default function RedefinirSenha() {
   const [params] = useSearchParams();
@@ -41,7 +42,11 @@ export default function RedefinirSenha() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-navy px-4">
       <div className="card w-full max-w-sm p-8">
-        <img src="/logo.png" alt="" className="h-16 mx-auto mb-5" />
+        <img
+          src={officeBranding.logoPath}
+          alt={officeBranding.officeName}
+          className="brand-logo-img h-16 w-auto max-w-[240px] mx-auto mb-5 object-contain"
+        />
         <h1 className="font-semibold text-navy text-center mb-4">Nova senha</h1>
         {erro && (
           <div className="mb-3 px-3 py-2 rounded-lg bg-danger-50 text-danger-700 text-sm">
