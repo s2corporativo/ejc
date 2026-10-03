@@ -187,6 +187,7 @@ describe("EntradaUnica — tela inicial (A.1)", () => {
     );
 
     cleanup();
+    sessionStorage.clear();
     postMock.mockReset();
     postMock.mockResolvedValueOnce({
       data: { rascunho_id: "r-file", cliente: {}, area: {}, documentos: [] },
