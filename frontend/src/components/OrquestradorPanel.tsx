@@ -76,7 +76,10 @@ function rotaFluxoHumano(
 ): { to: string; label: string } | null {
   switch (acao) {
     case "aprovar_snapshot":
-      return { to: `/casos/${caseId}?tab=resumo`, label: "Revisar inteligência do caso" };
+      return {
+        to: `/casos/${caseId}?tab=resumo`,
+        label: "Revisar inteligência do caso",
+      };
     case "aprovar_tese":
     case "aprovar_estrategia":
       return {
@@ -105,18 +108,6 @@ function rotaFluxoHumano(
       return null;
   }
 }
-
-const CASE_STATUS_STEPS = [
-  { value: "aberto", label: "Aberto" },
-  { value: "em_instrucao", label: "Em instrução" },
-  { value: "em_producao", label: "Em produção" },
-  { value: "protocolado", label: "Protocolado" },
-] as const;
-
-const CASE_STATUS_TERMINAL: Record<string, string> = {
-  encerrado: "Encerrado",
-  arquivado: "Arquivado",
-};
 
 // Extrai mensagem + detalhes estruturados dos erros 422/429/403 do /avancar.
 function extrairErroAvancar(e: unknown): {
@@ -285,13 +276,6 @@ export default function OrquestradorPanel({
       ? "Ação disponível para advogados"
       : null;
 
-  const statusTerminal = caseStatus
-    ? CASE_STATUS_TERMINAL[caseStatus]
-    : undefined;
-  const statusIndex = CASE_STATUS_STEPS.findIndex(
-    (step) => step.value === caseStatus,
-  );
-
   return (
     <div className="space-y-4">
       <IANotice>
@@ -323,31 +307,6 @@ export default function OrquestradorPanel({
         }
       >
         <div className="space-y-4">
-          {statusTerminal ? (
-            <Badge tone="slate">{statusTerminal}</Badge>
-          ) : (
-            <div
-              className="flex flex-wrap gap-2"
-              aria-label="Estado operacional do caso"
-            >
-              {CASE_STATUS_STEPS.map((step, index) => (
-                <span
-                  key={step.value}
-                  className={cn(
-                    "rounded-full border px-3 py-1 text-xs font-medium",
-                    index === statusIndex
-                      ? "border-primary-600 bg-primary-600 text-white"
-                      : index < statusIndex
-                        ? "border-success-200 bg-success-50 text-success-700"
-                        : "border-slate-200 bg-white text-slate-400",
-                  )}
-                >
-                  {step.label}
-                </span>
-              ))}
-            </div>
-          )}
-
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
               Recomendação operacional
@@ -394,98 +353,100 @@ export default function OrquestradorPanel({
         </Alert>
       )}
 
-      {acoes.length > 0 && (
-        <details className="rounded-xl border border-slate-200 bg-white">
-          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-800">
-            Ações disponíveis ({acoes.length})
-            <span className="ml-2 text-xs font-normal text-slate-400">
-              abrir somente quando precisar executar ou revisar uma etapa
-            </span>
-          </summary>
-          <div className="space-y-2 border-t border-slate-100 p-4">
-            {acoes.map((a) => {
-              const rota = rotaFluxoHumano(a.acao, caseId);
-              const executaDireto =
-                a.executavel_via_orquestrador &&
-                ACOES_EXECUCAO_DIRETA.has(a.acao);
-              return (
-                <div
-                  key={a.acao}
-                  className="flex flex-col gap-2 rounded-xl border border-slate-100 p-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-800">
-                      {ROTULO_ACAO[a.acao] ?? a.acao}
-                    </p>
-                    {!executaDireto && (
-                      <p className="mt-1 flex items-start gap-1 text-xs text-warn-700">
-                        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-                        Exige decisão ou aprovação humana.
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {executaDireto ? (
-                      <Button
-                        size="sm"
-                        variant="ai"
-                        onClick={() => setConfirmando(a)}
-                        disabled={executando || motivoBloqueio !== null}
-                        title={motivoBloqueio ?? undefined}
-                      >
-                        Executar
-                      </Button>
-                    ) : (
-                      rota && (
-                        <Link
-                          to={rota.to}
-                          className="text-xs font-medium text-primary-700 underline underline-offset-2"
-                        >
-                          {rota.label}
-                        </Link>
-                      )
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </details>
-      )}
-
       <details className="rounded-xl border border-slate-200 bg-white">
         <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-800">
-          Ver detalhes da jornada
+          Ver detalhes
           <span className="ml-2 text-xs font-normal text-slate-400">
-            {visao.jornada.length} etapa(s) derivada(s) dos artefatos reais
+            jornada completa e ações disponíveis
           </span>
         </summary>
-        <div className="border-t border-slate-100 p-4">
-          <ol className="space-y-2">
-            {visao.jornada.map((etapa) => (
-              <li
-                key={etapa.etapa}
-                className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2"
-              >
-                <span className="text-sm text-slate-700">{etapa.rotulo}</span>
-                <Badge
-                  tone={
-                    etapa.status === "concluida"
-                      ? "green"
-                      : etapa.status === "bloqueada"
-                        ? "amber"
-                        : "slate"
-                  }
+        <div className="space-y-5 border-t border-slate-100 p-4">
+          {acoes.length > 0 && (
+            <section>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Ações disponíveis
+              </h3>
+              <div className="space-y-2">
+                {acoes.map((a) => {
+                  const rota = rotaFluxoHumano(a.acao, caseId);
+                  const executaDireto =
+                    a.executavel_via_orquestrador &&
+                    ACOES_EXECUCAO_DIRETA.has(a.acao);
+                  return (
+                    <div
+                      key={a.acao}
+                      className="flex flex-col gap-2 rounded-xl border border-slate-100 p-3 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-800">
+                          {ROTULO_ACAO[a.acao] ?? a.acao}
+                        </p>
+                        {!executaDireto && (
+                          <p className="mt-1 flex items-start gap-1 text-xs text-warn-700">
+                            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                            Exige decisão ou aprovação humana.
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {executaDireto ? (
+                          <Button
+                            size="sm"
+                            variant="ai"
+                            onClick={() => setConfirmando(a)}
+                            disabled={executando || motivoBloqueio !== null}
+                            title={motivoBloqueio ?? undefined}
+                          >
+                            Executar
+                          </Button>
+                        ) : (
+                          rota && (
+                            <Link
+                              to={rota.to}
+                              className="text-xs font-medium text-primary-700 underline underline-offset-2"
+                            >
+                              {rota.label}
+                            </Link>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          <section>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Jornada completa
+            </h3>
+            <ol className="space-y-2">
+              {(visao.jornada ?? []).map((etapa) => (
+                <li
+                  key={etapa.etapa}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2"
                 >
-                  {etapa.status === "concluida"
-                    ? "Concluída"
-                    : etapa.status === "bloqueada"
-                      ? "Bloqueada"
-                      : "Pendente"}
-                </Badge>
-              </li>
-            ))}
-          </ol>
+                  <span className="text-sm text-slate-700">{etapa.rotulo}</span>
+                  <Badge
+                    tone={
+                      etapa.status === "concluida"
+                        ? "green"
+                        : etapa.status === "bloqueada"
+                          ? "amber"
+                          : "slate"
+                    }
+                  >
+                    {etapa.status === "concluida"
+                      ? "Concluída"
+                      : etapa.status === "bloqueada"
+                        ? "Bloqueada"
+                        : "Pendente"}
+                  </Badge>
+                </li>
+              ))}
+            </ol>
+          </section>
         </div>
       </details>
 
