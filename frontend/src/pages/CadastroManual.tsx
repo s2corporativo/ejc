@@ -361,15 +361,11 @@ export default function CadastroManual({
         const nome = nomeCliente(r.data) || "Cliente selecionado";
         setClienteContextoNome(nome);
         setClienteContextoValido(true);
-        setFormCaso((atual) => {
-          const proximo = {
-            ...atual,
-            client_id: clientIdContexto,
-            criar_cliente: false,
-          };
-          setRascunhoCaso(proximo);
-          return proximo;
-        });
+        setFormCaso((atual) => ({
+          ...atual,
+          client_id: clientIdContexto,
+          criar_cliente: false,
+        }));
       })
       .catch(() => {
         if (!ativo) return;
@@ -444,19 +440,19 @@ export default function CadastroManual({
     };
   }, [rodarSync, atualizarCacheClientes]);
 
+  useEffect(() => {
+    setRascunhoCliente(formCliente);
+  }, [formCliente, setRascunhoCliente]);
+
+  useEffect(() => {
+    setRascunhoCaso(formCaso);
+  }, [formCaso, setRascunhoCaso]);
+
   const mudarCliente = (patch: Partial<ClienteForm>) => {
-    setFormCliente((f) => {
-      const novo = { ...f, ...patch };
-      setRascunhoCliente(novo);
-      return novo;
-    });
+    setFormCliente((f) => ({ ...f, ...patch }));
   };
   const mudarCaso = (patch: Partial<CasoForm>) => {
-    setFormCaso((f) => {
-      const novo = { ...f, ...patch };
-      setRascunhoCaso(novo);
-      return novo;
-    });
+    setFormCaso((f) => ({ ...f, ...patch }));
   };
 
   const resetCliente = () => {
