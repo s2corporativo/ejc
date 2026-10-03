@@ -61,6 +61,18 @@ export function SiteHeader() {
 
         <div className="flex items-center gap-2">
           <ThemeToggle />
+          <button
+            onClick={() => {
+              // Trigger Cmd+K via dispatch
+              window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
+            }}
+            className="hidden md:flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            aria-label="Abrir command palette (Ctrl+K)"
+            title="Abrir command palette (Ctrl+K)"
+          >
+            <kbd className="font-mono text-[10px]">⌘K</kbd>
+            <span>Comandos</span>
+          </button>
           {view === "landing" ? (
             <>
               <Button

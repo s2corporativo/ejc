@@ -47,6 +47,66 @@ export function Editor() {
   const [suggLoading, setSuggLoading] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
+  // Histórico de versões (in-memory)
+  interface Version {
+    id: string;
+    timestamp: number;
+    label: string;
+    content: string;
+    charCount: number;
+  }
+  const [versions, setVersions] = useState<Version[]>([]);
+  const [showVersions, setShowVersions] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  // Atalhos de teclado no editor
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Ctrl/Cmd+S = salvar
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+        e.preventDefault();
+        if (doc) save();
+      }
+      // Ctrl/Cmd+Enter = pedir sugestão
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        // Dispara o dialog de sugestão
+        const btn = document.querySelector<HTMLButtonElement>("[aria-label*=\"sugest\"]");
+        btn?.click();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [doc, title, content]);
+
+  // Detectar mudanças (dirty state)
+  useEffect(() => {
+    if (doc && content !== doc.generatedContent) {
+      setDirty(true);
+    } else {
+      setDirty(false);
+    }
+  }, [content, doc]);
+
+  // Auto-versionar a cada 2 min se houver mudanças
+  useEffect(() => {
+    if (!doc || !dirty) return;
+    const interval = setInterval(() => {
+      if (content !== doc.generatedContent && content.length > 50) {
+        const v: Version = {
+          id: `v-${Date.now()}`,
+          timestamp: Date.now(),
+          label: `Auto-save ${new Date().toLocaleTimeString("pt-BR")}`,
+          content,
+          charCount: content.length,
+        };
+        setVersions((prev) => [v, ...prev].slice(0, 10));
+        setDirty(false);
+      }
+    }, 120000); // 2 min
+    return () => clearInterval(interval);
+  }, [doc, dirty, content]);
+
   useEffect(() => {
     if (currentDocId) {
       loadDoc(currentDocId);
@@ -359,13 +419,13 @@ export function Editor() {
           <Button variant="outline" size="sm" onClick={downloadMarkdown}>
             <Download className="mr-1.5 h-4 w-4" /> .md
           </Button>
-          <Button size="sm" onClick={save} disabled={saving}>
+          <Button size="sm" onClick={save} disabled={saving || !dirty} variant={dirty ? "default" : "outline"}>
             {saving ? (
               <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
             ) : (
               <Save className="mr-1.5 h-4 w-4" />
             )}
-            Salvar
+            {dirty ? "Salvar*" : "Salvo"}
           </Button>
         </div>
       </div>
@@ -384,6 +444,9 @@ export function Editor() {
             </TabsTrigger>
             <TabsTrigger value="meta" className="gap-1.5">
               <History className="h-3.5 w-3.5" /> Metadados
+            </TabsTrigger>
+            <TabsTrigger value="versions" className="gap-1.5">
+              <History className="h-3.5 w-3.5" /> Versões {versions.length > 0 && <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">{versions.length}</Badge>}
             </TabsTrigger>
           </TabsList>
         </div>
@@ -478,6 +541,109 @@ export function Editor() {
                       </Badge>
                     ))}
                   </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="versions" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between text-sm">
+                <span>Histórico de versões</span>
+                <Badge variant="outline" className="text-[10px]">{versions.length} versões</Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {versions.length === 0 ? (
+                <div className="py-8 text-center text-sm text-muted-foreground">
+                  <History className="mx-auto mb-2 h-8 w-8 opacity-30" />
+                  Nenhuma versão salva ainda.
+                  <p className="mt-1 text-xs">
+                    Versões automáticas são criadas a cada 2 minutos quando você edita.
+                    Você também pode criar uma versão manualmente.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-3"
+                    onClick={() => {
+                      const v: Version = {
+                        id: `v-${Date.now()}`,
+                        timestamp: Date.now(),
+                        label: `Versão manual ${new Date().toLocaleTimeString("pt-BR")}`,
+                        content,
+                        charCount: content.length,
+                      };
+                      setVersions((prev) => [v, ...prev].slice(0, 10));
+                      toast({ title: "Versão criada", description: `${content.length} caracteres` });
+                    }}
+                  >
+                    Criar versão agora
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mb-2 w-full"
+                    onClick={() => {
+                      const v: Version = {
+                        id: `v-${Date.now()}`,
+                        timestamp: Date.now(),
+                        label: `Versão manual ${new Date().toLocaleTimeString("pt-BR")}`,
+                        content,
+                        charCount: content.length,
+                      };
+                      setVersions((prev) => [v, ...prev].slice(0, 10));
+                      toast({ title: "Versão criada" });
+                    }}
+                  >
+                    + Criar versão do estado atual
+                  </Button>
+                  {versions.map((v, i) => (
+                    <div
+                      key={v.id}
+                      className="flex items-center gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-accent/30"
+                    >
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        <History className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium">{v.label}</div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          {new Date(v.timestamp).toLocaleString("pt-BR")} · {v.charCount} caracteres
+                        </div>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setContent(v.content);
+                            toast({ title: "Versão restaurada", description: v.label });
+                          }}
+                        >
+                          Restaurar
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label="Excluir versão"
+                          onClick={() => {
+                            setVersions((prev) => prev.filter((x) => x.id !== v.id));
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                  <p className="mt-3 text-center text-xs text-muted-foreground">
+                    💡 As versões ficam em memória apenas nesta sessão. Salve o documento para persistir.
+                  </p>
                 </div>
               )}
             </CardContent>

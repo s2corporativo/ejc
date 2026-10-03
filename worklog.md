@@ -107,3 +107,31 @@ Stage Summary:
 - Export PDF no editor com formatação profissional.
 - Tab bar sticky no app.
 - Próxima fase: adicionar autenticação real (NextAuth), histórico de versões no editor, mais skills, perfil de estilo do advogado.
+
+---
+Task ID: 9 (cron webDevReview #2)
+Agent: cron webDevReview (15min)
+Task: Continuar QA e adicionar features (styling + funcionalidade). Priorizar command palette, histórico de versões, mais skills, FAQ.
+
+Work Log:
+- Lido worklog anterior (review #1): bug LLM inventando marcadores corrigido, 9 templates, Dashboard tab, seção "Como funciona", export PDF, tab bar sticky.
+- Dev server confirmado ativo (PID 4517, HTTP 200, 0 erros no dev.log).
+- QA via agent-browser (após limpar localStorage): landing renderiza 11 seções (era 10, +1 FAQ), H1 correto, 0 erros de console, 0 page errors.
+- COMMAND PALETTE (Cmd+K / Ctrl+K) criado em src/components/command-palette.tsx: 12 comandos agrupados (Navegação, Plataforma, Conta, Aparência, Ações, Ajuda), atalhos visuais (kbd), navegação completa (landing + 6 tabs app), toggle de tema, login, print. Listener global para Cmd+K. Botão "⌘K Comandos" adicionado ao header.
+- SEÇÃO FAQ adicionada à landing (src/components/landing/faq.tsx): 8 perguntas frequentes com Accordion (anonimização local, LGPD, CNJ 615/2025, segredo de justiça, habilidades, sistemas suportados, planos, uso da minuta gerada). Estilo com Badge e cards arredondados.
+- HISTÓRICO DE VERSÕES no editor: novo tab "Versões" com badge de contagem, auto-save a cada 2 min quando há mudanças, criação manual, restauração de versões, exclusão individual, persistência em memória por sessão. Interface com timestamps e char counts.
+- DIRTY STATE no editor: botão Salvar muda para "Salvar*" quando há mudanças não salvas, volta para "Salvo" após persistir, disabled quando não há mudanças. Indicador visual claro do estado.
+- ATALHOS DE TECLADO no editor: Ctrl/Cmd+S para salvar, Ctrl/Cmd+Enter para pedir sugestão IA. Prevenção de comportamento padrão.
+- 6 NOVAS SKILLS adicionadas ao seed (total 17): INSS Tempo de Contribuição (previdenciário), CPC Tutela de Urgência/Evidência, CPC Audiência de Conciliação, Juros e Correção Monetária, OAB Estatuto da Advocacia, CDC Cláusulas Abusivas. Cobertura ampliada para previdenciário, financeiro, ética profissional.
+- ESLint limpo (0 erros, 0 warnings após remover directive unused).
+- Verificação final: landing 11 seções, FAQ com título "Perguntas frequentes", command palette abre com "Digite um comando ou busque...", 17 skills via API, editor versions tab com "Histórico de versões" + "Criar versão agora" + contagem "1 versões", navegação via palette funciona (click em jurisprudência → tab JurisprudênciaIA).
+
+Stage Summary:
+- Command palette (Cmd+K) com 12 comandos e navegação completa implementado.
+- Seção FAQ com 8 perguntas/fundamentações sobre privacidade, conformidade e uso.
+- Histórico de versões no editor (auto-save 2 min + manual + restauração).
+- Dirty state no botão Salvar com indicador visual.
+- Atalhos de teclado (Ctrl+S salvar, Ctrl+Enter sugerir).
+- 6 novas skills (17 total) cobrindo previdenciário, financeiro, ética OAB.
+- 0 erros de console, 0 erros ESLint, dev server saudável.
+- Próxima fase sugerida: autenticação real (NextAuth), persistência de versões no DB, perfil de estilo do advogado, mais templates empresariais, integração com e-SAJ/PJe real.

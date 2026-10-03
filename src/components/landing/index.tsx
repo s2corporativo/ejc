@@ -10,6 +10,7 @@ import { Integrations } from "./integrations";
 import { News } from "./news";
 import { Pricing } from "./pricing";
 import { Media } from "./media";
+import { Faq } from "./faq";
 
 export function Landing() {
   return (
@@ -23,6 +24,7 @@ export function Landing() {
       <Integrations />
       <News />
       <Pricing />
+      <Faq />
       <Media />
     </>
   );

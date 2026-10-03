@@ -5,6 +5,7 @@ import { useAppStore } from "@/lib/store";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { AuthDialog } from "@/components/auth-dialog";
+import { CommandPalette } from "@/components/command-palette";
 import { Landing } from "@/components/landing";
 import { AppShell } from "@/components/app";
 
@@ -24,6 +25,7 @@ export default function Home() {
       </main>
       <SiteFooter />
       <AuthDialog />
+      <CommandPalette />
     </>
   );
 }
