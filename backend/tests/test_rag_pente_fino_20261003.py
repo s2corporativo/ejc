@@ -6,7 +6,11 @@ que fecha:
 * A-3  — piso de sigilo do caso propagado nos serviços que juntam caso + RAG;
 * A-6  — gate sem cast `::boolean` (valor não conversível zerava o RAG);
 * A-9  — recusa do curador sobrevive à nova versão do documento;
-* A-13/M-11 — blocklist normalizada e chave legada `confianca='bloqueado'`.
+* A-13/M-11 — blocklist normalizada e chave legada `confianca='bloqueado'`;
+* A-12/A-15 — curadoria pelo PATCH com status explícito, notas, quarentena e
+         auditoria; `disponivel` fora do vocabulário (painel e legal_docs);
+* A-14 — grafia variante de bloqueio não aprova;
+* A-16 — PDF truncado na extração é sinalizado.
 
 Os testes db-level ao final rodam só com RUN_DB_TESTS=1 (Postgres + pgvector).
 """
@@ -20,6 +24,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
 
 from app.models.rag import KnowledgeDoc
 from app.services import ai_service, ingestion_service
@@ -194,6 +199,175 @@ async def test_a3_esteira_de_peca_propaga_piso_de_sigilo(monkeypatch, case_id, a
         async for _ in gen:
             pass
     assert capt["modo_sanitizacao"] == esperado
+
+
+# ── A-12 / A-15 — PATCH /ia-governanca/rag-curadoria ─────────────────────────
+
+class _DBCuradoria:
+    def __init__(self, doc):
+        self.doc, self.commits = doc, 0
+
+    async def execute(self, *_a, **_kw):
+        return _Resultado(self.doc)
+
+    async def commit(self):
+        self.commits += 1
+
+
+def _doc_curadoria(**extra):
+    return KnowledgeDoc(id="kd-1", titulo="Doc", categoria="doutrina",
+                        chave_origem="x", hash_conteudo="h", extra=extra)
+
+
+@pytest.fixture
+def auditoria(monkeypatch):
+    from app.models import audit_log
+    registros: list = []
+
+    async def fake_audit(db, **kw):
+        registros.append(kw)
+
+    monkeypatch.setattr(audit_log, "criar_audit_log", fake_audit)
+    return registros
+
+
+def test_a15_patch_exige_status_explicito_e_notas():
+    from pydantic import ValidationError
+
+    from app.routers.ia_governanca import CuradoriaPatch
+
+    with pytest.raises(ValidationError):
+        CuradoriaPatch(confidence_level="media")            # sem rag_status
+    with pytest.raises(ValidationError):
+        CuradoriaPatch(confidence_level="media", rag_status="aprovado")  # sem notas
+    with pytest.raises(ValidationError):
+        CuradoriaPatch(confidence_level="media", rag_status="aprovado", notas="")
+
+
+def test_a12_disponivel_saiu_do_vocabulario():
+    from pydantic import ValidationError
+
+    from app.routers.ia_governanca import CuradoriaPatch, _rag_status
+
+    with pytest.raises(ValidationError):
+        CuradoriaPatch(confidence_level="media", rag_status="disponivel", notas="ok")
+    # Sem decisão o gate exclui o documento — o painel não pode dizer o contrário.
+    assert _rag_status({}, "indexado") == "pendente"
+
+
+async def test_a15_aprovacao_grava_revisao_humana_e_auditoria(auditoria):
+    from app.routers.ia_governanca import CuradoriaPatch, atualizar_curadoria
+
+    doc = _doc_curadoria()
+    db = _DBCuradoria(doc)
+    await atualizar_curadoria(
+        "kd-1", CuradoriaPatch(confidence_level="alta", rag_status="aprovado",
+                               notas="conferido na fonte oficial"),
+        db=db, cu=SimpleNamespace(id="u-9", role="socio"),
+    )
+    assert doc.extra["rag_status"] == "aprovado"
+    assert doc.extra["human_reviewed"] is True
+    assert doc.extra["human_review_notes"] == "conferido na fonte oficial"
+    assert auditoria and auditoria[0]["entidade"] == "knowledge_docs"
+    assert db.commits == 1
+
+
+async def test_a15_quarentena_bloqueia_aprovacao_pelo_patch(auditoria):
+    from app.routers.ia_governanca import CuradoriaPatch, atualizar_curadoria
+
+    doc = _doc_curadoria(quarantine_active=True, rag_status="pendente")
+    db = _DBCuradoria(doc)
+    with pytest.raises(HTTPException) as exc:
+        await atualizar_curadoria(
+            "kd-1", CuradoriaPatch(confidence_level="alta", rag_status="aprovado",
+                                   notas="tentativa"),
+            db=db, cu=SimpleNamespace(id="u-9", role="socio"),
+        )
+    assert exc.value.status_code == 422
+    assert doc.extra["rag_status"] == "pendente" and db.commits == 0 and not auditoria
+
+
+async def test_a15_devolver_a_fila_nao_marca_revisao_humana(auditoria):
+    from app.routers.ia_governanca import CuradoriaPatch, atualizar_curadoria
+
+    doc = _doc_curadoria(rag_status="aprovado", human_reviewed=True,
+                         human_reviewed_by="u-1", human_reviewed_at="2026-09-01")
+    await atualizar_curadoria(
+        "kd-1", CuradoriaPatch(confidence_level="media", rag_status="pendente",
+                               notas="reavaliar"),
+        db=_DBCuradoria(doc), cu=SimpleNamespace(id="u-9", role="socio"),
+    )
+    assert doc.extra["rag_status"] == "pendente"
+    assert not any(k in doc.extra for k in
+                   ("human_reviewed", "human_reviewed_by", "human_reviewed_at"))
+    assert auditoria and "reavaliar" not in auditoria[0]["detalhes"]  # notas fora do log
+
+
+# ── A-12 (legal_docs) ────────────────────────────────────────────────────────
+
+class _Scalars:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self._rows
+
+
+class _DBFontes:
+    def __init__(self, docs):
+        self.docs = docs
+
+    async def execute(self, *_a, **_kw):
+        return _Scalars(self.docs)
+
+
+@pytest.mark.parametrize("status,esperado", [("aprovado", True), ("disponivel", False),
+                                             ("pendente", False)])
+async def test_a12_fonte_juris_validada_so_com_aprovado(status, esperado):
+    from app.routers.legal_docs import _fonte_juris_validada
+
+    doc = SimpleNamespace(extra={"fonte_validada": True, "confidence_level": "alta",
+                                 "rag_status": status})
+    assert await _fonte_juris_validada(_DBFontes([doc]), numero="0000001-00.2026.8.13.0001") is esperado
+
+
+# ── A-14 ─────────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("grafia", ["bloqueada", "Bloqueado ", "BLOQUEADO"])
+def test_a14_grafia_variante_de_bloqueio_nao_aprova(grafia):
+    from app.services.knowledge_autoapproval import aplicar_aprovacao_automatica
+
+    doc = KnowledgeDoc(id="d", titulo="t", categoria="referencia_interna",
+                       chave_origem="k", hash_conteudo="h",
+                       extra={"confidence_level": grafia})
+    extra = aplicar_aprovacao_automatica(doc)
+    assert extra["confidence_level"] == "bloqueado"
+    assert extra["rag_status"] == "bloqueado"
+
+
+# ── A-16 ─────────────────────────────────────────────────────────────────────
+
+def test_a16_pdf_truncado_e_sinalizado(monkeypatch):
+    fitz = pytest.importorskip("fitz")
+    from app.services import ocr_service
+
+    pdf = fitz.open()
+    for i in range(5):
+        pdf.new_page().insert_text((72, 72), f"Pagina {i} " + "texto juridico " * 20)
+    raw = pdf.tobytes()
+    monkeypatch.setattr(ocr_service, "ocr_disponivel", lambda: False)
+
+    completo = ocr_service.extrair_texto_pdf(raw)
+    assert completo["truncado"] is False and completo["paginas_lidas"] == 5
+
+    monkeypatch.setattr(ocr_service, "MAX_OCR_CHARS", 400)
+    cortado = ocr_service.extrair_texto_pdf(raw)
+    assert cortado["truncado"] is True
+    assert cortado["paginas"] == 5 and cortado["paginas_lidas"] < 5
+    assert len(cortado["texto"]) <= 400
 
 
 # ── db-level (Postgres real) ─────────────────────────────────────────────────

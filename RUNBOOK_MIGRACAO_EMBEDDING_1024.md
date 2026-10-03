@@ -45,8 +45,27 @@ O CI compara `EMBEDDINGS_MODEL`/`EMBEDDINGS_DIM` com
 o mesmo gate no container, antes de aplicar migrations.
 
 ## Reverter
-```bash
-docker exec -it ejc_backend python -m alembic downgrade -1
-# defina EMBEDDINGS_MODEL=sentence-transformers/paraphrase-multilingual-mpnet-base-v2 e EMBEDDINGS_DIM=768
-# a coluna embedding_legacy_768 é renomeada de volta para embedding; não há reindex
-```
+
+> ⚠️ **Não use `alembic downgrade` para reverter o modelo de embeddings.**
+> (auditoria RAG 04/09, A-17)
+> - `downgrade -1` desfaz a migration mais recente do repositório (o head
+>   atual), não a 096.
+> - Descer até antes da `096` **destrói os vetores 1024d**: a `145` já removeu
+>   `embedding_legacy_768`, o downgrade dela recria a coluna **vazia**, e o
+>   downgrade da `096` dropa a coluna 1024d populada e renomeia a vazia para
+>   `embedding`. A promessa antiga ("não há reindex") deixou de valer.
+
+Caminho seguro, se for preciso voltar a 768d:
+
+1. Backup antes de qualquer passo (`scripts/backup.sh`; confira o dump).
+2. A volta a 768d é uma **nova** migration expand/contract, revisada e
+   reservada em `backend/alembic/MIGRATION_RESERVATIONS.md`:
+   - adicionar `vector(768)`;
+   - reembutir com o modelo 768;
+   - trocar a coluna;
+   - remover a 1024.
+   Nunca reaproveitar o downgrade da 096.
+3. Durante a troca, a busca semântica degrada para o fallback textual, como no
+   reindex de ida (nota no topo deste runbook).
+4. Em incidente com perda de dados, restaurar o dump do passo 1. Não tentar
+   reconstruir os vetores por downgrade.

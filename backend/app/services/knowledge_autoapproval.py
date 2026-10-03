@@ -83,6 +83,10 @@ def aplicar_aprovacao_automatica(documento: KnowledgeDoc) -> dict:
     ) or None
 
     confianca = confianca_anterior
+    # Grafia variante de um marcador RESTRITIVO ('bloqueada', 'Bloqueado ')
+    # não pode virar 'media' e aprovar (auditoria RAG 04/09, A-14).
+    if confianca and confianca.startswith("bloque"):
+        confianca = "bloqueado"
     if confianca not in _CONFIANCAS_VALIDAS:
         confianca = "media"
 

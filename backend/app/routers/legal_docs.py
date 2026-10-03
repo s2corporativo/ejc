@@ -283,7 +283,7 @@ async def _fonte_juris_validada(db: AsyncSession, *, numero: str | None = None, 
     rows = (await db.execute(q.limit(10))).scalars().all()
     for d in rows:
         ex = d.extra or {}
-        if ex.get("fonte_validada") is True and ex.get("confidence_level") in ("alta", "media") and ex.get("rag_status") in ("aprovado", "disponivel"):
+        if ex.get("fonte_validada") is True and ex.get("confidence_level") in ("alta", "media") and ex.get("rag_status") == "aprovado":
             return True
     return False
 

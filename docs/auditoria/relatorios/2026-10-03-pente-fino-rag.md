@@ -18,6 +18,16 @@ foi medido na VPS.
 | **A-9** | Nova versão de documento não preservava `rag_status='recusado'`: diploma rejeitado pelo curador voltava ao RAG no primeiro re-feed com texto alterado. | Recusa preservada no ramo de nova versão (o atalho "inalterado" já preservava), com a mesma normalização do gate. |
 | **A-13 / M-11** | Blocklist sensível a caixa/espaço; `confianca='bloqueado'` (chave legada) exibido como bloqueio mas não bloqueava. Efeito só com `RAG_EXIGIR_APROVADO=false`. | `lower(btrim(...))` e chave legada incluída. Teste db-level parametrizado com a flag ligada e desligada. |
 
+### 1-B. Segunda rodada (reverificação dos itens pendentes)
+
+| Achado | Defeito confirmado no HEAD | Correção |
+|---|---|---|
+| **A-15** | `PATCH /ia-governanca/rag-curadoria/{id}`: `rag_status` com default `aprovado`, notas opcionais, ignorava quarentena, marcava `human_reviewed` e não gravava trilha. Um PATCH só com a confiança aprovava o documento. | Status explícito e notas obrigatórias; aprovar/recusar usa o helper canônico do `/revisar` (`_registrar_decisao_revisao`, que recusa aprovar sob quarentena); devolver à fila desfaz a revisão anterior; audit log, só com o tamanho das notas (LGPD). Nenhum consumidor no frontend chama o PATCH. |
+| **A-12** | `disponivel` era aceito e exibido como estado bom, mas o gate só recupera `aprovado`. `legal_docs._fonte_juris_validada` aceitava `disponivel` como citação validada. | Removido do vocabulário de entrada; o painel mostra `pendente` quando não há decisão; `legal_docs` exige `aprovado`. |
+| **A-14** | Confiança `bloqueada` (grafia variante) caía para `media` e o documento nascia aprovado. | Qualquer confiança iniciada por `bloque` é tratada como `bloqueado`. |
+| **A-16** | Extração de PDF cortava em 200 mil caracteres em silêncio e devolvia `paginas` = total do PDF. | Retorno passa a ter `paginas_lidas` e `truncado`, e o corte é logado (só números). Gravar a flag em `extra.ocr` depende de `routers/rag.py`, que pertence a #1981/#1951. |
+| **A-17** | O runbook mandava `alembic downgrade -1` para voltar a 768d e prometia "não há reindex". Hoje isso desfaz a migration mais recente (sem relação), e descer até a 096 destrói os vetores 1024d (a 145 removeu a coluna legada). | Seção "Reverter" reescrita: proibido usar downgrade; o caminho seguro é backup + migration nova expand/contract + restauração do dump em caso de perda. |
+
 ## 1-A. Deliberadamente fora deste PR (regra 10 — PR ativo nos mesmos arquivos)
 
 | Achado | PR ativo que já o trata | Contribuição registrada |
@@ -51,9 +61,13 @@ desses PRs.
 | **A-10 / M-22** | Sem dedup cross-chave por `hash_conteudo`; ingestão manual duplica por título/autor. | Mudança de semântica de ingestão; o relatório de 04/09 cita CPC ×6 em produção — medir antes. |
 | **A-18 / A-27** | Não há gold set humano; `--smoke` mede formato. | Insumo humano (75 casos). Sem ele, A-19/A-21/A-22 (RRF, reranker, limiar 0,55) não podem ser calibrados com segurança — por isso não foram tocados. |
 | **A-25** | `"fontes"` é a última seção de `ORDEM_SECOES` — a primeira a ser cortada. | Mudança de montagem de contexto; avaliar com o gold set. |
-| A-8, A-11, A-12, A-14–A-17, A-19–A-24, A-26, A-28, M-2–M-10, M-12, M-14–M-16, M-18–M-22, M-24, M-26, M-27 | **Não reverificados** nesta rodada. | Fora do recorte de risco desta passada; seguem como registrados em 04/09. |
+| A-8, A-11, A-19–A-24, A-26, A-28, M-2–M-10, M-12, M-14–M-16, M-18–M-22, M-24, M-26, M-27 | **Não reverificados** nesta rodada. | Fora do recorte de risco desta passada; seguem como registrados em 04/09. |
 
 ## 4. Revisão do `security-auditor` (regra 8)
+
+**Segunda rodada:** sem achados críticos, altos ou médios. Sem ciclo de import e sem consumidor de `disponivel`; RBAC e rate-limit da rota intactos; o log do OCR não carrega conteúdo. As três observações baixas foram aplicadas: zerar a revisão ao devolver à fila, tirar as notas do audit log e corrigir um comentário em `juris_import/ingest.py`.
+
+**Primeira rodada:**
 
 Executada sobre o diff original (que ainda incluía A-2). Sem fail-open, SQL
 sem interpolação de entrada, sem regressão de LGPD/HITL. Três achados:
@@ -81,7 +95,7 @@ sem interpolação de entrada, sem regressão de LGPD/HITL. Três achados:
 
 ## 5. Verificação
 
-- Testes novos: `tests/test_rag_pente_fino_20261003.py` (15 unitários + 2 db-level).
+- Testes novos: `tests/test_rag_pente_fino_20261003.py` (27 unitários + 2 db-level).
 - Harness ajustado (sem mudar o que testam): `test_anexos_service.py` e
   `test_matriz_teses.py` (dublê de `modo_sigilo_por_case_id`).
 - Ledger de rotas: sem alteração (nenhuma rota tocada).
