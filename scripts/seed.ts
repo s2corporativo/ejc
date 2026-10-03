@@ -91,6 +91,56 @@ const templates = [
       { key: "pedido", label: "Pedido em análise", type: "textarea" },
       { key: "decisao", label: "Direção da decisão", type: "select", options: ["Deferimento", "Indeferimento", "Parcial"] }
     ])
+  },
+  {
+    slug: "peticao-inicial-trabalhista",
+    name: "Petição Inicial Trabalhista",
+    category: "peticao",
+    description: "Reclamação trabalhista (CLT) com pedidos verbas e anexo de documentos.",
+    icon: "HardHat",
+    prompt: `Você é um advogado trabalhista redigindo uma reclamação trabalhista (CLT art. 840, §1º c/c CPC art. 319). A petição deve conter: endereçamento à Vara do Trabalho, qualificação do reclamante e reclamada, fatos (relação de emprego, jornada, dispensa), fundamentos (verbas rescisórias, horas extras, danos morais), pedidos líquidos com valores, valor da causa e requerimentos. Use terminologia da CLT.`,
+    fields: JSON.stringify([
+      { key: "vara", label: "Vara do Trabalho", type: "text", placeholder: "Ex: 1ª Vara do Trabalho de..." },
+      { key: "reclamante", label: "Nome do reclamante (anonimizado)", type: "text" },
+      { key: "reclamada", label: "Nome da reclamada (anonimizado)", type: "text" },
+      { key: "cargo", label: "Cargo/Função", type: "text" },
+      { key: "salario", label: "Último salário (anonimizado)", type: "text" },
+      { key: "periodo", label: "Período trabalhado", type: "text" },
+      { key: "fatos", label: "Fatos (jornada, dispensa, verbas devidas)", type: "textarea" },
+      { key: "pedidos", label: "Pedidos (horas extras, verbas rescisórias, dano moral)", type: "textarea" }
+    ])
+  },
+  {
+    slug: "queixa-crime",
+    name: "Queixa-Crime (Ação Penal Privada)",
+    category: "recurso",
+    description: "Queixa-crime para crimes de ação penal privada (calúnia, difamação, injúria).",
+    icon: "Shield",
+    prompt: `Você é um advogado penalista redigindo uma queixa-crime (CPP art. 41 e 100, CP art. 145). Estrutura: endereçamento ao juízo criminal, qualificação do querelante e querelado, exposição do fato criminoso com circunstâncias, classificação jurídica do crime, rol de testemunhas e pedido de recebimento. Use CPP e CP.`,
+    fields: JSON.stringify([
+      { key: "vara", label: "Vara Criminal", type: "text" },
+      { key: "querelante", label: "Nome do querelante (anonimizado)", type: "text" },
+      { key: "querelado", label: "Nome do querelado (anonimizado)", type: "text" },
+      { key: "crime", label: "Crime imputado", type: "select", options: ["Calúnia (art. 138 CP)", "Difamação (art. 139 CP)", "Injúria (art. 140 CP)", "Outro"] },
+      { key: "fatos", label: "Exposição dos fatos criminosos", type: "textarea" },
+      { key: "testemunhas", label: "Testemunhas (nomes)", type: "textarea" }
+    ])
+  },
+  {
+    slug: "defesa-fiscal",
+    name: "Defesa Administrativa Fiscal",
+    category: "parecer",
+    description: "Defesa administrativa contra auto de infração fiscal (lançamento tributário).",
+    icon: "Landmark",
+    prompt: `Você é um advogado tributarista redigindo defesa administrativa contra auto de infração fiscal. Estrutura: endereçamento ao órgão julgador, qualificação do impugnante, exposição dos fatos, preliminares (nulidades), mérito (análise do fato gerador, base de cálculo, alíquota, isenções), jurisprudência e pedido de cancelamento total/parcial. Use CTN e legislação específica.`,
+    fields: JSON.stringify([
+      { key: "orgao", label: "Órgão julgador", type: "text", placeholder: "Ex: Delegacia de Julgamento da Receita Federal" },
+      { key: "impugnante", label: "Nome do impugnante (anonimizado)", type: "text" },
+      { key: "autoInfracao", label: "Auto de infração nº (anonimizado)", type: "text" },
+      { key: "tributo", label: "Tributo", type: "select", options: ["IRPF", "IRPJ", "ICMS", "ISS", "IPTU", "Contribuições Previdenciárias", "Outro"] },
+      { key: "valor", label: "Valor do auto (anonimizado)", type: "text" },
+      { key: "fundamentos", label: "Fundamentos da defesa", type: "textarea" }
+    ])
   }
 ];
 

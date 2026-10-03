@@ -6,7 +6,7 @@ export type View = "landing" | "app";
 interface AppState {
   view: View;
   setView: (v: View) => void;
-  appTab: "generator" | "editor" | "jurisprudence" | "batch" | "documents";
+  appTab: "dashboard" | "generator" | "editor" | "jurisprudence" | "batch" | "documents";
   setAppTab: (t: AppState["appTab"]) => void;
   currentDocId: string | null;
   setCurrentDocId: (id: string | null) => void;
@@ -26,7 +26,7 @@ export const useAppStore = create<AppState>()(
     (set, get) => ({
       view: "landing",
       setView: (view) => set({ view }),
-      appTab: "generator",
+      appTab: "dashboard",
       setAppTab: (appTab) => set({ appTab }),
       currentDocId: null,
       setCurrentDocId: (currentDocId) => set({ currentDocId }),

@@ -15,9 +15,10 @@ import { Editor } from "./editor";
 import { Jurisprudence } from "./jurisprudence";
 import { Batch } from "./batch";
 import { DocumentsList } from "./documents-list";
-import { useEffect } from "react";
+import { Dashboard } from "./dashboard";
 
 const TABS = [
+  { id: "dashboard" as const, label: "Dashboard", icon: LayoutDashboard },
   { id: "generator" as const, label: "Gerar minuta", icon: Wand2 },
   { id: "editor" as const, label: "Editor", icon: FileText },
   { id: "jurisprudence" as const, label: "JurisprudênciaIA", icon: Search },
@@ -28,14 +29,9 @@ const TABS = [
 export function AppShell() {
   const { appTab, setAppTab } = useAppStore();
 
-  // Garante que sempre abre no gerador quando entra na app
-  useEffect(() => {
-    // mantém o tab persistido (se houver)
-  }, []);
-
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-secondary/20">
-      <div className="border-b border-border bg-background">
+      <div className="sticky top-16 z-40 border-b border-border bg-background/80 glass">
         <div className="container-juridia">
           <Tabs value={appTab} onValueChange={(v) => setAppTab(v as typeof appTab)}>
             <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-none border-0 bg-transparent p-2 scrollbar-juridia sm:w-auto">
@@ -60,6 +56,7 @@ export function AppShell() {
       </div>
 
       <div>
+        {appTab === "dashboard" && <Dashboard />}
         {appTab === "generator" && <Generator />}
         {appTab === "editor" && <Editor />}
         {appTab === "jurisprudence" && <Jurisprudence />}

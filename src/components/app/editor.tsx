@@ -13,6 +13,7 @@ import {
   Check,
   X,
   FileText,
+  Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -114,6 +115,57 @@ export function Editor() {
     a.download = `${title.replace(/[^\w\s-]/g, "")}.txt`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function printPdf() {
+    const w = window.open("", "_blank", "width=800,height=900");
+    if (!w) {
+      toast({ title: "Popup bloqueado. Permita popups para exportar PDF.", variant: "destructive" });
+      return;
+    }
+    const html = contentToHtml(content);
+    w.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>${title}</title>
+    <style>
+      @page { margin: 2.5cm; }
+      body { font-family: Georgia, 'Times New Roman', serif; font-size: 12pt; line-height: 1.75; color: #1a1a1a; }
+      h1 { font-size: 16pt; text-transform: uppercase; margin: 0 0 12pt; }
+      h2 { font-size: 13pt; text-transform: uppercase; margin: 18pt 0 8pt; }
+      h3 { font-size: 12pt; margin: 14pt 0 6pt; }
+      p { margin: 0 0 8pt; text-align: justify; }
+      ul, ol { margin: 0 0 8pt 1.5em; }
+      .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 8pt; margin-bottom: 16pt; }
+      .header h1 { margin: 0; }
+      .footer { margin-top: 24pt; border-top: 1px solid #ccc; padding-top: 8pt; text-align: center; font-size: 9pt; color: #666; }
+      @media print { .no-print { display: none; } }
+    </style></head><body>
+    <div class="header"><h1>${title}</h1></div>
+    ${html}
+    <div class="footer">Gerado por JuridIA — Inteligência Artificial para o Direito Brasileiro · ${new Date().toLocaleDateString("pt-BR")}</div>
+    <div class="no-print" style="text-align:center;padding:16pt;">
+      <button onclick="window.print()" style="padding:8pt 24pt;font-size:11pt;background:#1a4d3a;color:white;border:none;border-radius:4pt;cursor:pointer;">Imprimir / Salvar PDF</button>
+    </div>
+    </body></html>`);
+    w.document.close();
+    toast({ title: "PDF aberto em nova aba", description: "Use Ctrl+P / Cmd+P para salvar como PDF." });
+  }
+
+  function contentToHtml(md: string): string {
+    return md
+      .split("\n")
+      .map((line) => {
+        if (line.startsWith("### ")) return `<h3>${esc(line.slice(4))}</h3>`;
+        if (line.startsWith("## ")) return `<h2>${esc(line.slice(3))}</h2>`;
+        if (line.startsWith("# ")) return `<h1>${esc(line.slice(2))}</h1>`;
+        if (line.startsWith("- ")) return `<ul><li>${esc(line.slice(2))}</li></ul>`;
+        if (/^\d+\.\s/.test(line)) return `<ol><li>${esc(line.replace(/^\d+\.\s/, ""))}</li></ol>`;
+        if (line.trim() === "") return "";
+        return `<p>${esc(line)}</p>`;
+      })
+      .join("\n");
+  }
+
+  function esc(s: string): string {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
   function doReplace() {
@@ -298,6 +350,9 @@ export function Editor() {
             </DialogContent>
           </Dialog>
 
+          <Button variant="outline" size="sm" onClick={printPdf}>
+            <Printer className="mr-1.5 h-4 w-4" /> PDF
+          </Button>
           <Button variant="outline" size="sm" onClick={downloadTxt}>
             <Download className="mr-1.5 h-4 w-4" /> .txt
           </Button>

@@ -45,7 +45,15 @@ export async function POST(req: NextRequest) {
         .join("\n\n")}`
     : "";
 
-  const userPrompt = `Você está redigindo uma minuta jurídica brasileira usando apenas marcadores no lugar de dados sensíveis (que foram anonimizados localmente antes de chegar a você). NÃO invente dados sensíveis — mantenha os marcadores [TIPO_0001] exatamente como estão.
+  // Lista explícita de marcadores disponíveis para o LLM
+  const markerList = Object.keys(anonymization.markers);
+  const markerListStr = markerList.length
+    ? `\n\n## Lista EXAUSTIVA de marcadores disponíveis (use APENAS estes)\n${markerList
+      .map((m) => `- ${m} → ${describeMarker(m)}`)
+      .join("\n")}\n\nNÃO crie novos marcadores. NÃO invente [LOCAL_0001], [PROFISSAO_0001] ou qualquer outro. Se faltar um dado, use ____ (sublinhado) como espaço a preencher manualmente.`
+    : "\n\nNenhum marcador foi gerado (não há dados sensíveis detectados). Use ____ para campos a preencher.";
+
+  const userPrompt = `Você está redigindo uma minuta jurídica brasileira usando apenas marcadores no lugar de dados sensíveis (que foram anonimizados localmente antes de chegar a você).
 
 ## Tipo de minuta
 ${tpl.name}
@@ -56,13 +64,15 @@ ${tpl.prompt}
 ## Dados do caso (com marcadores)
 ${anonymization.text}
 ${skillsBlock}
+${markerListStr}
 
 ## Instruções finais
 - Redija a minuta em português jurídico brasileiro, completa e formal.
-- Preserve TODOS os marcadores [TIPO_XXXX] exatamente como aparecem nos dados.
+- Preserve TODOS os marcadores da lista acima exatamente como aparecem. Reuse-os quantas vezes precisar.
+- NUNCA crie marcadores novos. Se um campo (ex: profissão, endereço, data) não tiver marcador, escreva ____ no lugar.
 - Use formatação Markdown (cabeçalhos ##, listas, ênfase) para que o documento seja legível.
 - Estruture em seções claras (Endereçamento, Qualificação, Fatos, Fundamentos, Pedidos etc.).
-- Caso o template exija valor da causa,_datas e foros, preencha com os marcadores existentes ou deixe como ____ se não houver marcador.`;
+- Para datas, use ____ de ____________ de ______.`;
 
   // 5) Chama o LLM
   let generated = "";
@@ -209,4 +219,25 @@ Termos em que pede deferimento.
 
 [ADVOGADO] — OAB/[UF] [OAB_NUM]
 `;
+}
+
+// Descreve o tipo de dado que um marcador representa, para o LLM entender o contexto
+function describeMarker(marker: string): string {
+  const match = marker.match(/^\[([A-Z_]+)_(\d+)\]$/);
+  if (!match) return "dado anonimizado";
+  const type = match[1];
+  const descriptions: Record<string, string> = {
+    CPF: "número de CPF",
+    CNPJ: "número de CNPJ",
+    RG: "número de RG/identidade",
+    TELEFONE: "número de telefone",
+    EMAIL: "endereço de e-mail",
+    CEP: "CEP",
+    PIS: "número PIS/PASEP",
+    PLACA: "placa de veículo",
+    CONTA: "conta/agência bancária",
+    VALOR: "valor monetário em R$",
+    NOME: "nome de pessoa/empresa",
+  };
+  return descriptions[type] || "dado sensível";
 }

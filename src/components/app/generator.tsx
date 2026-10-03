@@ -14,6 +14,8 @@ import {
   Loader2,
   Wand2,
   CheckCircle2,
+  HardHat,
+  Landmark,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,6 +49,8 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   FileSignature,
   Lightbulb,
   Stamp,
+  HardHat,
+  Landmark,
 };
 
 export function Generator() {

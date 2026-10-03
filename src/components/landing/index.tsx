@@ -2,6 +2,7 @@
 
 import { Hero } from "./hero";
 import { Stats } from "./stats";
+import { HowItWorks } from "./how-it-works";
 import { Features } from "./features";
 import { Anonymization } from "./anonymization";
 import { Privacy } from "./privacy";
@@ -15,6 +16,7 @@ export function Landing() {
     <>
       <Hero />
       <Stats />
+      <HowItWorks />
       <Features />
       <Anonymization />
       <Privacy />

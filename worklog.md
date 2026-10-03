@@ -72,3 +72,38 @@ Stage Summary:
 - Projeto JuridIA totalmente funcional end-to-end. Clone do MinutaIA com todas as features principais: landing completa, plataforma de geração de minutas com IA + anonimização local (tarja-1), busca de jurisprudência real, geração em lote, editor com sugestões, 6 templates, 11 skills, planos, e footer sticky.
 - Dev server sobrevive entre comandos bash usando `setsid -f` (fork completo) + bind 0.0.0.0. Acesso externo via gateway Caddy porta 81.
 - Próxima fase: cron webDevReview a cada 15 min para revisão/QA contínuos e adição incremental de features.
+
+---
+Task ID: 8 (cron webDevReview #1)
+Agent: cron webDevReview (15min)
+Task: Review JuridIA project — QA via agent-browser, fix bugs, add features (styling + functionality), update worklog.
+
+Work Log:
+- Lido worklog anterior: projeto JuridIA funcional end-to-end (landing + app com 6 tabs, 6 templates, 11 skills, geração de minutas com IA + anonimização tarja-1, jurisprudência, lote, editor).
+- Dev server confirmado ativo (PID 4517, HTTP 200 em localhost:3000 e gateway:81).
+- QA com agent-browser (após limpar localStorage para resetar estado persistido):
+  - Landing: 9 seções, 7 h2, H1 "O futuro do Direito brasileiro começa aqui", 0 erros de console.
+  - Anonimização tarja-1: 12 marcadores detectados ([NOME_0001], [CPF_0001], [RG_0001], [TELEFONE_0001], [EMAIL_0001], [CEP_0001]...).
+  - App: 5 tabs visíveis, templates carregam, seleção funciona.
+  - Geração de minuta: LLM gera petição real em ~35s, auto-switch para Editor.
+  - JurisprudênciaIA: 2 resultados reais retornados.
+  - Geração em lote: tab funcional.
+  - Minutas salvas: 2 documentos da sessão anterior.
+  - Footer sticky: funcionando (top=558, vh=577, footer corretamente posicionado).
+- BUG ENCONTRADO: LLM inventava marcadores não presentes no input original (ex: [LOCAL_0001], [PROFISSAO_0001]) que não estavam nos dados anonimizados.
+- BUG CORRIGIDO em /api/generate-minuta/route.ts: adicionada lista EXAUSTIVA de marcadores disponíveis no prompt + instrução explícita "NUNCA crie marcadores novos. Se um campo não tiver marcador, escreva ____ no lugar." + função describeMarker() para dar contexto semântico ao LLM. Verificado: geração agora usa ____ para dados faltantes, sem inventar marcadores.
+- 3 NOVOS TEMPLATES adicionados ao seed: Petição Inicial Trabalhista (CLT), Queixa-Crime (ação penal privada), Defesa Administrativa Fiscal (tributário). Total: 9 templates.
+- NOVO TAB Dashboard criado (src/components/app/dashboard.tsx): card de uso do plano com progress bar, grid de 4 stats (minutas salvas, buscas, templates, skills), 4 quick actions, atividade recente (6 minutas), card de impacto da comunidade. Store atualizada com appTab "dashboard" como default.
+- NOVA SEÇÃO "Como funciona" na landing (src/components/landing/how-it-works.tsx): 4 passos com timeline circular (Descreva o caso → Anonimização local → IA gera a minuta → Receba e revise), conectores visuais, ícones numerados.
+- EXPORT PDF adicionado ao editor: função printPdf() abre nova janela com HTML formatado (timbrado, rodapé com branding JuridIA, @page margins 2.5cm, botão "Imprimir / Salvar PDF"), conversão markdown→HTML com escape. Botão "PDF" adicionado à toolbar do editor.
+- AppShell melhorado: tab bar agora é sticky (top-16) com glass effect para permanecer visível durante scroll.
+- ESLint limpo (0 erros, 0 warnings). Dev server saudável.
+
+Stage Summary:
+- BUG crítico corrigido: LLM não inventa mais marcadores — usa ____ para dados faltantes.
+- 3 novos templates (9 total): trabalhista, penal, tributário.
+- Dashboard tab novo com stats de uso, quick actions e atividade recente.
+- Seção "Como funciona" na landing com timeline visual de 4 passos.
+- Export PDF no editor com formatação profissional.
+- Tab bar sticky no app.
+- Próxima fase: adicionar autenticação real (NextAuth), histórico de versões no editor, mais skills, perfil de estilo do advogado.
