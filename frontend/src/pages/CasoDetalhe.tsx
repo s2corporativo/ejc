@@ -5,6 +5,7 @@ import { Link, useParams, useSearchParams, useNavigate } from "react-router";
 import {
   Sparkles,
   ChevronLeft,
+  ChevronDown,
   RefreshCw,
   ShieldCheck,
   Copy,
@@ -25,6 +26,7 @@ import IntakeAnalise from "../components/IntakeAnalise";
 import ConversaoChecklist from "../components/ConversaoChecklist";
 import ProvasCaso from "../components/ProvasCaso";
 import DossieEstrategicoCaso from "../components/DossieEstrategicoCaso";
+import DossieJuridico from "./EntradaUnica/DossieJuridico";
 import OrquestradorPanel from "../components/OrquestradorPanel";
 import CaseBreadcrumb from "../components/CaseBreadcrumb";
 import { ConsultaProfundaTJMG } from "../components/Infosimples";
@@ -672,6 +674,44 @@ function DadosDoCasoRecolhivel({
   );
 }
 
+function DossieIntegradoCaso({ caseId }: { caseId: string }) {
+  const [mostrarJuridico, setMostrarJuridico] = useState(false);
+
+  return (
+    <div className="space-y-4">
+      <DossieEstrategicoCaso caseId={caseId} />
+
+      <div className="card p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">
+              Análise jurídica completa
+            </h3>
+            <p className="mt-1 text-xs text-slate-500">
+              Gera o Dossiê Jurídico profundo sob demanda, com matriz
+              fato-prova-tese, lacunas, leitura adversarial e plano jurídico.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn-secondary text-xs"
+            onClick={() => setMostrarJuridico((valor) => !valor)}
+            aria-expanded={mostrarJuridico}
+          >
+            {mostrarJuridico ? "Ocultar Dossiê Jurídico" : "Abrir Dossiê Jurídico"}
+          </button>
+        </div>
+
+        {mostrarJuridico && (
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <DossieJuridico caseId={caseId} embedded />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function CasoDetalhe() {
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -913,7 +953,7 @@ export default function CasoDetalhe() {
       case "memoria":
         return <TabMemoria caseId={id} />;
       case "dossie":
-        return <DossieEstrategicoCaso caseId={id} />;
+        return <DossieIntegradoCaso caseId={id} />;
 
       case "ferramentas":
         return <TabFerramentas caso={caso} />;
