@@ -1194,16 +1194,6 @@ async def converter_em_caso(
             db, sessao, case.id, payload.area, user
         )
 
-        # Anexo transferido é documento efetivamente vinculado ao caso. A Sala
-        # Jurídica passa a produzir o mesmo avanço de estado da GED, Entrada
-        # Única e Raio-X, sem criar uma taxonomia paralela.
-        if transferidos:
-            from app.services.status_transicao import avancar_status_por_evento
-
-            await avancar_status_por_evento(
-                db, case, "documento_vinculado", user_id=user.id
-            )
-
         agora = datetime.now(timezone.utc)
         sessao.client_id = client.id
         sessao.convertido_case_id = case.id
