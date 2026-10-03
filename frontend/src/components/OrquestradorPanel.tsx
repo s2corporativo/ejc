@@ -453,6 +453,42 @@ export default function OrquestradorPanel({
         </details>
       )}
 
+      <details className="rounded-xl border border-slate-200 bg-white">
+        <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-800">
+          Ver detalhes da jornada
+          <span className="ml-2 text-xs font-normal text-slate-400">
+            {visao.jornada.length} etapa(s) derivada(s) dos artefatos reais
+          </span>
+        </summary>
+        <div className="border-t border-slate-100 p-4">
+          <ol className="space-y-2">
+            {visao.jornada.map((etapa) => (
+              <li
+                key={etapa.etapa}
+                className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2"
+              >
+                <span className="text-sm text-slate-700">{etapa.rotulo}</span>
+                <Badge
+                  tone={
+                    etapa.status === "concluida"
+                      ? "green"
+                      : etapa.status === "bloqueada"
+                        ? "amber"
+                        : "slate"
+                  }
+                >
+                  {etapa.status === "concluida"
+                    ? "Concluída"
+                    : etapa.status === "bloqueada"
+                      ? "Bloqueada"
+                      : "Pendente"}
+                </Badge>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </details>
+
       {/* Confirmação de execução */}
       <ConfirmModal
         open={confirmando !== null}
