@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import re
 import threading
 from datetime import datetime, timezone
@@ -232,6 +233,18 @@ async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
                     None,
                 )
             extra, vigente, tribunal, atualizado_em = registro
+            confianca_doc = str(
+                extra.get("confidence_level") or extra.get("confianca") or ""
+            ).strip().lower()
+            if confianca_doc.startswith("bloque"):
+                # Auditoria RAG 04/09, M-26: confiança bloqueada era só
+                # rebaixada (−0,10) e podia sobreviver no topo; agora é
+                # excluída, como já faz o gate SQL.
+                logger.info(
+                    "RAG excluiu documento com confiança bloqueada: doc_id=%s",
+                    item.get("doc_id"),
+                )
+                continue
             if bool(extra.get("quarantine_active")):
                 logger.info(
                     "RAG excluiu documento em quarentena ativa: doc_id=%s",
@@ -278,6 +291,14 @@ async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
             len(seguros),
         )
         return seguros
+
+
+def _sigmoide(x: float) -> float:
+    """Logit → probabilidade em (0, 1), estável para |x| grande."""
+    if x >= 0:
+        return 1.0 / (1.0 + math.exp(-x))
+    z = math.exp(x)
+    return z / (1.0 + z)
 
 
 def _confidence_bonus(candidate: dict) -> float:
@@ -472,9 +493,15 @@ async def rerank(
         ordered = []
         for index, (candidate, score) in enumerate(zip(candidatos, scores)):
             item, bonus = _enrich(candidate, consulta)
+            # Auditoria RAG 04/09, A-21: o logit cru do cross-encoder (ordem de
+            # unidades a dezenas) engolia o bônus jurídico calibrado para
+            # [0, 1]. A sigmoide põe a relevância na mesma escala do regime
+            # sem reranker, e o bônus volta a mover a ordem.
+            relevancia = _sigmoide(float(score))
             item["rerank_score"] = round(float(score), 5)
-            item["governance_score"] = round(float(score) + bonus, 5)
-            ordered.append((item, float(score) + bonus, index))
+            item["rerank_prob"] = round(relevancia, 5)
+            item["governance_score"] = round(relevancia + bonus, 5)
+            ordered.append((item, relevancia + bonus, index))
         ordered.sort(key=lambda row: (row[1], -row[2]), reverse=True)
         return [row[0] for row in ordered[:limite]]
     except Exception as exc:

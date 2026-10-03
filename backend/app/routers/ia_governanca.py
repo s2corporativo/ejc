@@ -34,7 +34,10 @@ from app.models.legal_doc import LegalDoc
 router = APIRouter(prefix="/ia-governanca", tags=["IA — Governanca"])
 
 Confianca = Literal["alta", "media", "baixa", "bloqueado"]
-RagStatus = Literal["pendente", "aprovado", "recusado", "disponivel"]
+# `disponivel` saiu do vocabulário (auditoria RAG 04/09, A-12): o gate de
+# recuperação só aceita `aprovado`, então o rótulo que o painel exibia como
+# "bom" retirava o documento da IA — painel e busca afirmavam coisas opostas.
+RagStatus = Literal["pendente", "aprovado", "recusado"]
 
 
 def _role(user: User) -> str:
@@ -74,13 +77,17 @@ def _conf(extra: dict | None) -> str:
 
 
 def _rag_status(extra: dict | None, status_indexacao: str | None) -> str:
-    return (extra or {}).get("rag_status") or ("disponivel" if status_indexacao == "indexado" else "pendente")
+    # Sem decisão registrada o gate exclui o documento: o painel diz o mesmo.
+    return (extra or {}).get("rag_status") or "pendente"
 
 
 class CuradoriaPatch(BaseModel):
+    # Sem default e com notas obrigatórias (auditoria RAG 04/09, A-15): um
+    # PATCH só com a confiança aprovava o documento e o marcava como revisado
+    # por humano, sem justificativa — porta paralela ao `/revisar` canônico.
     confidence_level: Confianca
-    rag_status: RagStatus = "aprovado"
-    notas: str | None = Field(None, max_length=2000)
+    rag_status: RagStatus
+    notas: str = Field(min_length=1, max_length=2000)
 
 
 class JurisprudenciaMGIn(BaseModel):
@@ -461,19 +468,36 @@ async def atualizar_curadoria(
     d = (await db.execute(select(KnowledgeDoc).where(KnowledgeDoc.id == doc_id, KnowledgeDoc.deleted_at.is_(None)))).scalar_one_or_none()
     if not d:
         raise HTTPException(404, "Documento RAG nao encontrado")
-    extra = dict(d.extra or {})
-    extra["confidence_level"] = req.confidence_level
-    extra["rag_status"] = req.rag_status
-    # AI-079: a curadoria É a revisão humana — registra human_reviewed para que
-    # docs com requires_human_review (ex.: DataJud cognitivo) possam ser
-    # promovidos e não voltem a 'pendente' pela política de auto-aprovação.
-    extra["human_reviewed"] = True
-    extra["curadoria"] = {
-        "reviewed_by": cu.id,
-        "reviewed_at": datetime.now(timezone.utc).isoformat(),
-        "notas": req.notas,
-    }
+    if req.rag_status in ("aprovado", "recusado"):
+        # Mesmo contrato do `POST /rag/governanca/docs/{id}/revisar` (AI-079:
+        # a curadoria É a revisão humana), inclusive a recusa de aprovar
+        # documento em quarentena.
+        from app.routers.rag_governance import _registrar_decisao_revisao
+        extra = _registrar_decisao_revisao(
+            d.extra, aprovado=req.rag_status == "aprovado", user_id=str(cu.id),
+            notas=req.notas, confidence_level=req.confidence_level,
+        )
+    else:
+        # Devolver à fila não é decisão: desfaz a revisão humana anterior, para
+        # que o ramo "revisado" da auto-aprovação nunca a reaproveite.
+        extra = dict(d.extra or {})
+        for campo in ("human_reviewed", "human_reviewed_at", "human_reviewed_by"):
+            extra.pop(campo, None)
+        extra["confidence_level"] = req.confidence_level
+        extra["rag_status"] = "pendente"
+        extra["curadoria"] = {
+            "reviewed_by": str(cu.id),
+            "reviewed_at": datetime.now(timezone.utc).isoformat(),
+            "notas": req.notas,
+        }
     d.extra = extra
+    from app.models.audit_log import criar_audit_log
+    await criar_audit_log(
+        db, user_id=cu.id, user_role=_role(cu), acao="CURADORIA_CONHECIMENTO",
+        entidade="knowledge_docs", registro_id=d.id,
+        detalhes=(f"rag_status={req.rag_status}; confidence_level="
+                  f"{req.confidence_level}; notas_chars={len(req.notas)}"),
+    )
     await db.commit()
     return {"detail": "Curadoria atualizada", "id": d.id, "confidence_level": req.confidence_level, "rag_status": req.rag_status}
 

@@ -472,7 +472,9 @@ def _formatar_fontes(fontes: list[dict]) -> str:
             f"{('- ' + fonte.get('fonte')) if fonte.get('fonte') else ''}\n"
             f"{(fonte.get('conteudo') or '')[:900]}"
         )
-    return "\n\n".join(linhas)
+    # Conteúdo do RAG é DADO, nunca instrução (auditoria RAG 04/09, M-2).
+    from app.services.ai import delimitador
+    return delimitador.bloco("FONTES", "\n\n".join(linhas), delimitador.novo_token())
 
 
 def _formatar_documentos(documentos: list[str] | None) -> str:

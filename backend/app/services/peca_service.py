@@ -688,6 +688,14 @@ async def _bloco_questoes_estruturado(db, case_id: str | None) -> str:
         return ""  # fail-safe: pesquisa estruturada nunca quebra o pipeline
 
 
+def _rag_delimitado(rag_txt: str) -> str:
+    """Bloco das fontes RAG com delimitador de token aleatório (auditoria RAG
+    04/09, M-2): conteúdo ingerido é dado, nunca instrução."""
+    from app.services.ai import delimitador
+    return delimitador.bloco("FONTES DA BASE INTERNA", rag_txt, delimitador.novo_token(),
+                             limite=4500)
+
+
 async def _emit(event: str, data: dict) -> str:
     """Formata um evento SSE."""
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -807,6 +815,20 @@ async def gerar_peca_pipeline(
     # aqui (o gateway os pseudonimiza de forma reversível e reidrata a resposta);
     # só a PII ESTRUTURAL é removida. Sem entidades, mantém o mascaramento
     # IRREVERSÍVEL dos nomes via nomes_proteger.
+    # Piso de sigilo (auditoria RAG 04/09, A-3): a esteira junta fatos do caso
+    # e contexto RAG, mas não informava o sigilo ao gateway — caso marcado
+    # `sigilo_reforcado` (crime sexual/menor) ou área de sigilo reforçado saía
+    # pseudonimizado ao provedor externo. LOCAL_COMPLETO só ELEVA o modo da
+    # tarefa (reforcar_sigilo no gateway); sem IA local, a etapa é bloqueada.
+    from app.services.ai.sanitization_policy import (
+        ModoSanitizacao, modo_sigilo_por_case_id, rotulo_de_sigilo_reforcado,
+    )
+    modo_sigilo = (
+        await modo_sigilo_por_case_id(db, case_id) if db is not None else None
+    )
+    if modo_sigilo is None and rotulo_de_sigilo_reforcado(area_direito):
+        modo_sigilo = ModoSanitizacao.LOCAL_COMPLETO
+
     _nomes_mascarar = None if entidades else nomes_proteger
     fatos_limpos, houve_pii_fatos = sanitizar_pii(descricao_fatos, _nomes_mascarar)
     pedidos_limpos, houve_pii_pedidos = sanitizar_pii(pedidos, _nomes_mascarar)
@@ -832,6 +854,8 @@ async def gerar_peca_pipeline(
     )
 
     r1 = await gw_chat(
+
+        modo_sanitizacao=modo_sigilo,
         messages=[
             {"role": "system", "content": (
                 # Blindagem anti-alucinação (P0.2): etapa intermediária alimenta a
@@ -880,6 +904,8 @@ async def gerar_peca_pipeline(
     especializacao = _especializacao_area(area_direito)
 
     r2 = await gw_chat(
+
+        modo_sanitizacao=modo_sigilo,
         messages=[
             {"role": "system", "content": (
                 # Blindagem anti-alucinação (P0.2) — aditiva, não altera o formato.
@@ -947,6 +973,8 @@ async def gerar_peca_pipeline(
     bloco_questoes = await _bloco_questoes_estruturado(db, case_id)
 
     r4 = await gw_chat(
+
+        modo_sanitizacao=modo_sigilo,
         messages=[
             {"role": "system", "content": (
                 "Você é pesquisador de jurisprudência. Baseado EXCLUSIVAMENTE nas fontes RAG "
@@ -955,7 +983,7 @@ async def gerar_peca_pipeline(
             )},
             {"role": "user", "content": (
                 f"Fatos: {fatos_limpos[:1000]}\nPedidos: {pedidos_limpos[:300]}\n"
-                f"{rag_txt[:4500] if rag_txt else 'Sem fontes RAG disponíveis.'}{bloco_questoes}\n\n"
+                f"{_rag_delimitado(rag_txt) or 'Sem fontes RAG disponíveis.'}{bloco_questoes}\n\n"
                 "Identifique jurisprudência e doutrina aplicáveis apenas das fontes acima. "
                 "Formato: tribunal, número/ementa, aplicabilidade ao caso."
             )},
@@ -972,6 +1000,8 @@ async def gerar_peca_pipeline(
     yield await _emit("step", {"etapa": 5, "titulo": "Organizando argumentos", "status": "em_andamento"})
 
     r5 = await gw_chat(
+
+        modo_sanitizacao=modo_sigilo,
         messages=[
             {"role": "system", "content": (
                 # Blindagem anti-alucinação (P0.2) — aditiva, não altera o formato.
@@ -1002,6 +1032,8 @@ async def gerar_peca_pipeline(
     yield await _emit("step", {"etapa": 6, "titulo": "Identificando riscos processuais", "status": "em_andamento"})
 
     r6 = await gw_chat(
+
+        modo_sanitizacao=modo_sigilo,
         messages=[
             {"role": "system", "content": (
                 # Blindagem anti-alucinação (P0.2) — aditiva, não altera o formato.
@@ -1122,6 +1154,7 @@ async def gerar_peca_pipeline(
     from app.services.system_prompts.inventario import impressao as _impressao
     prompt_versao_peca = _impressao(system_redator)
     r7 = await gw_chat(
+        modo_sanitizacao=modo_sigilo,
         messages=[
             {"role": "system", "content": system_redator},
             {"role": "user", "content": (
@@ -1134,7 +1167,7 @@ async def gerar_peca_pipeline(
                 f"JURISPRUDÊNCIA (RAG):\n{r4.texto[:1000]}\n\n"
                 f"ARGUMENTOS ORGANIZADOS:\n{r5.texto[:1500]}\n\n"
                 f"RISCOS (para evitar na peça):\n{r6.texto[:800]}\n\n"
-                f"{rag_txt[:4500] if rag_txt else ''}\n"
+                f"{_rag_delimitado(rag_txt)}\n"
                 f"{_formatar_bloco_modelos(modelos_referencia)}\n"
                 f"{'INSTRUÇÕES ADICIONAIS: ' + instrucoes if instrucoes else ''}\n\n"
                 f"Redija a {nome_peca} completa com todos os elementos formais obrigatórios."
@@ -1185,6 +1218,9 @@ async def gerar_peca_pipeline(
                 provedor_origem=r7.provedor,
                 case_id=case_id,
                 entidades=entidades or None,
+                # Mesmo piso das etapas r1–r7, inclusive o derivado da ÁREA,
+                # que `criticar_peca` sozinho não enxerga (security-auditor).
+                modo_sanitizacao=modo_sigilo,
             )
             autocritica_info["executada"] = True
             autocritica_info["critica_disponivel"] = bool(critica.disponivel)
@@ -1193,6 +1229,7 @@ async def gerar_peca_pipeline(
             tokens_autocritica_out += critica.tokens_output or 0
             if critica.disponivel and apontamentos_acionaveis(critica.relatorio):
                 r_rev = await gw_chat(
+                    modo_sanitizacao=modo_sigilo,
                     messages=[
                         {"role": "system", "content": (
                             # Base anti-alucinação + MESMO system do redator

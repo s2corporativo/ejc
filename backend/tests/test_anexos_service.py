@@ -9,8 +9,20 @@ from __future__ import annotations
 
 import io
 
+import pytest
+
 from app.services import anexos_service as svc
 from app.services.anexos_service import ContextoAnexos, ItemAnexo
+
+
+@pytest.fixture(autouse=True)
+def _sigilo_sem_banco(monkeypatch):
+    """O piso de sigilo do caso (auditoria RAG 04/09, A-3) consulta `cases`;
+    estes testes usam banco falso/None e cobrem outro comportamento. A
+    propagação do sigilo é coberta em test_rag_pente_fino_20261003.py."""
+    async def _sem_sigilo(_db, _case_id):
+        return None
+    monkeypatch.setattr(svc, "modo_sigilo_por_case_id", _sem_sigilo)
 
 
 def _ctx() -> ContextoAnexos:

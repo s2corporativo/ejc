@@ -65,6 +65,12 @@ async def test_hit_rate_e_mrr_acima_do_piso_de_regressao(monkeypatch):
     from app.core.config import get_settings
 
     monkeypatch.setattr(get_settings(), "RAG_SUMULAS_SEED_ENABLED", True)
+    # O piso foi calibrado no caminho TEXTUAL (docstring). Sem fixar isto, o
+    # teste passava a medir o caminho denso — com HyDE — contra um piso de
+    # outro caminho (auditoria RAG 04/09, A-27). O caminho denso precisa de
+    # gold set próprio (A-18) antes de ganhar piso.
+    from app.services import embedding_service
+    monkeypatch.setattr(embedding_service, "disponivel", lambda: False)
 
     async with AsyncSessionLocal() as db:
         await _limpar(db)

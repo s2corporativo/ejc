@@ -73,6 +73,7 @@ async def gerar_checklist_ia(db: AsyncSession, case_id: str, gatilho: str = "ger
     area = caso["area"] or "geral"
     fase = caso["fase"] or ""
 
+    from app.services.ai.sanitization_policy import modo_sigilo_por_case_id
     from app.services.ai_service import buscar_contexto_rag
     consulta = f"{area} {fase} requisitos petição documentos obrigatórios diligências pressupostos prazos"
     ctx = await buscar_contexto_rag(
@@ -83,12 +84,17 @@ async def gerar_checklist_ia(db: AsyncSession, case_id: str, gatilho: str = "ger
 
     limpo, _ = sanitizar_pii(f"Área: {area}. Fase: {fase}. Gatilho: {gatilho}. "
                              f"Tese: {caso['tese_principal'] or ''}")
+    # Conteúdo do RAG é DADO, nunca instrução (auditoria RAG 04/09, M-2).
+    from app.services.ai import delimitador
+    ctx_txt = delimitador.bloco("CONTEXTO LEGAL", ctx_txt, delimitador.novo_token())
     user = (f"{limpo}\n\nCONTEXTO LEGAL (base do escritório):\n{ctx_txt or '(sem contexto específico)'}\n\n"
             f"Gere de 6 a 14 itens objetivos para o gatilho '{gatilho}'.")
 
     resp = await ai_gateway.chat(
         messages=[{"role": "system", "content": _SYS_CHECKLIST}, {"role": "user", "content": user}],
         task_type="resumo", temperature=0.3, max_tokens=2000,
+        # Fatos do caso + RAG: piso de sigilo do caso (auditoria RAG 04/09, A-3).
+        modo_sanitizacao=await modo_sigilo_por_case_id(db, case_id),
     )
     # I9: trilha de auditoria/custo quando há usuário (endpoint direto e as
     # background tasks passam user_id). Prompt já sanitizado (sanitizar_pii).

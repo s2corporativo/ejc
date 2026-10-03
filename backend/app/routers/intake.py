@@ -213,7 +213,10 @@ async def _estrategia_recomendada(
     ctx = ""
     if fontes:
         linhas = [f"- {f.get('titulo')}: {(f.get('conteudo') or '')[:220]}" for f in fontes]
-        ctx = "[BASE DE CONHECIMENTO]\n" + "\n".join(linhas) + "\n\n"
+        # Conteúdo do RAG é DADO, nunca instrução (auditoria RAG 04/09, M-2).
+        from app.services.ai import delimitador
+        ctx = delimitador.bloco("BASE DE CONHECIMENTO", "\n".join(linhas),
+                                delimitador.novo_token()) + "\n\n"
     teses_txt = ""
     if teses:
         teses_txt = "[TESES DO ESCRITÓRIO NA ÁREA]\n" + "\n".join(

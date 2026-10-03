@@ -45,6 +45,45 @@ PREFIXO_SEM_BASE = (
 )
 
 
+def citacoes_fora_do_contexto(citacoes: dict | None, fontes: list[dict]) -> list[str]:
+    """Súmulas/artigos CONFIRMADOS na base que não constam das fontes entregues
+    ao modelo (auditoria RAG 04/09, A-23).
+
+    O gate de citações confere existência na base inteira; a propriedade "use
+    apenas as fontes do contexto" não tinha verificação em runtime. Uma norma
+    que existe mas não foi recuperada passava como confirmada — "a norma
+    existe" não é "a norma sustenta esta afirmação". A conferência é textual e
+    conservadora: casa pelo documento de origem, pelo número com o rótulo do
+    tipo ou pelo rótulo da citação.
+    """
+    if not citacoes:
+        return []
+    doc_ids = {str(f.get("doc_id")) for f in fontes or [] if f.get("doc_id")}
+    acervo = " ".join(
+        f"{f.get('titulo') or ''} {f.get('conteudo') or ''}" for f in fontes or []
+    ).lower()
+    fora: list[str] = []
+    for c in citacoes.get("citacoes") or []:
+        if not c.get("encontrada") or c.get("tipo") not in ("sumula", "artigo"):
+            continue
+        if c.get("fonte_doc_id") and str(c["fonte_doc_id"]) in doc_ids:
+            continue
+        numero = re.escape(str(c.get("numero") or "").strip())
+        rotulo = str(c.get("citacao") or "").strip().lower()
+        if numero:
+            padrao = (
+                rf"s[úu]mula\s+(?:vinculante\s+)?(?:n[º°o.]*\s*)?{numero}\b"
+                if c["tipo"] == "sumula"
+                else rf"art(?:igo)?\.?\s*{numero}\b"
+            )
+            if re.search(padrao, acervo):
+                continue
+        if rotulo and rotulo in acervo:
+            continue
+        fora.append(str(c.get("citacao") or c.get("numero") or "citação"))
+    return fora
+
+
 def detectar_promessa_resultado(texto: str) -> list[str]:
     """Retorna os trechos (curtos) que aparentam prometer resultado."""
     achados: list[str] = []
@@ -106,6 +145,19 @@ async def validar(
                     "ou override justificado do revisor."
                 )
                 revisao_obrigatoria = True
+
+    # 1.4 Proveniência (A-23): confirmada na base, mas fora das fontes que o
+    # modelo recebeu → alerta + revisão obrigatória (não bloqueia).
+    if citacoes and fontes is not None:
+        fora = citacoes_fora_do_contexto(citacoes, fontes)
+        if fora:
+            alertas.append(
+                f"{len(fora)} citação(ões) confirmada(s) na base mas AUSENTE(S) das "
+                "fontes recuperadas para esta resposta ("
+                + "; ".join(fora[:3])
+                + ") — confira se a norma sustenta de fato a afirmação."
+            )
+            revisao_obrigatoria = True
 
     # 1.5 Grounding de citações (auditoria IA 2026-07-17, O-5). Alem do
     # citation_check contra a base interna, confere as citacoes com o verificador

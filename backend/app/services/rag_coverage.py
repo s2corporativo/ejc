@@ -59,10 +59,20 @@ def _where(mg_jec_only: bool) -> str:
     da recuperação (C3): cobertura nunca conta documento que a busca exclui
     (sem rag_status aprovado, vigência não verificada, súmula em quarentena,
     corpus fictício, revogado). Import tardio: ai_service é módulo pesado."""
-    from app.services.ai_service import filtros_gate_rag
+    from app.services.ai_service import (
+        _FILTRO_ELIGIBILIDADE_RAG, _RESTRICTED_CATS, filtros_gate_rag,
+    )
 
+    # A-11 (auditoria RAG 04/09): além do gate, o painel só conta documento
+    # que (a) tem chunk — sem ele nada é recuperável — e (b) é elegível em
+    # ALGUM escopo legítimo (mesma regra neutra do canário). As categorias
+    # restritas entram como literal: são constantes do módulo, não entrada.
+    restritas = "ARRAY[" + ",".join(f"'{c}'" for c in _RESTRICTED_CATS) + "]::varchar[]"
+    elegibilidade = _FILTRO_ELIGIBILIDADE_RAG.replace(":restr_cats", restritas)
     base = (
         "kd.deleted_at IS NULL AND COALESCE(kd.vigente, TRUE) = TRUE "
+        "AND EXISTS (SELECT 1 FROM knowledge_chunks kc_e WHERE kc_e.doc_id = kd.id) "
+        f"{elegibilidade} "
         f"{filtros_gate_rag()}"
     )
     return f"{base} AND {_filtro_mg_jec()}" if mg_jec_only else base

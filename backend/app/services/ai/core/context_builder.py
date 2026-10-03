@@ -40,9 +40,13 @@ _LIMITE_PRAZOS = 20
 _LIMITE_TESES = 15
 
 # Ordem canônica das seções (teste de invariante em tests/test_context_dossie_estruturado.py).
+# `fontes` vem ANTES do documento GED e do processo (auditoria RAG 04/09,
+# A-25): o teto total apara pelo fim, e um documento de 18 mil caracteres
+# empurrava a base de conhecimento para fora do prompt — justamente o bloco
+# que fundamenta a resposta e alimenta o gate de citações.
 ORDEM_SECOES = (
     "base_legal", "identificacao", "documentos", "prazos", "teses",
-    "intimacoes", "documento_ged", "processo", "fontes",
+    "intimacoes", "fontes", "documento_ged", "processo",
 )
 _TITULOS = {
     "base_legal": "[BASE LEGAL — ÁREA]",
@@ -80,6 +84,12 @@ def _trunca(texto: str, limite: int) -> str:
     if len(texto) <= limite:
         return texto
     return texto[:limite] + "\n[... truncado para caber no contexto ...]"
+
+
+def _fonte_no_texto(fonte: dict, texto: str) -> bool:
+    """A fonte entrou no prompt? Confere o início do trecho, como formatado."""
+    trecho = (fonte.get("conteudo") or "").strip()[:120]
+    return bool(trecho) and trecho in texto
 
 
 def _uma_linha(v, limite: int | None = None) -> str:
@@ -274,8 +284,16 @@ def _formatar_fontes(titulo: str, fontes: list[dict]) -> str:
         nome = f.get("titulo") or "sem título"
         categoria = f.get("categoria") or ""
         trecho = _trunca(f.get("conteudo") or "", _MAX_RAG_CHUNK)
+        meta = [categoria] if categoria else []
+        # Situação jurídica no prompt (auditoria RAG 04/09, A-26): o caminho
+        # legado já a emitia; no Núcleo Único o modelo nunca sabia que a fonte
+        # tinha vigência não verificada, suspensa ou parcialmente revogada.
+        situacao = f.get("situacao_juridica")
+        if isinstance(situacao, dict) and situacao.get("label"):
+            rotulo = _uma_linha(situacao["label"], 80)
+            meta.append(f"⚠ {rotulo}" if situacao.get("warning") else rotulo)
         linhas.append(f"[Fonte {i}] {nome}"
-                      + (f" ({categoria})" if categoria else "") + f"\n{trecho}")
+                      + (f" ({' | '.join(meta)})" if meta else "") + f"\n{trecho}")
     return "\n\n".join(linhas)
 
 
@@ -470,5 +488,14 @@ async def montar_contexto(
     if len(texto) > max_total:
         ctx.avisos.append("Contexto truncado no teto total (AI_CONTEXTO_MAX_CHARS).")
         texto = _trunca(texto, max_total)
+        # A-25: `ctx.fontes` vai ao gate de citações e ao AILog; só declara o
+        # que de fato sobreviveu ao corte (o modelo não viu o resto).
+        vistas = [f for f in ctx.fontes if _fonte_no_texto(f, texto)]
+        if len(vistas) < len(ctx.fontes):
+            ctx.avisos.append(
+                f"{len(ctx.fontes) - len(vistas)} fonte(s) cortada(s) pelo teto "
+                "do contexto e retirada(s) da lista de fontes declaradas."
+            )
+            ctx.fontes = vistas
     ctx.texto = texto
     return ctx

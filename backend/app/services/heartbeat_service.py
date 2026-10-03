@@ -22,6 +22,15 @@ JOB_BACKUP_DRIVE = "backup_drive"
 JOB_REEMBED_RAG = "reembed_rag_orfaos"
 JOB_QUERIDO_DIARIO = "querido_diario_monitor"
 JOB_RADAR_LEGISLATIVO = "radar_legislativo"
+# Ingestores do RAG (auditoria RAG 04/09, M-8): batem ponto em
+# `ingestion_service.executar_ingestao` com o id do job do scheduler
+# (`ing_<slug>`), e o painel cruza a execução com a saúde da fonte.
+JOB_ING_PLANALTO = "ing_planalto"
+JOB_ING_STJ = "ing_stj"
+JOB_ING_CAMARA = "ing_camara"
+JOB_ING_SENADO = "ing_senado"
+JOB_ING_TJMG = "ing_tjmg"
+JOB_ING_LEXML = "ing_lexml"
 
 _MAX_DIARIO = 26
 _MAX_DATAJUD = 14
@@ -98,6 +107,36 @@ JOBS_MONITORADOS: dict[str, dict[str, Any]] = {
         "max_age_horas": _MAX_DIARIO,
         "cadencia": "diário 07h00 UTC",
     },
+    JOB_ING_PLANALTO: {
+        "label": "Ingestão RAG — códigos federais (Planalto)",
+        "max_age_horas": _MAX_SEMANAL,
+        "cadencia": "semanal (domingo 03h00)",
+    },
+    JOB_ING_STJ: {
+        "label": "Ingestão RAG — acórdãos do STJ",
+        "max_age_horas": _MAX_SEMANAL,
+        "cadencia": "semanal (sábado 03h00)",
+    },
+    JOB_ING_CAMARA: {
+        "label": "Ingestão RAG — proposições da Câmara",
+        "max_age_horas": _MAX_DIARIO,
+        "cadencia": "diário 04h00",
+    },
+    JOB_ING_SENADO: {
+        "label": "Ingestão RAG — matérias do Senado",
+        "max_age_horas": _MAX_DIARIO,
+        "cadencia": "diário 04h20",
+    },
+    JOB_ING_TJMG: {
+        "label": "Ingestão RAG — jurisprudência TJMG",
+        "max_age_horas": _MAX_SEMANAL,
+        "cadencia": "semanal (sábado 04h30)",
+    },
+    JOB_ING_LEXML: {
+        "label": "Ingestão RAG — LexML",
+        "max_age_horas": _MAX_SEMANAL,
+        "cadencia": "semanal (sábado 05h00)",
+    },
 }
 
 #: Job de captura/ingestão → slug da fonte correspondente em `fontes_ingestao`.
@@ -111,6 +150,12 @@ JOBS_MONITORADOS: dict[str, dict[str, Any]] = {
 FONTE_POR_JOB: dict[str, str] = {
     JOB_DJEN: "djen",                    # ingestor DJEN (comunicações → RAG)
     JOB_DATAJUD: "datajud_processos",    # feed cognitivo DataJud/CNJ
+    JOB_ING_PLANALTO: "planalto",
+    JOB_ING_STJ: "stj",
+    JOB_ING_CAMARA: "camara",
+    JOB_ING_SENADO: "senado",
+    JOB_ING_TJMG: "tjmg",
+    JOB_ING_LEXML: "lexml",
 }
 
 _STATUS_VALIDOS = {"ok", "erro"}

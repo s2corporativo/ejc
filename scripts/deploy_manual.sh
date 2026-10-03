@@ -123,6 +123,26 @@ if sudo -n test -f "$activated_marker"; then
     reprovar "marker de ativação existe, mas o gate de vigência não está canonicamente true"
 fi
 
+# Demais gates fail-closed do RAG (auditoria RAG 04/09, M-18): default true no
+# código; desligá-los no .env reabre a recuperação de conteúdo não aprovado ou
+# de súmula não conferida. Deploy não segue com nenhum deles desligado.
+# O valor é normalizado (export, espaços, aspas, comentário) e só um verdadeiro
+# canônico do pydantic passa; qualquer outro valor declarado reprova.
+valor_bool_env() {
+  printf '%s' "$1" | sed -E \
+    -e 's/^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=[[:space:]]*//' \
+    -e 's/[[:space:]]+#.*$//' -e 's/[[:space:]]+$//' \
+    -e 's/^"(.*)"$/\1/' -e "s/^'(.*)'\$/\1/" | tr '[:upper:]' '[:lower:]'
+}
+for gate in RAG_EXIGIR_APROVADO RAG_SUMULAS_QUARENTENA; do
+  while IFS= read -r linha; do
+    case "$(valor_bool_env "$linha")" in
+      1|on|t|true|y|yes) ;;
+      *) reprovar "$gate não está canonicamente verdadeiro no .env — gate fail-closed do RAG não pode ir desligado a produção" ;;
+    esac
+  done < <(sudo -n grep -E "^[[:space:]]*(export[[:space:]]+)?${gate}[[:space:]]*=" "$APP_DIR/.env" || true)
+done
+
 [ "$erros" -eq 0 ] || fail "pré-voo reprovado; nada foi tocado em produção"
 log "Pré-voo aprovado — HEAD $TARGET_SHA, $APP_DIR e runtime presentes."
 

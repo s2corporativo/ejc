@@ -220,7 +220,9 @@ def _ocr_imagem_pil(img) -> str:
 def extrair_texto_pdf(raw: bytes) -> dict:
     """Extrai texto de um PDF em bytes: nativo + OCR nas páginas escaneadas.
 
-    Retorno: {"texto", "paginas", "paginas_ocr", "ocr_disponivel"}.
+    Retorno: {"texto", "paginas", "paginas_lidas", "truncado", "paginas_ocr",
+    "ocr_disponivel", "por_pagina"}. `paginas` é o total do PDF; `truncado`
+    indica que o texto foi cortado em MAX_OCR_CHARS.
     Levanta ValueError se o binário não for um PDF legível (chamador → 422).
     Falta de tesseract NUNCA levanta — páginas escaneadas ficam vazias e
     `ocr_disponivel=False` sinaliza a degradação (fallback gracioso).
@@ -234,6 +236,7 @@ def extrair_texto_pdf(raw: bytes) -> dict:
         raise ValueError(f"Falha ao ler o PDF: {str(e)[:120]}") from e
     partes: list[str] = []
     paginas_ocr = 0
+    truncado = False
     with pdf:
         total = pdf.page_count
         for page in pdf:
@@ -249,10 +252,20 @@ def extrair_texto_pdf(raw: bytes) -> dict:
                     logger.warning(f"OCR da página {page.number} falhou: {e}")
             partes.append(txt)
             if sum(len(p) for p in partes) > MAX_OCR_CHARS:
+                truncado = True
                 break
+    if truncado:
+        # Auditoria RAG 04/09, A-16: o corte era silencioso e `paginas` (total
+        # do PDF) fazia o documento parecer completo.
+        logger.warning(
+            "Extração de PDF truncada em %d caracteres: %d de %d páginas lidas",
+            MAX_OCR_CHARS, len(partes), total,
+        )
     return {
         "texto": "\n".join(partes)[:MAX_OCR_CHARS].strip(),
         "paginas": total,
+        "paginas_lidas": len(partes),
+        "truncado": truncado,
         "paginas_ocr": paginas_ocr,
         "ocr_disponivel": tem_ocr,
         "por_pagina": [{"pagina": i + 1, "texto": p} for i, p in enumerate(partes)],

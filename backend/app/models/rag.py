@@ -46,7 +46,10 @@ class KnowledgeDoc(Base):
     case_id   = Column(String(36), nullable=True, index=True)
 
     # Ingestão automática (migration 006): rastreabilidade + dedup idempotente
-    chave_origem  = Column(String(255), nullable=True, index=True)  # URN/nº CNJ/código
+    # Sem `index=True` (auditoria RAG 04/09, M-14): o índice real é o único
+    # parcial sobre (COALESCE(client_id,''), chave_origem) da migration 109 —
+    # declarar um b-tree simples aqui só criava drift ORM × banco.
+    chave_origem  = Column(String(255), nullable=True)  # URN/nº CNJ/código
     hash_conteudo = Column(String(40),  nullable=True)              # SHA-1 normalizado
     atualizado_em = Column(DateTime(timezone=True), nullable=True)
 

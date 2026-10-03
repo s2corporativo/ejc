@@ -45,6 +45,10 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
     ano = date.today().year
 
     for sigla in SIGLAS:
+        # Contadores do lote só entram no total DEPOIS do commit (auditoria RAG
+        # 04/09, M-9): o rollback desfazia a gravação mas não o contador, e o
+        # detector de coletor morto via `novos` que nunca existiram.
+        novos_lote = total_lote = 0
         try:
             r = await fetch(API, params={"ano": ano, "sigla": sigla}, timeout=30)
             mats = _materias(r.json())
@@ -61,7 +65,7 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                     f"Data: {m.get('Data','')}\n\n"
                     f"Ementa: {ementa}"
                 )
-                total += 1
+                total_lote += 1
                 res = await upsert_documento(
                     db, titulo=ident[:500], categoria="proposicao_legislativa",
                     conteudo=conteudo, chave_origem=f"senado:{cod}",
@@ -83,8 +87,10 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                     confianca="media",
                 )
                 if res in ("novo", "atualizado"):
-                    novos += 1
+                    novos_lote += 1
             await db.commit()
+            novos += novos_lote
+            total += total_lote
         except Exception as e:
             await db.rollback()
             logger.warning(f"Senado {sigla}: {type(e).__name__}: {e}")

@@ -187,6 +187,16 @@ async def gerar_embeddings(
     """
     if not disponivel() or not textos:
         return None
+    if modo == "passage":
+        # Truncamento audível (auditoria RAG 04/09, A-8): o encoder corta
+        # acima da janela e devolve um vetor por texto, sem sinal algum.
+        teto = int(getattr(settings, "EMBEDDINGS_MAX_CHARS", 1800) or 1800)
+        acima = sum(1 for t in textos if len(t or "") > teto)
+        if acima:
+            logger.warning(
+                "Embeddings: %d de %d textos acima de %d caracteres — a cauda "
+                "ficará sem representação no vetor", acima, len(textos), teto,
+            )
     # Fast path: query única já vista → devolve o vetor cacheado (sem recomputar).
     cacheavel = modo == "query" and len(textos) == 1
     if cacheavel:

@@ -20,6 +20,7 @@ import asyncio
 import hashlib
 import logging
 import re
+import unicodedata
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -159,11 +160,21 @@ async def fetch(
 # Normalização e chunking
 # ══════════════════════════════════════════════════════════════════════════
 
+_RE_CONTROLES = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
 def normalizar(texto: str) -> str:
     """Remove ruído de whitespace preservando quebras de parágrafo."""
     if not texto:
         return ""
     texto = texto.replace("\r\n", "\n").replace("\r", "\n")
+    # Higiene de OCR/PDF (auditoria RAG 04/09, M-12): NFC unifica acentos
+    # decompostos (que quebravam ILIKE/trigram/FTS) e NUL/demais controles
+    # saem (PostgreSQL recusa NUL em `text`). Texto já normalizado não muda —
+    # o hash de conteúdo não dispara nova versão à toa. Hífen de quebra de
+    # linha NÃO é religado: alteraria o texto verbatim da norma.
+    texto = unicodedata.normalize("NFC", texto)
+    texto = _RE_CONTROLES.sub("", texto)
     texto = re.sub(r"[ \t]+", " ", texto)
     texto = re.sub(r"\n{3,}", "\n\n", texto)
     return texto.strip()
@@ -255,9 +266,11 @@ def _filtro_escopo_cliente(client_id: str | None):
     cliente. O case_id permanece metadado/subescopo operacional, mas a chave é
     única por cliente para manter a API de status determinística.
     """
-    if client_id is None:
-        return KnowledgeDoc.client_id.is_(None)
-    return KnowledgeDoc.client_id == client_id
+    # Mesma expressão do índice único parcial `uq_knowledge_docs_chave_origem_
+    # scope_vigente` (auditoria RAG 04/09, M-14): com `client_id IS NULL` o
+    # planner não casava o índice de expressão e o lookup do upsert varria.
+    from sqlalchemy import func
+    return func.coalesce(KnowledgeDoc.client_id, "") == (client_id or "")
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -297,6 +310,11 @@ def _vigencia_de_curadoria(anterior: dict) -> bool:
     return origem == ORIGEM_VIGENCIA_CURADORIA or origem.startswith(
         f"{ORIGEM_VIGENCIA_CURADORIA}:"
     )
+
+
+def _recusado(extra: dict) -> bool:
+    """Recusa do curador, com a mesma normalização do gate de recuperação."""
+    return str(extra.get("rag_status") or "").strip().lower() == "recusado"
 
 
 async def upsert_documento(
@@ -358,7 +376,7 @@ async def upsert_documento(
             KnowledgeDoc.chave_origem == chave_origem,
             _filtro_escopo_cliente(client_id),
             KnowledgeDoc.deleted_at.is_(None),
-            KnowledgeDoc.vigente.is_(True),
+            KnowledgeDoc.vigente == True,  # noqa: E712 — `= true` casa o predicado do índice
         )
     )).scalar_one_or_none()
 
@@ -391,7 +409,7 @@ async def upsert_documento(
                         mesclado[campo] = anterior[campo]
                     else:
                         mesclado.pop(campo, None)
-            if anterior.get("rag_status") == "recusado":
+            if _recusado(anterior):
                 mesclado["rag_status"] = "recusado"
             elif (
                 preservar_aprovacao_rag
@@ -418,6 +436,14 @@ async def upsert_documento(
 
     if chunks is not None:
         chunks = [normalizar(c) for c in chunks if c and c.strip()]
+        # Chunk pré-montado também respeita a janela do encoder (auditoria RAG
+        # 04/09, A-8): acima do teto, é recortado em vez de truncado em
+        # silêncio na geração do vetor.
+        from app.services.legal_chunker import teto_chars_embedding
+        teto = teto_chars_embedding()
+        chunks = [p for c in chunks
+                  for p in (chunk_texto(c, tamanho=teto)
+                            if len(c) > teto else [c])]
         if not chunks:
             chunks = chunk_texto(conteudo)
         chunks_com_pagina = [(c, None) for c in chunks]
@@ -449,6 +475,12 @@ async def upsert_documento(
                     extra_nova_versao[campo] = anterior[campo]
                 else:
                     extra_nova_versao.pop(campo, None)
+        # RECUSA do curador sobrevive também à troca de versão (auditoria RAG
+        # 04/09, A-9): o atalho "inalterado" já a preservava, mas aqui o extra
+        # do ingestor (Planalto grava `rag_status=aprovado`) devolvia ao RAG,
+        # no primeiro re-feed com texto alterado, um diploma já rejeitado.
+        if _recusado(anterior):
+            extra_nova_versao["rag_status"] = "recusado"
         db.add(KnowledgeDoc(
             id=doc_id, titulo=titulo, categoria=categoria,
             fonte=fonte, tribunal=tribunal, extra=extra_nova_versao,
@@ -592,5 +624,17 @@ async def executar_ingestao(slug: str, descricao: str, categoria_rag: str, coro_
                 await db.commit()
         except Exception as e:
             logger.error(f"[Ingestao:{slug}] falha ao marcar execução: {e}")
+        # Ponto do job por RESULTADO (auditoria RAG 04/09, M-8): o painel de
+        # jobs cruza esta execução com a saúde da fonte (`fontes_ingestao`).
+        try:
+            from app.services.heartbeat_service import registrar_heartbeat
+            async with AsyncSessionLocal() as db:
+                await registrar_heartbeat(
+                    db, f"ing_{slug}", "erro" if status == "erro" else "ok",
+                    f"{status} — {novos} novos / {total} processados"
+                    + (f"; {erro[:200]}" if erro else ""),
+                )
+        except Exception as e:  # noqa: BLE001 — telemetria nunca derruba o job
+            logger.warning(f"[Ingestao:{slug}] heartbeat não registrado: {e}")
     logger.info(f"[Ingestao:{slug}] {status} — {novos} novos / {total} processados")
     return novos, total

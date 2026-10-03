@@ -23,6 +23,16 @@ from app.models.user import User, UserRole
 from app.services import matriz_teses_service as mts
 
 
+@pytest.fixture(autouse=True)
+def _sigilo_sem_banco(monkeypatch):
+    """O piso de sigilo do caso (auditoria RAG 04/09, A-3) consulta `cases`;
+    estes testes usam banco falso/None e cobrem outro comportamento. A
+    propagação do sigilo é coberta em test_rag_pente_fino_20261003.py."""
+    async def _sem_sigilo(_db, _case_id):
+        return None
+    monkeypatch.setattr(mts, "modo_sigilo_por_case_id", _sem_sigilo)
+
+
 # ── Fakes (sem banco) ─────────────────────────────────────────────────────────
 
 class _Res:

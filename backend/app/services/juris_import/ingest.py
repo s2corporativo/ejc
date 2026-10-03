@@ -6,8 +6,8 @@
 #   2. Base oficial de citações validadas — o gate anti-alucinação de peças
 #      (_fonte_juris_validada em routers/legal_docs.py) consulta os MESMOS
 #      knowledge_docs: categoria em _JURIS_CATEGORIAS + extra.fonte_validada
-#      = true + extra.confidence_level em (alta|media) + extra.rag_status em
-#      (aprovado|disponivel), casando por extra.numero_processo ou pela URL em
+#      = true + extra.confidence_level em (alta|media) + extra.rag_status =
+#      aprovado, casando por extra.numero_processo ou pela URL em
 #      `fonte`. Um único upsert com esses campos alimenta os dois consumidores.
 #
 # DEDUP por tribunal+número: chave_origem principal do conector (canônica

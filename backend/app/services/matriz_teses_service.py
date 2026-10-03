@@ -35,6 +35,7 @@ from app.models.prova import Prova
 from app.models.tese import Tese, TeseStatus
 from app.models.user import User
 from app.services.ai_gateway import chat as gw_chat
+from app.services.ai.sanitization_policy import modo_sigilo_por_case_id
 from app.services.ai_service import buscar_contexto_rag
 from app.services.verificador_jurisprudencia import verificar_jurisprudencia
 
@@ -199,6 +200,8 @@ async def decompor_questoes(
                   {"role": "user", "content": user_msg}],
         task_type="estrategia",          # prosa coberta pela base anti-alucinação
         temperature=0.1, max_tokens=1200, nivel_inteligencia="alto",
+        # Fatos do caso: piso de sigilo do caso (auditoria RAG 04/09, A-3).
+        modo_sanitizacao=await modo_sigilo_por_case_id(db, case_id),
     )
     bruto = getattr(resp, "texto", "") or ""
 
