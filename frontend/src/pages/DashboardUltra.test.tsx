@@ -301,7 +301,7 @@ describe("DashboardUltra — cockpit jurídico final", () => {
 
   it("não replica a jornada do caso no dashboard", async () => {
     mockGetOk();
-    renderDashboard();
+    renderizar();
     await screen.findByText("Meu Dia");
 
     expect(screen.queryByLabelText("Fluxo jurídico")).toBeNull();
