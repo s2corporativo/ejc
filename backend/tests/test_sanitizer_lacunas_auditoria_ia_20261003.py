@@ -36,6 +36,11 @@ VAZAMENTOS = [
     ("pis", "PIS 123.45678.90-1", "123.45678.90-1"),
     ("agencia", "agência 1234-5", "1234-5"),
     ("conta", "conta corrente 12345-6", "12345-6"),
+    # NIA-08
+    ("placa_mercosul", "veículo placa ABC1D23", "ABC1D23"),
+    ("placa_antiga_rotulada", "placa: ABC-1234", "ABC-1234"),
+    ("passaporte", "passaporte FZ123456", "FZ123456"),
+    ("processo_pre_cnj", "processo 0024.12.345678-9", "0024.12.345678-9"),
 ]
 
 
@@ -84,7 +89,42 @@ def test_variante_interna_mantem_cnpj_alfanumerico_visivel():
     "valor de R$ 12.345.678,90",               # montante
     "a conta foi paga em 2 parcelas",          # palavra "conta" sem número
     "Súmula 297 do STJ",
+    "certificação ISO-9001 da empresa",        # placa antiga só com rótulo
 ])
 def test_sem_falso_positivo_em_texto_juridico_comum(texto):
     assert sanitizar_pii(texto)[0] == texto
     assert validar_sem_pii(texto) == []
+
+
+# ── NIA-02 — formas abreviadas das entidades do caso ─────────────────────────
+_ENT = {"cliente": ["Ana Paula Souza"], "parte_contraria": ["Banco Exemplo S.A."]}
+
+
+def test_razao_social_sem_sufixo_recebe_o_mesmo_marcador():
+    texto = "O Banco Exemplo S.A. negativou a cliente; depois, o Banco Exemplo cobrou."
+    pseudo, mapa = pseudonimizar(texto, _ENT)
+    assert "Banco Exemplo" not in pseudo
+    assert pseudo.count("[PARTE_CONTRARIA_1]") == 2
+    assert mapa["[PARTE_CONTRARIA_1]"] == "Banco Exemplo S.A."
+
+
+def test_prenome_e_ultimo_sobrenome_recebem_o_mesmo_marcador():
+    texto = "Ana Paula Souza ajuizou a ação. Ana Souza juntou os extratos."
+    pseudo, mapa = pseudonimizar(texto, _ENT)
+    assert "Ana Souza" not in pseudo
+    assert pseudo.count("[CLIENTE_1]") == 2
+    assert mapa["[CLIENTE_1]"] == "Ana Paula Souza"
+
+
+def test_variante_nao_morde_nome_completo_de_outra_entidade():
+    ent = {"cliente": ["Ana Paula Souza"], "parte_contraria": ["Ana Souza Lima"]}
+    pseudo, mapa = pseudonimizar("Ana Souza Lima contestou.", ent)
+    assert pseudo == "[PARTE_CONTRARIA_1] contestou."
+
+
+def test_prenome_isolado_nao_e_mascarado_por_variante():
+    """Prenome/sobrenome isolado fica fora de propósito (calibragem pendente):
+    "Vitória" também é palavra comum do texto jurídico."""
+    ent = {"cliente": ["Vitória Maria Santos"]}
+    pseudo, _ = pseudonimizar("a vitória da tese foi parcial", ent)
+    assert "vitória" in pseudo

@@ -42,6 +42,7 @@ _TIPO_POR_PLACEHOLDER = {
     "[ENDERECO]": "ENDERECO",
     "[DOC_ID]": "DOCUMENTO",
     "[DADOS_BANCARIOS]": "DADOS_BANCARIOS",
+    "[PLACA]": "PLACA",
 }
 
 # Entidades nomeadas (nomes próprios) → tipo do marcador. As chaves são as
@@ -55,6 +56,33 @@ _TIPO_POR_ENTIDADE = {
 
 # Ordem determinística de processamento das entidades nomeadas.
 _ORDEM_ENTIDADES = ("cliente", "empresa", "advogado", "parte_contraria")
+
+_SUFIXO_SOCIETARIO = re.compile(
+    r"[\s,]+(?:S\.?\s?A\.?|S/A|Ltda\.?|ME|EPP|EIRELI|SLU)\s*$", re.IGNORECASE
+)
+
+
+def _variantes_nome(nome: str) -> list[str]:
+    """Formas abreviadas SEGURAS de um nome de entidade (NIA-02).
+
+    - razão social sem o sufixo societário ("Banco Exemplo S.A." → "Banco
+      Exemplo"), se sobrarem ≥ 2 palavras;
+    - pessoa com ≥ 3 palavras → prenome + último sobrenome ("Ana Paula Souza"
+      → "Ana Souza").
+
+    Deliberadamente NÃO gera prenome ou sobrenome isolado: "Vitória", "Rosa",
+    "Glória" são palavras comuns do texto jurídico, e mascará-las exige
+    decisão de calibragem (registrada no relatório da auditoria)."""
+    variantes: list[str] = []
+    sem_sufixo = _SUFIXO_SOCIETARIO.sub("", nome).strip(" ,")
+    if sem_sufixo != nome:
+        if len(sem_sufixo.split()) >= 2 and len(sem_sufixo) >= 4:
+            variantes.append(sem_sufixo)
+        return variantes  # pessoa jurídica: sem regra de prenome/sobrenome
+    tokens = nome.split()
+    if len(tokens) >= 3 and not any(c.isdigit() for c in nome):
+        variantes.append(f"{tokens[0]} {tokens[-1]}")
+    return variantes
 
 
 class _Pseudonimizador:
@@ -81,19 +109,33 @@ class _Pseudonimizador:
     def _substituir_entidades(self, texto: str, entidades: dict[str, list[str]] | None) -> str:
         if not entidades:
             return texto
+        nomes: list[tuple[str, str]] = []
         for chave in _ORDEM_ENTIDADES:
             tipo = _TIPO_POR_ENTIDADE[chave]
             for nome in entidades.get(chave, []) or []:
                 nome = (nome or "").strip()
-                if len(nome) < 4:  # mesmo piso do sanitizer (evita falso-positivo)
-                    continue
-                # Lookahead/lookbehind de não-palavra (cobre "S.A.", "Ltda.")
-                padrao = rf"(?<!\w){re.escape(nome)}(?!\w)"
-                if not re.search(padrao, texto, flags=re.IGNORECASE):
-                    continue  # nome ausente: não polui o mapa com marcador órfão
-                marcador = self._marcador(tipo, nome)
-                texto = re.sub(padrao, marcador, texto, flags=re.IGNORECASE)
+                if len(nome) >= 4:  # mesmo piso do sanitizer (evita falso-positivo)
+                    nomes.append((tipo, nome))
+        # 1ª passada: nome COMPLETO de todas as entidades, antes de qualquer
+        # variante — uma variante de A nunca morde o nome completo de B.
+        for tipo, nome in nomes:
+            texto = self._trocar(texto, nome, tipo, nome)
+        # 2ª passada (auditoria 03/10, NIA-02): formas abreviadas que o texto
+        # usa depois da 1ª menção ("Banco Exemplo" para "Banco Exemplo S.A.",
+        # "Ana Souza" para "Ana Paula Souza") seguiam em claro. Recebem o
+        # MESMO marcador da entidade — a reidratação devolve o nome completo.
+        for tipo, nome in nomes:
+            for variante in _variantes_nome(nome):
+                texto = self._trocar(texto, variante, tipo, nome)
         return texto
+
+    def _trocar(self, texto: str, ocorrencia: str, tipo: str, canonico: str) -> str:
+        # Lookahead/lookbehind de não-palavra (cobre "S.A.", "Ltda.")
+        padrao = rf"(?<!\w){re.escape(ocorrencia)}(?!\w)"
+        if not re.search(padrao, texto, flags=re.IGNORECASE):
+            return texto  # ausente: não polui o mapa com marcador órfão
+        marcador = self._marcador(tipo, canonico)
+        return re.sub(padrao, marcador, texto, flags=re.IGNORECASE)
 
     def _substituir_estruturais(self, texto: str) -> str:
         # Padrões estruturados (CPF, CNPJ, processo, e-mail, telefone, CEP…),

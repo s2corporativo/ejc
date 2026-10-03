@@ -223,6 +223,20 @@ _PATTERNS: list[tuple[re.Pattern, str]] = [
         r'(?:n[ºo°]?\.?\s*|:\s*)?\d{4,12}(?:-[\dXx])?\b',
         re.I,
     ), '[DADOS_BANCARIOS]'),
+    # NIA-08 — placa: padrão Mercosul (ABC1D23) é distintivo o bastante para
+    # dispensar rótulo; o antigo (ABC-1234) colide com "ISO-9001", então só
+    # com o rótulo "placa".
+    (re.compile(
+        r'\b[A-Z]{3}\d[A-Z]\d{2}\b'
+        r'|\b(?i:placa)\s*(?:n[ºo°]?\.?\s*|:\s*)?[A-Za-z]{3}-?\d{4}\b'
+    ), '[PLACA]'),
+    # NIA-08 — passaporte (só com rótulo: "FZ123456" solto é código qualquer).
+    (re.compile(
+        r'\bpassaporte\s*(?:n[ºo°]?\.?\s*|:\s*)?[A-Z]{2}\d{6,7}\b', re.I,
+    ), '[DOC_ID]'),
+    # NIA-08 — numeração processual anterior ao padrão CNJ (TJMG e similares:
+    # 0024.12.345678-9), ainda presente em acervo antigo e em OCR.
+    (re.compile(r'\b\d{4}\.\d{2}\.\d{6}-\d\b'), '[PROCESSO]'),
 ]
 
 # Variante interna: pula CPF (0) e CNPJ (1), que ficam visíveis de propósito, e
@@ -352,6 +366,9 @@ def validar_sem_pii(texto: str, *, permitir_14: bool = True) -> list[str]:
         'TELEFONE_SEM_DDD': _PATTERNS[11][0],
         'DOCUMENTO': _PATTERNS[12][0],
         'DADOS_BANCARIOS': _PATTERNS[13][0],
+        'PLACA': _PATTERNS[14][0],
+        'PASSAPORTE': _PATTERNS[15][0],
+        'PROCESSO_ANTIGO': _PATTERNS[16][0],
     }
     for nome, pattern in checks.items():
         if pattern.search(texto):

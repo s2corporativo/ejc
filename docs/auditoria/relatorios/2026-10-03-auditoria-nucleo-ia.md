@@ -83,7 +83,7 @@ referenciados permanecem. Regressão: `tests/test_sanitizer_lacunas_auditoria_ia
 diploma legal, montante, súmula). Uma primeira versão do padrão de CPF mordia
 cartão AmEx agrupado — pega pela suíte existente e corrigida antes do push.
 
-### NIA-02 — P2 — Nomes parciais e não capitalizados escapam da pseudonimização (residual)
+### NIA-02 — P2 — Nomes parciais e não capitalizados escapam da pseudonimização (PARCIALMENTE CORRIGIDO)
 
 Sonda com `entidades={"cliente": ["Ana Paula Souza"], "parte_contraria": ["Banco Exemplo S.A."]}`:
 - prenome isolado posterior (`Ana disse…`) segue em claro;
@@ -91,11 +91,15 @@ Sonda com `entidades={"cliente": ["Ana Paula Souza"], "parte_contraria": ["Banco
 - nome em minúsculas (`o cliente joão da silva`) não é detectado pelo NER local;
 - nomes com menos de 4 caracteres são ignorados por piso anti-falso-positivo.
 
-Risco: reidentificação por combinação com os fatos do caso. **Não corrigido**
-(exige decisão de calibragem: variantes de nome da entidade — prenome,
-sobrenome, forma sem sufixo societário — aumentam over-masking). Proposta:
-derivar variantes de `entidades_do_caso` (prenome + último sobrenome ≥ 4
-letras; razão social sem `S.A./Ltda.`) com teste de falso positivo.
+Risco: reidentificação por combinação com os fatos do caso.
+
+**Corrigido neste PR (formas seguras):** razão social sem sufixo societário
+(`Banco Exemplo`) e prenome + último sobrenome (`Ana Souza`) recebem o MESMO
+marcador da entidade, numa 2ª passada que roda depois de todos os nomes
+completos (uma variante nunca morde o nome completo de outra entidade).
+**Pendente de decisão do titular:** prenome ou sobrenome isolado e nomes em
+minúsculas — "Vitória", "Rosa", "Glória" são palavras comuns do texto
+jurídico; mascará-las degrada o prompt (teste de não regressão incluído).
 
 ### NIA-03 — P2 — `AI_REQUIRE_HITL=false` não é barrado no boot de produção
 
@@ -135,11 +139,12 @@ Em `response_validator.validar`, a exceção da verificação de citações (pas
 marca `revisao_obrigatoria=True`; a do grounding (passo 1.5) só acrescenta alerta.
 Proposta: tratar as duas indisponibilidades da mesma forma.
 
-### NIA-08 — P3 — Formatos de PII ainda não cobertos
+### NIA-08 — P3 — Formatos de PII ainda não cobertos (CORRIGIDO, exceto telefone fixo)
 
-Placa de veículo, passaporte, numeração processual anterior ao padrão CNJ
-(ex.: `0024.12.345678-9`), telefone fixo sem DDD (a forma `\d{4}-\d{4}` colide
-com intervalo de anos). Registrados para decisão de calibragem.
+Corrigidos: placa Mercosul (`ABC1D23`) e antiga com rótulo (`placa ABC-1234`;
+sem rótulo colidiria com `ISO-9001`), passaporte com rótulo e numeração
+processual anterior ao padrão CNJ (`0024.12.345678-9`). Mantido fora:
+telefone fixo sem DDD — a forma `\d{4}-\d{4}` colide com intervalo de anos.
 
 ## 4. Fora do escopo do núcleo de IA
 
