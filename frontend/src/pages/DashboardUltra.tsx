@@ -951,9 +951,7 @@ export default function DashboardUltra() {
               ) : casosEmDestaque.length === 0 ? (
                 <li className="ejc-dash__empty ejc-dash__empty--action">
                   <span>Nenhum caso cadastrado ainda.</span>
-                  <Link to="/entrada?modo=manual">
-                    Cadastrar primeiro caso
-                  </Link>
+                  <Link to="/entrada?modo=manual">Cadastrar primeiro caso</Link>
                 </li>
               ) : (
                 casosEmDestaque.map((c) => {
