@@ -18,6 +18,7 @@ from app.services.sanitizer import sanitizar_pii, validar_sem_pii
 from app.services.case_context import montar_dossie
 from app.services.ai_gateway import chat as gw_chat, GatewayResponse
 from app.services.legal_base import BASE_ESTRUTURADA
+from app.services.knowledge_validity import SQL_VERIFICACAO_TEMPORAL_VALIDA
 from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
 
 logger = logging.getLogger(__name__)
@@ -185,7 +186,7 @@ _FILTRO_REVOGADA_RAG = (
 # vigência. São necessárias, cumulativamente:
 #   • `legal_status` canônico exatamente `vigente`;
 #   • `legal_status_origem` não vazio (curadoria OU futura fonte oficial);
-#   • `legal_status_verificado_em` não vazio;
+#   • `legal_status_verificado_em` ISO válido, não futuro (sem fuso = UTC);
 #   • ausência de `legal_status_inferido_em`.
 #
 # `suspensa`, `parcialmente_revogada`, ausência de status e status apenas
@@ -199,6 +200,7 @@ _FILTRO_VIGENCIA_VERIFICADA_RAG = (
     f"{_SQL_LEGAL_STATUS_CANONICO} = 'vigente' "
     "AND NULLIF(btrim(kd.extra->>'legal_status_origem'),'') IS NOT NULL "
     "AND NULLIF(btrim(kd.extra->>'legal_status_verificado_em'),'') IS NOT NULL "
+    f"AND {SQL_VERIFICACAO_TEMPORAL_VALIDA} "
     "AND NULLIF(btrim(kd.extra->>'legal_status_inferido_em'),'') IS NULL"
     "))"
 )

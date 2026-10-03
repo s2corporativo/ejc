@@ -190,7 +190,7 @@ def inferir_autoridade(
     sem receber autoridade normativa de direito vigente.
     """
     extra = dict(extra or {})
-    source_official = bool(extra.get("source_official")) or fonte_oficial(fonte)
+    source_official = extra.get("source_official") is True or fonte_oficial(fonte)
     explicit = _norm(extra.get("authority_level") or extra.get("nivel_autoridade"))
     if explicit in AUTHORITY_LABELS:
         code = explicit

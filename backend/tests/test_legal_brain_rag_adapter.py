@@ -36,6 +36,17 @@ def test_record_rag_preserva_proveniencia_sem_inferir_posicao_ou_aderencia():
     assert record["factual_fit_reviewed"] is False
 
 
+@pytest.mark.parametrize("value", ["data-invalida", "2999-01-01T00:00:00Z", "2026-02-30", "now", "", None, True, 20260914])
+def test_record_rag_rejeita_verificacao_temporal_invalida(value):
+    record = _record_from_rag({
+        "doc_id": "doc-temporal", "categoria": "legislacao",
+        "fonte": "https://www.planalto.gov.br/lei",
+        "situacao_juridica": {"code": "vigente"},
+        "extra": {"legal_status_origem": "curadoria", "legal_status_verificado_em": value},
+    }, purpose="fonte_primaria")
+    assert record["validity_verified"] is False
+
+
 def test_record_rag_nao_promove_fonte_sem_autoridade_ou_vigencia_comprovada():
     record = _record_from_rag(
         {
