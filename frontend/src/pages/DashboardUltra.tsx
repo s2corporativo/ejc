@@ -1062,65 +1062,6 @@ export default function DashboardUltra() {
           </section>
         </div>
 
-        <section className="ejc-dash__quick" aria-label="Fluxo jurídico">
-          <div className="ejc-dash__quick-head">
-            <Zap aria-hidden="true" />
-            <strong>Fluxo jurídico</strong>
-            <small>Do caso à próxima ação</small>
-          </div>
-          <div className="ejc-dash__quick-items">
-            <Link to="/entrada" aria-label="Analisar caso">
-              <span aria-hidden="true">
-                <Sparkles />
-              </span>
-              <small aria-hidden="true">01</small>
-              Analisar caso
-            </Link>
-            <Link to="/documentos" aria-label="Provas">
-              <span aria-hidden="true">
-                <Paperclip />
-              </span>
-              <small aria-hidden="true">02</small>
-              Provas
-            </Link>
-            <Link to="/teses" aria-label="Teses">
-              <span aria-hidden="true">
-                <Scale />
-              </span>
-              <small aria-hidden="true">03</small>
-              Teses
-            </Link>
-            <Link to="/inteligencia?tab=assistente" aria-label="Estratégia">
-              <span aria-hidden="true">
-                <ShieldCheck />
-              </span>
-              <small aria-hidden="true">04</small>
-              Estratégia
-            </Link>
-            <Link to="/pecas" aria-label="Peça">
-              <span aria-hidden="true">
-                <FileText />
-              </span>
-              <small aria-hidden="true">05</small>
-              Peça
-            </Link>
-            <Link to="/pecas" aria-label="Revisão">
-              <span aria-hidden="true">
-                <Gavel />
-              </span>
-              <small aria-hidden="true">06</small>
-              Revisão
-            </Link>
-            <Link to="/ajuizamento" aria-label="Ajuizamento">
-              <span aria-hidden="true">
-                <ChevronRight />
-              </span>
-              <small aria-hidden="true">07</small>
-              Ajuizamento
-            </Link>
-          </div>
-        </section>
-
         <section
           className="ejc-dash__extras"
           aria-label="Inteligência e conhecimento"
