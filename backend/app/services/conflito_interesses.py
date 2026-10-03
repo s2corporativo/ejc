@@ -49,7 +49,10 @@ async def verificar_conflito(
     )
 
     def _doc(c) -> Optional[str]:
-        return c.documento_plain
+        # PII: o conflito sinaliza que o documento existe, sem entregá-lo
+        # (mesma máscara de /clients/verificar-conflito e /checar-conflito).
+        from app.services.pii_crypto import mascarar_documento
+        return mascarar_documento(c.documento_plain)
 
     def _nome(c) -> str:
         return c.nome or c.razao_social or "N/D"
