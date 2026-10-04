@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
-import { anonymize, deanonymize } from "@/lib/anonymize";
+import { pseudonymize, rehydrate } from "@/lib/pseudonymizer";
+import { validateResponse, ensureDraftMarker } from "@/lib/ai_governance";
 import { logAuditEvent, logUsageEntry } from "@/lib/audit";
 import type { GenerateMinutaRequest, GenerateMinutaResponse, DocumentDTO } from "@/lib/types";
 
@@ -36,8 +37,10 @@ export async function POST(req: NextRequest) {
     .map(([k, v]) => `• ${labelFromKey(k)}: ${v}`)
     .join("\n");
 
-  // 3) ANONIMIZAÇÃO LOCAL — antes de enviar à IA (tarja-1)
-  const anonymization = anonymize(factsBlock);
+  // 3) PSEUDONIMIZAÇÃO REVERSÍVEL LOCAL — antes de enviar à IA (tarja-1 evoluído)
+  // Marcadores CONSISTENTES: mesma entidade = mesmo marcador em todo o texto.
+  // O mapa NUNCA vai ao provider, NUNCA é logado, NUNCA é persistido.
+  const pseudonymization = pseudonymize(factsBlock);
 
   // 4) Monta prompt
   const skillsBlock = skills.length
@@ -47,7 +50,7 @@ export async function POST(req: NextRequest) {
     : "";
 
   // Lista explícita de marcadores disponíveis para o LLM
-  const markerList = Object.keys(anonymization.markers);
+  const markerList = Object.keys(pseudonymization.map.reverse);
   const markerListStr = markerList.length
     ? `\n\n## Lista EXAUSTIVA de marcadores disponíveis (use APENAS estes)\n${markerList
       .map((m) => `- ${m} → ${describeMarker(m)}`)
@@ -63,7 +66,7 @@ ${tpl.name}
 ${tpl.prompt}
 
 ## Dados do caso (com marcadores)
-${anonymization.text}
+${pseudonymization.text}
 ${skillsBlock}
 ${markerListStr}
 
@@ -98,11 +101,15 @@ ${markerListStr}
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Falha ao gerar minuta";
     // fallback offline — gera um esboço estruturado com os campos
-    generated = fallbackDraft(tpl.name, anonymization.text, skills);
+    generated = fallbackDraft(tpl.name, pseudonymization.text, skills);
   }
 
   // 6) DESANONIMIZAÇÃO LOCAL — restaura marcadores no retorno
-  const restoredContent = deanonymize(generated, anonymization.markers);
+  const restoredContent = rehydrate(generated, pseudonymization.map);
+
+  // 6.5) RESPONSE VALIDATOR — valida saída contra regras jurídicas inegociáveis
+  const validation = validateResponse(restoredContent);
+  const finalContent = ensureDraftMarker(restoredContent);
 
   // 7) Persiste
   const title = body.title?.trim() || `${tpl.name} — ${new Date().toLocaleDateString("pt-BR")}`;
@@ -116,9 +123,9 @@ ${markerListStr}
       templateSlug: tpl.slug,
       templateName: tpl.name,
       rawFacts: factsBlock,
-      anonymizedFacts: anonymization.text,
-      markers: JSON.stringify(anonymization.markers),
-      generatedContent: restoredContent,
+      anonymizedFacts: pseudonymization.text,
+      markers: JSON.stringify(Object.fromEntries(pseudonymization.map.reverse)),
+      generatedContent: finalContent,
       skillSlugs: JSON.stringify(skills.map((s) => s.slug)),
       status: "generated",
       batchId: body.batchId || null,
@@ -140,7 +147,9 @@ ${markerListStr}
       templateSlug: tpl.slug,
       templateName: tpl.name,
       skillSlugs: skills.map((s) => s.slug),
-      markersCount: anonymization.total,
+      markersCount: pseudonymization.total,
+      validationViolations: validation.violations.length,
+      validationErrors: validation.violations.filter((v) => v.severity === "error").length,
       tokensUsed,
       anonymized: true,
     },
@@ -171,7 +180,7 @@ ${markerListStr}
 
   return NextResponse.json({
     document: documentDTO,
-    rawMarkers: anonymization.markers,
+    rawMarkers: pseudonymization.map.reverse,
     tokensUsed,
   } as GenerateMinutaResponse);
 }

@@ -633,3 +633,59 @@ Stage Summary:
 - 5 componentes são viáveis para portar (pseudonymizer reversível, SkillVersion, Provider Registry, Sanitization Policy, Response Validator).
 - 4 componentes não são viáveis diretamente (reranker, ingestors, agent loop, NER local).
 - Próximo passo: implementar Pseudonymizer reversível (evoluir tarja-1) como prioridade máxima.
+
+---
+Task ID: 22 (5 componentes de governância IA portados do EJC)
+Agent: main (Z.ai Code)
+Task: Implementar os 5 componentes viáveis identificados na análise do EJC: Pseudonymizer reversível, SkillVersion versionado, Provider Registry, Sanitization Policy graduada, Response Validator.
+
+Work Log:
+- 1. PSEUDONYMIZER REVERSÍVEL (src/lib/pseudonymizer.ts):
+  - Pseudonimização REVERSÍVEL e CONSISTENTE — mesma entidade sempre recebe o mesmo marcador em todo o texto ([NOME_1], [CPF_1], [CNPJ_1]).
+  - Mapa forward (valor→marcador) e reverse (marcador→valor) em memória — NUNCA vai ao provider, NUNCA é logado, NUNCA é persistido.
+  - Reidratação local: rehydrate(text, map) restaura marcadores de volta aos valores reais.
+  - Compatibilidade: anonymizeCompat/deanonymizeCompat mantém interface com anonymize.ts antigo.
+  - Teste: "João Carlos da Silva" → [NOME_1] em 3 ocorrências (consistente), reidratação = texto original exato ✓.
+  - Integrado no /api/generate-minuta: substituiu anonymize.ts (irreversível) por pseudonymize+rehydrate (reversível).
+
+- 2. SKILLVERSION VERSIONADO (Prisma + API + seed):
+  - Modelo Prisma SkillVersion: slug, version, area, description, content, triggers, rules, exceptions, forbiddenClaims, allowedTools, outputSchema, status (draft/review/approved/retired), contentHash (SHA-256), approvedBy/At.
+  - Unique constraint em (slug, version). Somente `approved` pode orientar produção.
+  - API /api/skill-versions (GET com filtros status/area/slug, POST cria sempre como draft, PATCH approve/review/retire).
+  - Seed: 17 skills migradas do modelo Skill estático para SkillVersion v1 approved. Cada uma com contentHash SHA-256.
+
+- 3. PROVIDER REGISTRY (src/lib/ai_governance.ts):
+  - Registry central: zai (external=true, enabled), ollama (external=false, disabled), anthropic (external=true, disabled), groq (external=true, disabled), maritaca (external=true, disabled).
+  - Kill-switch global: AI_ENABLED (se false, NENHUM provider é elegível).
+  - Kill-switch externo: AI_EXTERNAL_PROVIDERS_ALLOWED (se false, só providers locais).
+  - isProviderEligible(name): verifica kill-switches + enabled + external. getEligibleProviders(): lista elegíveis.
+
+- 4. SANITIZATION POLICY GRADUADA (src/lib/ai_governance.ts):
+  - 4 modos: LOCAL_COMPLETO (só local, nunca externo), EXTERNO_PSEUDONIMIZADO (marcadores reversíveis → externo → reidrata), EXTRACAO_LOCAL (PII extraída local), MASCARAMENTO (irreversível legado).
+  - Mapeamento por tarefa: analise_caso/minuta/dossie/pesquisa → EXTERNO_PSEUDONIMIZADO; criminal/menores → LOCAL_COMPLETO (fail-closed); default → EXTERNO_PSEUDONIMIZADO.
+  - providerAllowedForMode(provider, mode): LOCAL_COMPLETO rejeita externos.
+  - resolveProviders(taskType): combina elegibilidade + modo → lista final de providers.
+
+- 5. RESPONSE VALIDATOR (src/lib/ai_governance.ts):
+  - validateResponse(text): 5 regras:
+    1. VEDAÇÃO_PROMESSA_RESULTADO (error): "vai ganhar", "100% de chance", "garantia de êxito" — vedação EOAB.
+    2. ACONSELHAMENTO_SEM_RESSALVA (warning): sugere ação sem mencionar revisão.
+    3. JURISPRUDENCIA_NAO_VERIFICADA (warning): cita REsp/RE sem verificação contra base.
+    4. AUSENCIA_MARCA_RASCUNHO (warning): saída sem "rascunho"/"revisão humana".
+    5. PRAZO_CALCULADO_AUTOMATICAMENTE (warning): prazo calculado pela IA.
+  - ensureDraftMarker(text): adiciona aviso de rascunho se não estiver presente.
+  - Integrado no /api/generate-minuta: validation executada após reidratação, violations registradas no audit event, finalContent = ensureDraftMarker(restoredContent).
+  - Teste: output "vai ganhar... REsp 999.999.999... prazo de 15 dias" → 3 violations (1 error + 2 warnings) ✓. Output bom → 0 violations ✓.
+
+- ESLint limpo (0 erros, 0 warnings). Dev server ativo (PID 21027, HTTP 200). 14 APIs funcionais.
+
+Stage Summary:
+- 5 componentes de governância IA portados do EJC para TypeScript:
+  1. ✅ Pseudonymizer reversível (marcadores consistentes + reidratação local) — substituiu tarja-1 irreversível.
+  2. ✅ SkillVersion versionado (draft/review/approved/retired + contentHash) — 17 skills migradas.
+  3. ✅ Provider Registry (5 providers + kill-switches global/externo).
+  4. ✅ Sanitization Policy (4 modos + mapeamento por tarefa + fail-closed LOCAL_COMPLETO).
+  5. ✅ Response Validator (5 regras: promessa/conselho/jurisprudência/rascunho/prazo).
+- generate-minuta API integrado: pseudonymize→LLM→rehydrate→validate→ensureDraftMarker→persist.
+- 0 erros console, 0 ESLint, dev server saudável.
+- Próxima fase: ingestors de fontes oficiais (Planalto/STJ/LexML), Agent Loop (budget/HITL/tools), testes focados.

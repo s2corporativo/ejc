@@ -382,3 +382,33 @@ model IntelligenceSnapshot {
 
   @@index([caseId])
 }
+
+// SkillVersion — skills versionadas (draft/review/approved/retired)
+// Somente `approved` pode orientar execução de produção.
+model SkillVersion {
+  id              String   @id @default(cuid())
+  slug            String   // cpc-estrutura-peticao, dano-moral-parameters, etc.
+  version         Int      @default(1)
+  area            String   // civil | penal | trabalhista | etc.
+  description     String
+  content         String   // texto legível que orienta o modelo
+  triggers        String   @default("{}") // JSON: keywords/context
+  requiredSources String   @default("[]") // JSON: fontes obrigatórias
+  requiredEvidence String  @default("[]") // JSON: tipos de evidência
+  rules           String   @default("[]") // JSON: regras jurídicas
+  exceptions      String   @default("[]") // JSON: exceções
+  forbiddenClaims String   @default("[]") // JSON: vedações
+  allowedTools    String   @default("[]") // JSON: ferramentas permitidas
+  outputSchema    String   @default("{}") // JSON: schema de saída
+  status          String   @default("draft") // draft | review | approved | retired
+  contentHash     String   // SHA-256 do conteúdo (versionamento)
+  approvedBy      String?
+  approvedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([slug, version])
+  @@index([slug])
+  @@index([status])
+  @@index([area])
+}
