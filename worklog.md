@@ -930,3 +930,62 @@ Stage Summary:
   4. ✅ Ingestor: estrutura criada, Planalto inacessível no sandbox mas pronto para produção.
 - Total: 21 APIs, 23 modelos Prisma, 37 skills, 8 áreas, RAG-lite, grafo SVG, upload, gates, 28 testes.
 - 0 erros console, 0 ESLint, dev server saudável.
+
+---
+Task ID: 28 (Agent Loop — orçamento, HITL, ferramentas)
+Agent: main (Z.ai Code)
+Task: Implementar Agent Loop: IA executa com orçamento de tokens, pausa para HITL em pontos de decisão, usa tools (pesquisa/evidência/escrita) dentro de limites.
+
+Work Log:
+- SCHEMA PRISMA: AgentRun expandido com tokensBudget (orçamento de tokens), hitlReason, hitlData (JSON com dados para revisão). Novo modelo AgentRunStep: runId FK, stepNo, kind (thought|llm_call|tool_call|observation|hitl_pause|hitl_resume|finish|error), toolName, status, inputHash, outputHash, output (JSON), provider, model, tokensIn, tokensOut, costBrl, durationMs, requiresHuman. `bun run db:push` aplicado.
+
+- LIB agent_loop.ts (núcleo do loop):
+  - BudgetController: canSpend(estimatedTokens, usedTokens), remaining(usedTokens), exceeded(usedTokens). Orçamento padrão 20000 tokens.
+  - ToolRegistry: registerTool(tool), getTool(name), listTools(). Map de tools.
+  - HITL: HITLPause com reason (confirm_thesis|approve_research|review_evidence|approve_draft|custom), data, message.
+  - runAgentLoop({caseId, facts, maxSteps, tokensBudget, systemPrompt}): 
+    1. Cria AgentRun com status=running, tokensBudget, startedAt.
+    2. Loop de até maxSteps iterações: Thought → Action → Observation → Thought → ...
+    3. Cada iteração: LLM recebe contexto (fatos + histórico + tools + orçamento), retorna JSON {thought, action, args} ou {thought, finish: true}.
+    4. Se finish: encerra com finalAnswer, status=completed.
+    5. Se action: executa tool do registry, registra AgentRunStep.
+    6. Se tool.requiresHumanApproval: pausa com status=paused_hitl, hitlReason, hitlData. Retorna para humano revisar.
+    7. Se budget.exceeded: encerra com status=budget_exceeded.
+    8. Se maxSteps atingido: encerra com status=completed.
+    9. Persiste cada AgentRunStep com kind, toolName, tokens, duration, requiresHuman.
+  - resumeAgentRun(runId, decision, modifiedData): retoma execução pausada (HITL resume). Registra decisão humana e continua o loop.
+  - Princípio 18: falha do LLM preserva passos determinísticos anteriores (não destrói o que já foi feito).
+
+- LIB agent_tools.ts (4 tools registradas):
+  1. rag_search (leitura): busca na base LegalSource com TF-IDF cosine similarity. Args: {query, topK}. Retorna results com diploma, numero, score, trecho, url.
+  2. web_search (leitura): busca jurisprudência real na web via z-ai-web-dev-sdk. Args: {query, num}. Retorna results com name, url, snippet, source.
+  3. skill_router (motores): identifica skills jurídicas relevantes. Args: {facts}. Retorna area, issues, skills com slug/name/score/triggers.
+  4. create_evidence (escrita, requiresHumanApproval=true): cria EvidenceRef com hash SHA-256. Args: {quote, sourceKind}. Pausa para HITL (review_evidence). O advogado deve confirmar a evidência criada pela IA.
+
+- API /api/agent/runs (GET + POST):
+  - GET: lista execuções do agente com filtros (caseId, status). Inclui steps de cada run.
+  - POST (sem id): cria nova execução. Args: {facts, caseId, maxSteps, tokensBudget}. Importa agent_tools (registra tools), chama runAgentLoop. Retorna resultado completo.
+  - POST (com ?id=xxx): retoma execução pausada (HITL resume). Args: {decision, modifiedData}. Chama resumeAgentRun.
+
+- TESTE END-TO-END: POST /api/agent/runs com caso de inscrição indevida SERASA, maxSteps=4, tokensBudget=15000:
+  - Status: completed (max steps atingido)
+  - Total tokens: 2986 (20% do orçamento de 15000)
+  - 8 steps (4 thought + 4 tool_call):
+    - Step 1: Thought "Preciso entender o caso..." → rag_search → encontrou CC art. 186 (score 0.29)
+    - Step 2: Thought "Preciso continuar pesquisando..." → rag_search → mesmos resultados
+    - Step 3: Thought "As buscas retornaram apenas art. 186..." → rag_search → mesmos resultados
+    - Step 4: Thought "As buscas estão retornando apenas art. 186..." → web_search → encontrou jurisprudência real!
+  - O AGENTE RACIOCINOU: percebeu que rag_search retornava sempre o mesmo resultado e TROCOU para web_search (busca mais ampla). Isso é o ciclo Thought → Action → Observation → Thought em ação.
+  - Não houve HITL (create_evidence não foi chamada).
+
+- ESLint limpo. 30 APIs funcionais. 24 modelos Prisma. Dev server ativo (PID 24076, HTTP 200).
+
+Stage Summary:
+- Agent Loop implementado: IA raciocina em ciclos Thought → Action → Observation com orçamento de tokens, tools registradas e pausas HITL.
+- 4 tools: rag_search (RAG-lite), web_search (jurisprudência real), skill_router (skills jurídicas), create_evidence (escrita com HITL).
+- BudgetController: orçamento de tokens (default 20000), encerra se excedido.
+- HITL: pausa em create_evidence (requiresHumanApproval), resume com decisão humana.
+- AgentRunStep: cada passo persistido (kind, toolName, tokens, duration, requiresHuman).
+- Teste real: agente usou 2986 tokens (20% do orçamento), alternou entre rag_search e web_search, raciocinou sobre resultados.
+- 0 erros console, 0 ESLint, dev server saudável.
+- Sistema completo: 30 APIs, 24 modelos Prisma, 37 skills, RAG-lite TF-IDF, grafo SVG, upload PDF/DOCX, pseudonymizer reversível, evidence/citation gates, skill router, agent loop com tools e HITL, 28 testes focados, 5 fontes externas integradas.

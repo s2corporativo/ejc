@@ -346,8 +346,8 @@ model AgentRun {
   id              String   @id @default(cuid())
   caseId          String   @default("default-case")
   userId          String?
-  agentSlug       String   // case_mapper | legal_brain | legal_research | legal_draft
-  taskType        String   // map | analyze | research | draft | review
+  agentSlug       String   // case_mapper | legal_brain | legal_research | legal_draft | agent_loop
+  taskType        String   // map | analyze | research | draft | review | loop
   status          String   @default("queued") // queued | running | paused_hitl | completed | failed | cancelled | expired
   inputHash       String   // hash do input (idempotência)
   idempotencyKey  String?
@@ -358,15 +358,44 @@ model AgentRun {
   costBrl         Float    @default(0)
   tokensIn        Int      @default(0)
   tokensOut       Int      @default(0)
+  tokensBudget    Int      @default(20000) // orçamento de tokens da execução
   resultSnapshotId String?
   errorCode       String?
+  hitlReason      String?  // motivo da pausa HITL (ex: "confirm_thesis", "approve_research")
+  hitlData        String   @default("{}") // JSON com dados para o humano revisar
   startedAt       DateTime?
   finishedAt      DateTime?
   createdAt       DateTime @default(now())
+  steps           AgentRunStep[]
 
   @@index([caseId])
   @@index([status])
   @@unique([caseId, agentSlug, inputHash, contractVersion])
+}
+
+// AgentRunStep — cada passo do loop do agente (tool call, LLM call, HITL pause)
+model AgentRunStep {
+  id          String   @id @default(cuid())
+  runId       String
+  run         AgentRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  stepNo      Int      // número sequencial do passo
+  kind        String   // llm_call | tool_call | hitl_pause | hitl_resume | observation | thought
+  toolName    String?  // nome da tool chamada (rag_search, web_search, create_evidence, etc.)
+  status      String   @default("pending") // pending | running | done | error | paused
+  inputHash   String?  // hash do input deste passo
+  outputHash  String?  // hash do output deste passo
+  output      String   @default("{}") // JSON com resultado do passo
+  provider    String?  // qual provider foi usado
+  model       String?  // qual modelo foi usado
+  tokensIn    Int      @default(0)
+  tokensOut   Int      @default(0)
+  costBrl     Float    @default(0)
+  durationMs  Int?     // duração em milissegundos
+  requiresHuman Boolean @default(false) // se este passo exige revisão humana
+  createdAt   DateTime @default(now())
+
+  @@index([runId])
+  @@index([status])
 }
 
 // IntelligenceSnapshot — append-only, não sobrescrever versão aprovada
