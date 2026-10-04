@@ -38,22 +38,67 @@ model Client {
   cases     Case[]
 }
 
-// Casos/processos do escritório
+// Casos/processos do escritório (ERP — dados operacionais)
 model Case {
-  id          String   @id @default(cuid())
-  clientId    String
-  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  title       String
-  number      String?  // número do processo
-  area        String   @default("civil") // civil | penal | trabalhista | tributario | consumer | family | previdenciario
-  status      String   @default("active") // active | archived | concluded
-  notes       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  documents   Document[]
+  id            String   @id @default(cuid())
+  clientId      String
+  client        Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  title         String
+  number        String?  // número do processo principal
+  area          String   @default("civil")
+  responsavel   String?  // advogado responsável
+  prioridade    String   @default("media") // alta | media | baixa
+  valor         String?  // valor da causa (R$)
+  status        String   @default("ativo") // ativo | suspenso | encerrado
+  dataDistribuicao DateTime?
+  dataEncerramento DateTime?
+  resultado     String?  // procedente | improcedente | acordo | extinto | parcial
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  documents     Document[]
+  movimentos    CaseMovement[]
+  audiencias    CaseHearing[]
+  processosVinculados String @default("[]") // JSON array de números de processo vinculados
 
   @@index([clientId])
   @@index([status])
+  @@index([area])
+  @@index([prioridade])
+}
+
+// Movimentações processuais (andamentos)
+model CaseMovement {
+  id          String   @id @default(cuid())
+  caseId      String
+  case        Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  data        DateTime @default(now())
+  tipo        String   // petition | despacho | decisao | sentenca | recurso | audiencia | outro
+  descricao   String
+  numeroProc  String?  // processo ao qual se refere (se diferente do principal)
+  criadoPor   String?  // usuario
+  createdAt   DateTime @default(now())
+
+  @@index([caseId])
+  @@index([data])
+}
+
+// Audiências
+model CaseHearing {
+  id          String   @id @default(cuid())
+  caseId      String
+  case        Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  data        DateTime
+  tipo        String   // conciliacao | instrucao | julgamento | oitiva | outra
+  local       String?
+  orgao       String?  // vara/comarca
+  status      String   @default("agendada") // agendada | realizada | cancelada | redesignada
+  resultado   String?  // acordo | sem_acordo | adiada | realizada
+  observacoes String?
+  createdAt   DateTime @default(now())
+
+  @@index([caseId])
+  @@index([data])
 }
 
 model Template {

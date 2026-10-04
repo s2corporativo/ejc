@@ -4,22 +4,24 @@ import { logAuditEvent } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
-// GET: lista casos (com option ?clientId=xxx para filtrar)
+// GET: lista casos com filtros
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const clientId = url.searchParams.get("clientId");
   const status = url.searchParams.get("status");
+  const area = url.searchParams.get("area");
 
-  const where: { clientId?: string; status?: string } = {};
+  const where: { clientId?: string; status?: string; area?: string } = {};
   if (clientId) where.clientId = clientId;
   if (status) where.status = status;
+  if (area) where.area = area;
 
   const cases = await db.case.findMany({
     where,
     orderBy: { updatedAt: "desc" },
     include: {
       client: { select: { id: true, name: true, color: true } },
-      _count: { select: { documents: true } },
+      _count: { select: { documents: true, movimentos: true, audiencias: true } },
     },
   });
 
@@ -29,12 +31,21 @@ export async function GET(req: NextRequest) {
       title: c.title,
       number: c.number,
       area: c.area,
+      responsavel: c.responsavel,
+      prioridade: c.prioridade,
+      valor: c.valor,
       status: c.status,
+      dataDistribuicao: c.dataDistribuicao?.toISOString(),
+      dataEncerramento: c.dataEncerramento?.toISOString(),
+      resultado: c.resultado,
       notes: c.notes,
+      processosVinculados: JSON.parse(c.processosVinculados || "[]"),
       clientId: c.clientId,
       clientName: c.client?.name,
       clientColor: c.client?.color,
       documentsCount: c._count.documents,
+      movimentosCount: c._count.movimentos,
+      audienciasCount: c._count.audiencias,
       createdAt: c.createdAt.toISOString(),
       updatedAt: c.updatedAt.toISOString(),
     })),
@@ -48,20 +59,17 @@ export async function POST(req: NextRequest) {
     title?: string;
     number?: string;
     area?: string;
+    responsavel?: string;
+    prioridade?: string;
+    valor?: string;
     notes?: string;
+    dataDistribuicao?: string;
+    processosVinculados?: string[];
   } = {};
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
-  }
+  try { body = await req.json(); } catch { return NextResponse.json({ error: "JSON inválido" }, { status: 400 }); }
 
-  if (!body.clientId) {
-    return NextResponse.json({ error: "clientId obrigatório" }, { status: 400 });
-  }
-  if (!body.title?.trim()) {
-    return NextResponse.json({ error: "Título do caso obrigatório" }, { status: 400 });
-  }
+  if (!body.clientId) return NextResponse.json({ error: "clientId obrigatório" }, { status: 400 });
+  if (!body.title?.trim()) return NextResponse.json({ error: "Título do caso obrigatório" }, { status: 400 });
 
   const newCase = await db.case.create({
     data: {
@@ -69,8 +77,12 @@ export async function POST(req: NextRequest) {
       title: body.title.trim(),
       number: body.number?.trim() || null,
       area: body.area || "civil",
+      responsavel: body.responsavel?.trim() || null,
+      prioridade: body.prioridade || "media",
+      valor: body.valor?.trim() || null,
       notes: body.notes?.trim() || null,
-      status: "active",
+      dataDistribuicao: body.dataDistribuicao ? new Date(body.dataDistribuicao) : null,
+      processosVinculados: JSON.stringify(body.processosVinculados || []),
     },
   });
 
@@ -78,7 +90,7 @@ export async function POST(req: NextRequest) {
     action: "create_case",
     resource: "case",
     resourceId: newCase.id,
-    metadata: { title: newCase.title, clientId: body.clientId },
+    metadata: { title: newCase.title, area: newCase.area, responsavel: newCase.responsavel },
   });
 
   return NextResponse.json({
@@ -86,56 +98,55 @@ export async function POST(req: NextRequest) {
     title: newCase.title,
     number: newCase.number,
     area: newCase.area,
+    responsavel: newCase.responsavel,
+    prioridade: newCase.prioridade,
+    valor: newCase.valor,
     status: newCase.status,
-    clientId: newCase.clientId,
-    createdAt: newCase.createdAt.toISOString(),
   });
 }
 
-// PATCH: atualiza caso
+// PATCH: atualiza caso (inclui encerramento)
 export async function PATCH(req: NextRequest) {
   let body: {
     id?: string;
     title?: string;
     number?: string;
     area?: string;
+    responsavel?: string;
+    prioridade?: string;
+    valor?: string;
     status?: string;
     notes?: string;
+    dataDistribuicao?: string;
+    dataEncerramento?: string;
+    resultado?: string;
+    processosVinculados?: string[];
   } = {};
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
-  }
+  try { body = await req.json(); } catch { return NextResponse.json({ error: "JSON inválido" }, { status: 400 }); }
 
-  if (!body.id) {
-    return NextResponse.json({ error: "id obrigatório" }, { status: 400 });
-  }
+  if (!body.id) return NextResponse.json({ error: "id obrigatório" }, { status: 400 });
 
-  const data: {
-    title?: string;
-    number?: string | null;
-    area?: string;
-    status?: string;
-    notes?: string | null;
-  } = {};
-
+  const data: Record<string, unknown> = {};
   if (body.title !== undefined) data.title = body.title.trim();
   if (body.number !== undefined) data.number = body.number.trim() || null;
   if (body.area !== undefined) data.area = body.area;
+  if (body.responsavel !== undefined) data.responsavel = body.responsavel.trim() || null;
+  if (body.prioridade !== undefined) data.prioridade = body.prioridade;
+  if (body.valor !== undefined) data.valor = body.valor.trim() || null;
   if (body.status !== undefined) data.status = body.status;
   if (body.notes !== undefined) data.notes = body.notes.trim() || null;
+  if (body.dataDistribuicao !== undefined) data.dataDistribuicao = body.dataDistribuicao ? new Date(body.dataDistribuicao) : null;
+  if (body.dataEncerramento !== undefined) data.dataEncerramento = body.dataEncerramento ? new Date(body.dataEncerramento) : null;
+  if (body.resultado !== undefined) data.resultado = body.resultado;
+  if (body.processosVinculados !== undefined) data.processosVinculados = JSON.stringify(body.processosVinculados);
 
-  const updated = await db.case.update({
-    where: { id: body.id },
-    data,
-  });
+  const updated = await db.case.update({ where: { id: body.id }, data });
 
   await logAuditEvent({
-    action: "update_case",
+    action: body.status === "encerrado" ? "close_case" : "update_case",
     resource: "case",
     resourceId: body.id,
-    metadata: { title: updated.title, status: updated.status },
+    metadata: { title: updated.title, status: updated.status, resultado: updated.resultado },
   });
 
   return NextResponse.json({ ok: true });

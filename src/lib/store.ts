@@ -24,12 +24,13 @@ interface AppState {
   setView: (v: View) => void;
   appTab:
     | "dashboard"
+    | "casos"
+    | "clients"
+    | "documents"
     | "cerebro"
     | "intelligence"
     | "generator"
     | "editor"
-    | "documents"
-    | "clients"
     | "settings";
   setAppTab: (t: AppState["appTab"]) => void;
   currentDocId: string | null;

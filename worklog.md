@@ -510,3 +510,42 @@ Stage Summary:
 - 8 tabs no app, atalho I para Inteligência.
 - 0 erros console, 0 ESLint, dev server saudável.
 - Próxima fase: AgentRunStep (steps detalhados por execução), GraphEdge API, grafo visual interativo (D3/vis.js), SkillVersion versionado.
+
+---
+Task ID: 20 (Reorganização em 2 zonas: ERP + Inteligência IA)
+Agent: main (Z.ai Code)
+Task: Reorganizar sistema em 2 zonas (ERP administrativo + Inteligência IA cognitivo) com 6 módulos de IA, expandir Casos com cadastro completo (responsável, área, prioridade, valor, status, partes, processos vinculados, movimentações, audiências, encerramento).
+
+Work Log:
+- ARQUITETURA REORGANIZADA em 2 zonas com separação visual na navegação:
+  - **ERP ADMINISTRATIVO** (dados operacionais): Início, Casos, Clientes, Documentos
+  - **INTELIGÊNCIA IA** (dados cognitivos): 1. Entrada (Cérebro), 2. Inteligência (Evidence+Graph), 5. Produção (Generator+Editor), 6. Governança (Settings)
+  - Regra: ERP é dono de Cliente/Caso/Processo/Documento/Prazo. IA é dona de Evidence/Fact/Assertion/Graph/Issue/Thesis/Risk.
+  - Separador visual na tab bar (ERP | → | IA) com cores diferenciadas.
+- SCHEMA PRISMA: modelo Case expandido com responsavel, prioridade, valor, dataDistribuicao, dataEncerramento, resultado, processosVinculados (JSON array). Novos modelos: CaseMovement (movimentações: data, tipo, descricao, numeroProc, criadoPor) e CaseHearing (audiências: data, tipo, local, orgao, status, resultado, observacoes). `bun run db:push` aplicado.
+- API /api/cases atualizada: GET com filtros (status, area), POST/PATCH com todos os novos campos, DELETE. PATCH suporta encerramento (status=encerrado + dataEncerramento + resultado). Registra audit events.
+- 2 NOVAS APIs:
+  - /api/cases/movements (GET por caseId, POST cria, DELETE) — andamentos processuais.
+  - /api/cases/hearings (GET por caseId, POST cria, PATCH atualiza status/resultado, DELETE) — audiências.
+- COMPONENTE Casos (src/components/app/casos.tsx): módulo ERP completo com:
+  - Cadastro: cliente, título, nº processo, área (13 opções), responsável, prioridade (alta/média/baixa), valor, data distribuição, processos vinculados, observações.
+  - Filtros: busca livre + status (todos/ativo/suspenso/encerrado) + área.
+  - Card de caso: badges de área/prioridade/status, cliente, responsável, nº processo, valor, contadores (docs/mov/aud), processos vinculados, resultado.
+  - Expansível: mostra movimentações e audiências em sub-tabs.
+  - Movimentações: CRUD com tipo (petição/despacho/decisão/sentença/recurso/audiência/outro), descrição, nº processo, data.
+  - Audiências: CRUD com data/hora, tipo (conciliação/instrução/julgamento/oitiva/outra), local, órgão, status (agendada/realizada/cancelada), resultado, observações.
+  - Encerramento: prompt de resultado (procedente/improcedente/acordo/extinto/parcial), seta status=encerrado + dataEncerramento.
+  - Integração IA: botão "Enviar para IA" que passa contexto do caso (título, cliente, área, responsável, valor, notas) para a aba Inteligência via brainContext.
+- APPSHELL reescrito: tab bar dividida em 2 zonas com header "ERP" (muted) e "IA" (primary), separador visual com seta, 4 tabs ERP + 5 tabs IA = 9 tabs total. Atalhos de teclado: 1/k/c/d (ERP), e/i/g/m/, (IA).
+- STORE atualizado: appTab inclui "casos".
+- HEADER NAV atualizado: Início, Casos, Clientes, Documentos (ERP) + Entrada, Inteligência, Produção, Editor, Governança (IA).
+- ESLint limpo (0 erros, 0 warnings). Dev server ativo (PID 19979, HTTP 200).
+- Verificação via agent-browser: 2 zonas visíveis ("HAS 2 ZONES"), Casos tab funcional, formulário completo com todos os campos ("HAS ALL FIELDS"), 0 erros de console.
+
+Stage Summary:
+- Sistema reorganizado em 2 zonas arquiteturais: ERP (operacional) + IA (cognitivo) com separação visual clara.
+- Casos é agora um módulo ERP completo: cadastro com responsável/área/prioridade/valor/status/partes/processos vinculados/movimentações/audiências/encerramento.
+- 2 novos modelos Prisma (CaseMovement, CaseHearing), 2 novas APIs, 1 novo componente Casos.
+- Navegação com 9 tabs em 2 zonas, atalhos de teclado, separador visual.
+- Integração ERP→IA: botão envia dados do caso para o módulo de Inteligência.
+- 0 erros console, 0 ESLint, dev server saudável.
