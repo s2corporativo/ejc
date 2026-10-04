@@ -136,8 +136,44 @@ export function Cerebro() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<BrainResult | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
+  const [uploading, setUploading] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
 
   const SAMPLE = `O cliente João da Silva foi inscrito indevidamente no SERASA em 15/01/2026 pelo Banco XYZ, após já ter quitado o débito de R$ 5.000,00 em 10/12/2025. O cliente possui comprovante de pagamento. Sofreu constrangimento ao tentar obter crédito. Pede indenização por danos morais no valor de R$ 50.000,00. Relação de consumo caracterizada.`;
+
+  async function handleUpload(file: File) {
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("caseId", "cerebro-session");
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const data = await res.json();
+      if (data.error) {
+        toast({ title: data.error, variant: "destructive" });
+      } else {
+        const extracted = data.text || "";
+        const existing = facts.trim();
+        const combined = existing ? `${existing}\n\n--- Documento: ${data.fileName} (${data.textLength} chars, ${data.totalEvidence} evidências) ---\n${extracted}` : extracted;
+        setFacts(combined);
+        toast({
+          title: `Documento importado: ${data.fileName}`,
+          description: `${data.textLength} caracteres extraídos · ${data.totalEvidence} evidências criadas com hash SHA-256`,
+        });
+      }
+    } catch {
+      toast({ title: "Erro ao processar arquivo", variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragActive(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleUpload(file);
+  }
 
   async function analyze() {
     if (facts.trim().length < 30) {
@@ -221,10 +257,39 @@ export function Cerebro() {
                 rows={10}
                 value={facts}
                 onChange={(e) => setFacts(e.target.value)}
-                placeholder="Descreva os fatos do caso em linguagem natural..."
+                placeholder="Descreva os fatos do caso em linguagem natural, ou importe um documento acima..."
                 className="scrollbar-juridia"
               />
               <p className="text-[10px] text-muted-foreground">{facts.length} caracteres</p>
+            </div>
+            {/* Upload zone */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={onDrop}
+              className={`rounded-lg border-2 border-dashed p-3 text-center transition-colors ${
+                dragActive ? "border-primary bg-primary/5" : "border-border"
+              }`}
+            >
+              {uploading ? (
+                <div className="flex items-center justify-center gap-2 text-xs text-primary">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Extraindo texto e criando evidências...
+                </div>
+              ) : (
+                <label className="flex cursor-pointer flex-col items-center gap-1">
+                  <FileText className="h-6 w-6 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">
+                    Arraste PDF/DOCX/TXT aqui ou <span className="text-primary underline">clique para selecionar</span>
+                  </span>
+                  <input
+                    type="file"
+                    accept=".pdf,.docx,.txt,.md"
+                    className="hidden"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }}
+                  />
+                </label>
+              )}
             </div>
             <div className="flex gap-2">
               <Button variant="ghost" size="sm" onClick={() => { setFacts(SAMPLE); setTitle("Inscrição indevida SERASA"); }}>

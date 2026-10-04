@@ -786,3 +786,52 @@ Stage Summary:
   4. ✅ Frontend Skill Router: skills matched aparecem automaticamente no fluxo do caso.
 - Skill Router testado em 4 áreas com matching correto (trabalhista/tributário/família/administrativo).
 - 0 erros console, 0 ESLint, dev server saudável.
+
+---
+Task ID: 25 (4 opções executadas: Upload + Grafo visual + RAG-lite + Testes)
+Agent: main (Z.ai Code)
+Task: Implementar todas as 4 opções: Upload PDF/DOCX no Cérebro, Grafo visual interativo, RAG-lite com embeddings, Testes focados.
+
+Work Log:
+- OPÇÃO 2 — UPLOAD PDF/DOCX NO CÉREBRO (api/upload + UI drag-and-drop):
+  - API /api/upload (POST FormData): aceita PDF/DOCX/TXT até 10MB. Extrai texto com pdf-parse (PDF) e mammoth (DOCX). Cria EvidenceRefs com quote_hash SHA-256 para o documento inteiro + para cada parágrafo significativo (até 20 chunks). Registra audit event. Retorna texto extraído + IDs de evidência.
+  - UI no Cérebro: drag-and-drop zone com borda dashed, file input para clique, spinner durante extração. Texto extraído é combinado com fatos existentes no textarea. Toast mostra fileName + chars extraídos + evidências criadas.
+  - Teste: upload de test.txt → 16 chars extraídos, 1 evidência criada ✓.
+
+- OPÇÃO 1 — GRAFO VISUAL INTERATIVO (graph-visual.tsx + /api/intelligence/graph):
+  - Componente GraphVisual: SVG com nós posicionados em círculo (agrupados por tipo), arestas desenhadas como linhas (cor por polarity, tracejado para candidate). Click no nó mostra painel de detalhe (tipo, status, texto, confiança, evidência vinculada).
+  - API /api/intelligence/graph (GET + POST): GET retorna nós + arestas + summary (totalNodes, totalEdges, candidates, confirmed, nodeTypes, edgeTypes). POST cria GraphEdge (valida fromNodeId≠toNodeId, bloqueia vínculos entre casos diferentes, IA só cria candidate).
+  - Legend com cores por tipo (fact=verde, rule=roxo, risk=vermelho, etc.).
+  - 14 node types, 16 edge types suportados.
+
+- OPÇÃO 3 — RAG-LITE COM TF-IDF (rag_lite.ts):
+  - TF-IDF cosine similarity em JS puro (sem pgvector, sem modelo ML).
+  - tokenize(): normaliza acentos, remove pontuação, filtra palavras >2 chars.
+  - termFreq(): TF normalizado por tamanho do documento.
+  - IDF cache: calculado uma vez (lazy) sobre todos os LegalSource vigentes.
+  - tfidfVector(): TF × IDF para cada termo.
+  - cosineSimilarity(): dot product / (normA × normB).
+  - ragSearch(query, topK): busca LegalSource por similaridade, retorna score + matchedTerms.
+  - Viável para até ~5.000 documentos (suficiente para escritório individual).
+  - clearRagCache(): invalida cache quando base é atualizada.
+
+- OPÇÃO 4 — TESTES FOCADOS (tests/gates.test.ts):
+  - 28 testes em 6 categorias:
+    1. EVIDENCE GATE (6): quoteHash determinístico, sensível a mudanças, 64 chars SHA-256, normalizeQuote, rejeita vazio, rejeita espaços.
+    2. PSEUDONYMIZER REVERSÍVEL (5): pseudonimiza nome para [NOME_1], detecta ≥3 entidades, mesma entidade = mesmo marcador (2 ocorrências), reidratação = texto original, marcadores seguem formato [TIPO_N].
+    3. RESPONSE VALIDATOR (7): rejeita "vai ganhar" + "100% de chance" (EOAB), marca VEDAÇÃO_PROMESSA_RESULTADO, avisa jurisprudência não verificada (REsp 999.999.999), avisa ausência de marca de rascunho, aprova texto com rascunho, ensureDraftMarker adiciona aviso, não duplica se já existe.
+    4. CITATION GATE (4): detecta 3 citações, verifica 2 reais (art. 927 CC + Súmula 308 TST), marca 1 suspeita (art. 999 CC), fail-closed bloqueia.
+    5. OWNERSHIP/ISOLAMENTO (3): hashes diferentes para casos diferentes, pseudonimização não vaza entre casos, isolamento A↔B.
+    6. FAIL-CLOSED (3): IDs válidos passam, IDs inventados rejeitados, lista vazia rejeitada.
+  - Resultado: 28/28 aprovados, 0 reprovados 🎉
+
+- ESLint limpo (0 erros, 0 warnings). Dev server ativo (PID 22425, HTTP 200). 17 APIs funcionais.
+
+Stage Summary:
+- 4 opções executadas:
+  1. ✅ Upload PDF/DOCX: API extrai texto (pdf-parse/mammoth), cria EvidenceRefs com hash, UI drag-and-drop no Cérebro.
+  2. ✅ Grafo visual: SVG interativo com nós/arestas, cores por tipo, painel de detalhe, API bloqueia vínculos cruzados.
+  3. ✅ RAG-lite: TF-IDF cosine similarity em JS puro sobre LegalSource, cache de IDF, viável até 5k docs.
+  4. ✅ Testes focados: 28/28 testes aprovados cobrindo Evidence Gate, Pseudonymizer, Response Validator, Citation Gate, Ownership, Fail-closed.
+- 0 erros console, 0 ESLint, 28/28 testes passando, dev server saudável.
+- Sistema completo com: ERP (Clientes/Casos/Movimentações/Audiências) + IA (Cérebro 8 etapas + Inteligência verificável + Skills 37 em 8 áreas + Skill Router + Citation Gate + Evidence Gate + Pseudonymizer reversível + Response Validator + RAG-lite + Grafo visual + Upload documentos + 28 testes).

@@ -218,7 +218,7 @@ export function validateResponse(text: string): ValidationResult {
 
   // Regra 3: Detecção de jurisprudência potencialmente inventada
   // Padrões como "REsp 999.999.999" ou "Tema 9999" sem verificação
-  const fakeJurisprudence = text.match(/(?:REsp|RE|AgInt|HC)\s*\d{7,}/gi);
+  const fakeJurisprudence = text.match(/(?:REsp|RE|AgInt|HC)\s*[\d.]{7,}/gi);
   if (fakeJurisprudence) {
     for (const match of fakeJurisprudence.slice(0, 3)) {
       violations.push({
