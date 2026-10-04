@@ -2,47 +2,37 @@
 
 import { useEffect } from "react";
 import {
+  Brain,
   Wand2,
   FileText,
-  Search,
-  Layers,
   FolderOpen,
   LayoutDashboard,
   Settings as SettingsIcon,
-  FileSearch,
-  ShieldCheck,
   Users,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppStore } from "@/lib/store";
 import { Generator } from "./generator";
 import { Editor } from "./editor";
-import { Jurisprudence } from "./jurisprudence";
-import { Batch } from "./batch";
 import { DocumentsList } from "./documents-list";
 import { Dashboard } from "./dashboard";
 import { Settings } from "./settings";
-import { CaseAnalysis } from "./case-analysis";
-import { AuditLedger } from "./audit-ledger";
 import { ClientsCases } from "./clients-cases";
+import { Cerebro } from "./cerebro";
 
 const TABS = [
   { id: "dashboard" as const, label: "Início", icon: LayoutDashboard, key: "1" },
-  { id: "clients" as const, label: "Clientes", icon: Users, key: "c" },
+  { id: "cerebro" as const, label: "Cérebro", icon: Brain, key: "b" },
   { id: "generator" as const, label: "Gerar minuta", icon: Wand2, key: "g" },
   { id: "editor" as const, label: "Editor", icon: FileText, key: "e" },
-  { id: "documents" as const, label: "Minutas", icon: FolderOpen, key: "d" },
-  { id: "case-analysis" as const, label: "Resumo do caso", icon: FileSearch, key: "r" },
-  { id: "jurisprudence" as const, label: "JurisprudênciaIA", icon: Search, key: "j" },
-  { id: "batch" as const, label: "Geração em lote", icon: Layers, key: "b" },
-  { id: "audit" as const, label: "Auditoria", icon: ShieldCheck, key: "a" },
-  { id: "settings" as const, label: "Configurações", icon: SettingsIcon, key: "," },
+  { id: "documents" as const, label: "Minutas", icon: FolderOpen, key: "m" },
+  { id: "clients" as const, label: "Clientes", icon: Users, key: "c" },
+  { id: "settings" as const, label: "Config", icon: SettingsIcon, key: "," },
 ];
 
 export function AppShell() {
   const { appTab, setAppTab } = useAppStore();
 
-  // Atalhos de teclado (tecla única, sem modifier)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -51,11 +41,8 @@ export function AppShell() {
         target?.tagName === "TEXTAREA" ||
         target?.isContentEditable ||
         target?.tagName === "SELECT"
-      ) {
-        return;
-      }
+      ) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-
       const key = e.key.toLowerCase();
       const tab = TABS.find((t) => t.key === key);
       if (tab) {
@@ -82,7 +69,9 @@ export function AppShell() {
                 <TabsTrigger
                   key={t.id}
                   value={t.id}
-                  className="gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
+                  className={`gap-1.5 data-[state=active]:bg-primary/10 data-[state=active]:text-primary ${
+                    t.id === "cerebro" ? "ring-1 ring-primary/20 data-[state=active]:ring-primary/40" : ""
+                  }`}
                   title={`Atalho: ${t.key.toUpperCase()}`}
                 >
                   <t.icon className="h-3.5 w-3.5" />
@@ -99,14 +88,11 @@ export function AppShell() {
 
       <div>
         {appTab === "dashboard" && <Dashboard />}
-        {appTab === "clients" && <ClientsCases />}
+        {appTab === "cerebro" && <Cerebro />}
         {appTab === "generator" && <Generator />}
         {appTab === "editor" && <Editor />}
         {appTab === "documents" && <DocumentsList />}
-        {appTab === "case-analysis" && <CaseAnalysis />}
-        {appTab === "jurisprudence" && <Jurisprudence />}
-        {appTab === "batch" && <Batch />}
-        {appTab === "audit" && <AuditLedger />}
+        {appTab === "clients" && <ClientsCases />}
         {appTab === "settings" && <Settings />}
       </div>
     </div>

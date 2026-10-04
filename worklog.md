@@ -340,3 +340,34 @@ Stage Summary:
 - UI integrada no editor com Dialog, summary cards, badges coloridos, trechos da base, links para fonte oficial.
 - 2 novas APIs, 1 nova lib, 1 novo componente, 1 novo modelo Prisma, 1 script de seed.
 - Próxima fase: RAG-lite com embeddings em SQLite, Gold Set pessoal do escritório.
+
+---
+Task ID: 16 (Simplificação + Cérebro multi-etapas)
+Agent: main (Z.ai Code)
+Task: Simplificar o sistema e evoluir o cérebro — focar na IA de entendimento de casos.
+
+Work Log:
+- SIMPLIFICAÇÃO: AppShell reduzido de 10 para 7 tabs (Início, Cérebro, Gerar minuta, Editor, Minutas, Clientes, Config). Removidos: JurisprudênciaIA (mesclada no Cérebro), Geração em lote, Auditoria (acessível via logs), Resumo do caso (substituído pelo Cérebro). Header nav simplificado para 6 itens. Store atualizado com appTab "cerebro".
+- CÉREBRO MULTI-ETAPAS criado (src/components/app/cerebro.tsx + /api/brain):
+  - ETAPA 1 — Extração estruturada: LLM extrai partes, cronologia, pedidos, valores em JSON.
+  - ETAPA 2 — Questões jurídicas: LLM identifica questões com área e relevância (alta/média/baixa).
+  - ETAPA 3 — Legislação aplicável: busca na base curada LegalSource (33 fontes) por match de diploma/área/palavras-chave, retorna trecho + URL oficial + vigência.
+  - ETAPA 4 — Jurisprudência: web_search real (z-ai-web-dev-sdk) com query baseada nas questões jurídicas, retorna 8 resultados com nome, URL, snippet.
+  - ETAPA 5 — Análise de viabilidade: LLM analisa com contexto de fatos + legislação + jurisprudência, retorna probability (alta/média/baixa), strengths, weaknesses, reasoning.
+  - ETAPA 6 — Lacunas e perguntas: LLM identifica o que falta no caso e formula perguntas para o cliente.
+  - ETAPA 7 — Estratégia recomendada: LLM sugere proceduralPath, immediateActions, documentsToCollect, risks, recommendation.
+  - Cada etapa tem status (pending/running/done/error) visível na UI com progress bar e descrição animada.
+  - Auditoria + ledger: cada análise cerebral debita 3 créditos e registra audit event.
+- COMPONENTE Cérebro (UI): input de fatos + título, botão "Usar exemplo", progress das 7 etapas com ícones e spinners, cards de resultado em ordem de impacto: Parecer de viabilidade (destaque colorido), Partes + Cronologia, Questões jurídicas (badges de área/relevância), Legislação aplicável (trechos + link oficial), Jurisprudência (cards clicáveis), Lacunas e perguntas (caixas amber com "Pergunta para o cliente"), Estratégia recomendada (caminho processual + ações + documentos + riscos + recomendação final), botão "Gerar minuta a partir desta análise".
+- ESLint limpo (0 erros, 0 warnings). Dev server ativo (PID 17543, HTTP 200).
+- Verificação end-to-end via API direta: POST /api/brain com fato de inscrição indevida SERASA → 7/7 etapas done, 5 questões jurídicas, 8 fontes de lei da base curada, 8 resultados de jurisprudência, viabilidade "média", 5 lacunas, 5035 tokens totais. Web_search retornou 8 resultados (no teste via browser houve rate limit 429 temporário, mas a API é robusta).
+
+Stage Summary:
+- Sistema simplificado: 7 tabs (era 10), foco no essencial.
+- Cérebro multi-etapas implementado: 7 etapas de raciocínio IA (extração → questões → legislação → jurisprudência → viabilidade → lacunas → estratégia).
+- Cada etapa usa LLM + base curada LegalSource (Citation Gate) + web_search real.
+- UI mostra progresso das etapas com spinners e descrições animadas.
+- Resultados organizados por impacto: parecer de viabilidade em destaque, depois partes/cronologia, questões, legislação, jurisprudência, lacunas, estratégia.
+- Botão para gerar minuta diretamente da análise cerebral.
+- Auditoria + ledger de créditos integrados (3 créditos por análise).
+- Próxima fase: conectar a análise cerebral ao gerador de minutas (passar contexto automaticamente), permitir salvar análises no DB, histórico de análises por cliente/caso.
