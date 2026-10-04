@@ -40,46 +40,69 @@ interface BrainStep {
   status: "pending" | "running" | "done" | "error";
 }
 
+type EpistemicState = "fato_extraido" | "alegacao_cliente" | "inferencia_ia" | "fato_controvertido" | "direito_positivo" | "jurisprudencia" | "hipotese";
+
+interface EvidenceItem {
+  claim: string;
+  state: EpistemicState;
+  source?: string;
+  confidence: number;
+  note?: string;
+}
+
 interface BrainResult {
-  parties: { role: string; name?: string; type: string }[];
-  timeline: { date: string; event: string }[];
-  requests: string[];
-  values: { label: string; amount: string }[];
-  legalIssues: { question: string; area: string; relevance: string }[];
-  applicableLaw: {
-    diploma: string;
-    numero: string;
-    textoTrecho: string;
-    vigente: boolean;
-    urlOficial?: string | null;
-    applicability: string;
-  }[];
-  jurisprudence: {
-    name: string;
-    url: string;
-    snippet: string;
-    host_name: string;
-    favorable: boolean | null;
-  }[];
+  ramoJuridico: string;
+  ramoConfianca: number;
+  parties: { role: string; name?: string; type: string; state: EpistemicState }[];
+  timeline: { date: string; event: string; state: EpistemicState }[];
+  requests: { text: string; state: EpistemicState }[];
+  values: { label: string; amount: string; state: EpistemicState }[];
+  legalIssues: { question: string; area: string; relevance: string; state: EpistemicState; note?: string }[];
+  applicableLaw: { diploma: string; numero: string; textoTrecho: string; vigente: boolean; urlOficial?: string | null; applicability: string; state: "direito_positivo"; confidence: number }[];
+  jurisprudence: { name: string; url: string; snippet: string; host_name: string; favorable: boolean | null; state: "jurisprudencia"; confidence: number }[];
   viability: {
-    probability: string;
-    strengths: string[];
-    weaknesses: string[];
+    hypothesis: string;
+    hypothesisNote: string;
+    strengths: EvidenceItem[];
+    weaknesses: EvidenceItem[];
     reasoning: string;
+    evidence: EvidenceItem[];
   };
-  gaps: { what: string; why: string; question: string }[];
+  gaps: { what: string; why: string; question: string; state: EpistemicState }[];
   strategy: {
     proceduralPath: string;
-    immediateActions: string[];
+    immediateActions: EvidenceItem[];
     documentsToCollect: string[];
-    risks: string[];
+    risks: EvidenceItem[];
     recommendation: string;
   };
   steps: BrainStep[];
   totalTokens: number;
 }
 
+// ── Estados epistêmicos: cores e rótulos ──────────────────────────────────
+const EPistemicConfig: Record<EpistemicState, { label: string; color: string; bg: string; icon: string }> = {
+  fato_extraido: { label: "Fato extraído", color: "text-green-700 dark:text-green-400", bg: "bg-green-500/10 border-green-500/30", icon: "✓" },
+  alegacao_cliente: { label: "Alegação do cliente", color: "text-amber-700 dark:text-amber-400", bg: "bg-amber-500/10 border-amber-500/30", icon: "?" },
+  inferencia_ia: { label: "Inferência da IA", color: "text-blue-700 dark:text-blue-400", bg: "bg-blue-500/10 border-blue-500/30", icon: "≡" },
+  fato_controvertido: { label: "Controvertido", color: "text-orange-700 dark:text-orange-400", bg: "bg-orange-500/10 border-orange-500/30", icon: "⚠" },
+  direito_positivo: { label: "Direito positivo", color: "text-emerald-700 dark:text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/30", icon: "§" },
+  jurisprudencia: { label: "Jurisprudência", color: "text-cyan-700 dark:text-cyan-400", bg: "bg-cyan-500/10 border-cyan-500/30", icon: "§" },
+  hipotese: { label: "Hipótese", color: "text-purple-700 dark:text-purple-400", bg: "bg-purple-500/10 border-purple-500/30", icon: "H" },
+};
+
+function EpistemicBadge({ state }: { state: EpistemicState }) {
+  const cfg = EPistemicConfig[state] || EPistemicConfig.inferencia_ia;
+  return (
+    <Badge variant="outline" className={`gap-1 text-[10px] ${cfg.color} ${cfg.bg}`}>
+      <span className="font-mono">{cfg.icon}</span>
+      {cfg.label}
+    </Badge>
+  );
+}
+
 const STEP_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  classify: Brain,
   extract: Users,
   issues: Scale,
   law: FileText,
@@ -90,23 +113,24 @@ const STEP_ICONS: Record<string, React.ComponentType<{ className?: string }>> = 
 };
 
 const STEP_DESCS: Record<string, string> = {
+  classify: "Classificando o ramo jurídico do caso...",
   extract: "Extraindo partes, cronologia, pedidos e valores...",
   issues: "Identificando questões jurídicas do caso...",
   law: "Buscando legislação aplicável na base curada...",
   jurisprudence: "Pesquisando jurisprudência dos tribunais...",
-  viability: "Analisando forças, fragilidades e probabilidade...",
+  viability: "Analisando forças, fragilidades e hipóteses...",
   gaps: "Identificando lacunas factuais e perguntas...",
   strategy: "Montando estratégia processual recomendada...",
 };
 
-const PROB_CONFIG = {
-  alta: { color: "text-green-600", bg: "bg-green-500/10 border-green-500/30", label: "Alta probabilidade" },
-  média: { color: "text-amber-600", bg: "bg-amber-500/10 border-amber-500/30", label: "Média probabilidade" },
-  baixa: { color: "text-red-600", bg: "bg-red-500/10 border-red-500/30", label: "Baixa probabilidade" },
+const HYPOTHESIS_CONFIG = {
+  "favorável": { color: "text-green-700 dark:text-green-400", bg: "border-green-500/40 bg-green-500/5", label: "Hipótese favorável" },
+  "incerto": { color: "text-amber-700 dark:text-amber-400", bg: "border-amber-500/40 bg-amber-500/5", label: "Hipótese incerta" },
+  "desfavorável": { color: "text-red-700 dark:text-red-400", bg: "border-red-500/40 bg-red-500/5", label: "Hipótese desfavorável" },
 } as const;
 
 export function Cerebro() {
-  const { setAppTab, setCurrentDocId } = useAppStore();
+  const { setAppTab, setCurrentDocId, setBrainContext } = useAppStore();
   const [facts, setFacts] = useState("");
   const [title, setTitle] = useState("");
   const [loading, setLoading] = useState(false);
@@ -126,7 +150,7 @@ export function Cerebro() {
 
     // Simula progressão das etapas enquanto a API processa
     const stepInterval = setInterval(() => {
-      setCurrentStep((s) => Math.min(s + 1, 6));
+      setCurrentStep((s) => Math.min(s + 1, 7));
     }, 5000);
 
     try {
@@ -141,10 +165,10 @@ export function Cerebro() {
         toast({ title: data.error, variant: "destructive" });
       } else {
         setResult(data);
-        setCurrentStep(7);
+        setCurrentStep(8);
         toast({
           title: "Análise cerebral concluída",
-          description: `${data.steps?.filter((s: BrainStep) => s.status === "done").length || 0}/7 etapas completas`,
+          description: `${data.steps?.filter((s: BrainStep) => s.status === "done").length || 0}/8 etapas completas`,
         });
       }
     } catch {
@@ -282,7 +306,7 @@ export function Cerebro() {
                   })}
                 </div>
                 {loading && (
-                  <Progress value={(currentStep / 7) * 100} className="mt-3 h-1" />
+                  <Progress value={(currentStep / 8) * 100} className="mt-3 h-1" />
                 )}
               </CardContent>
             </Card>
@@ -307,19 +331,43 @@ export function Cerebro() {
           {/* Results sections */}
           {result && (
             <AnimatePresence>
+              {/* Ramo jurídico + Viability summary */}
+              {result.ramoJuridico && (
+                <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+                  <Card className="border-primary/30 bg-primary/5">
+                    <CardContent className="flex items-center gap-3 p-4">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        <Brain className="h-5 w-5" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Ramo jurídico detectado</div>
+                        <div className="text-lg font-bold capitalize">{result.ramoJuridico}</div>
+                      </div>
+                      <Badge variant="outline" className="text-xs">
+                        confiança {Math.round((result.ramoConfianca || 0) * 100)}%
+                      </Badge>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              )}
+
               {/* Viability summary */}
               {result.viability && (
                 <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-                  <Card className={`border-2 ${PROB_CONFIG[result.viability.probability as keyof typeof PROB_CONFIG]?.bg || ""}`}>
+                  <Card className={`border-2 ${HYPOTHESIS_CONFIG[result.viability.hypothesis as keyof typeof HYPOTHESIS_CONFIG]?.bg || ""}`}>
                     <CardContent className="p-5">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <Target className={`h-5 w-5 ${PROB_CONFIG[result.viability.probability as keyof typeof PROB_CONFIG]?.color}`} />
+                          <Target className={`h-5 w-5 ${HYPOTHESIS_CONFIG[result.viability.hypothesis as keyof typeof HYPOTHESIS_CONFIG]?.color}`} />
                           <span className="font-semibold">Parecer de viabilidade</span>
                         </div>
-                        <Badge variant="outline" className={`text-sm font-bold ${PROB_CONFIG[result.viability.probability as keyof typeof PROB_CONFIG]?.color}`}>
-                          {PROB_CONFIG[result.viability.probability as keyof typeof PROB_CONFIG]?.label}
+                        <Badge variant="outline" className={`text-sm font-bold ${HYPOTHESIS_CONFIG[result.viability.hypothesis as keyof typeof HYPOTHESIS_CONFIG]?.color}`}>
+                          {HYPOTHESIS_CONFIG[result.viability.hypothesis as keyof typeof HYPOTHESIS_CONFIG]?.label}
                         </Badge>
+                      </div>
+                      {/* Aviso de hipótese sem base estatística */}
+                      <div className="mt-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs text-amber-700 dark:text-amber-400">
+                        ⚠ <strong>Hipótese</strong> — {result.viability.hypothesisNote || "Estimativa sem base estatística. Não constitui promessa de resultado. Requer validação jurisprudencial e revisão humana."}
                       </div>
                       <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
                         {result.viability.reasoning}
@@ -329,11 +377,14 @@ export function Cerebro() {
                           <div className="mb-1 flex items-center gap-1 text-xs font-semibold text-green-600">
                             <TrendingUp className="h-3 w-3" /> Pontos fortes
                           </div>
-                          <ul className="space-y-1 text-xs">
-                            {result.viability.strengths.map((s, i) => (
-                              <li key={i} className="flex gap-1.5">
-                                <CheckCircle2 className="h-3 w-3 shrink-0 text-green-600 mt-0.5" />
-                                <span className="text-muted-foreground">{s}</span>
+                          <ul className="space-y-2 text-xs">
+                            {(result.viability.strengths || []).map((s, i) => (
+                              <li key={i} className="rounded border border-border p-1.5">
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="text-muted-foreground">{s.claim}</span>
+                                  {s.state && <EpistemicBadge state={s.state} />}
+                                </div>
+                                {s.note && <p className="mt-0.5 text-[10px] text-muted-foreground">{s.note}</p>}
                               </li>
                             ))}
                           </ul>
@@ -342,11 +393,14 @@ export function Cerebro() {
                           <div className="mb-1 flex items-center gap-1 text-xs font-semibold text-red-600">
                             <TrendingDown className="h-3 w-3" /> Fragilidades
                           </div>
-                          <ul className="space-y-1 text-xs">
-                            {result.viability.weaknesses.map((s, i) => (
-                              <li key={i} className="flex gap-1.5">
-                                <AlertTriangle className="h-3 w-3 shrink-0 text-red-600 mt-0.5" />
-                                <span className="text-muted-foreground">{s}</span>
+                          <ul className="space-y-2 text-xs">
+                            {(result.viability.weaknesses || []).map((s, i) => (
+                              <li key={i} className="rounded border border-border p-1.5">
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="text-muted-foreground">{s.claim}</span>
+                                  {s.state && <EpistemicBadge state={s.state} />}
+                                </div>
+                                {s.note && <p className="mt-0.5 text-[10px] text-muted-foreground">{s.note}</p>}
                               </li>
                             ))}
                           </ul>
@@ -362,10 +416,13 @@ export function Cerebro() {
                 {result.parties && result.parties.length > 0 && (
                   <Card>
                     <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><Users className="h-4 w-4 text-primary" /> Partes</CardTitle></CardHeader>
-                    <CardContent className="space-y-1.5 text-xs">
+                    <CardContent className="space-y-2 text-xs">
                       {result.parties.map((p, i) => (
-                        <div key={i} className="flex justify-between">
-                          <Badge variant="outline" className="text-[10px]">{p.role}</Badge>
+                        <div key={i} className="flex flex-col gap-1">
+                          <div className="flex items-center justify-between">
+                            <Badge variant="outline" className="text-[10px]">{p.role}</Badge>
+                            <EpistemicBadge state={p.state} />
+                          </div>
                           <span className="text-muted-foreground">{p.name || "—"} <span className="text-[10px]">({p.type})</span></span>
                         </div>
                       ))}
@@ -375,11 +432,14 @@ export function Cerebro() {
                 {result.timeline && result.timeline.length > 0 && (
                   <Card>
                     <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><Clock className="h-4 w-4 text-primary" /> Cronologia</CardTitle></CardHeader>
-                    <CardContent className="space-y-1.5 text-xs">
+                    <CardContent className="space-y-2 text-xs">
                       {result.timeline.map((t, i) => (
-                        <div key={i} className="flex gap-2">
-                          <span className="shrink-0 font-mono text-[10px] text-primary">{t.date}</span>
-                          <span className="text-muted-foreground">{t.event}</span>
+                        <div key={i} className="flex flex-col gap-1">
+                          <div className="flex gap-2">
+                            <span className="shrink-0 font-mono text-[10px] text-primary">{t.date}</span>
+                            <span className="flex-1 text-muted-foreground">{t.event}</span>
+                          </div>
+                          <EpistemicBadge state={t.state} />
                         </div>
                       ))}
                     </CardContent>
@@ -394,10 +454,16 @@ export function Cerebro() {
                     <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-sm"><Scale className="h-4 w-4 text-primary" /> Questões jurídicas identificadas</CardTitle></CardHeader>
                     <CardContent className="space-y-2">
                       {result.legalIssues.map((q, i) => (
-                        <div key={i} className="flex items-start gap-2 rounded-lg border border-border p-2">
-                          <Badge variant="outline" className="shrink-0 text-[10px]">{q.area}</Badge>
-                          <span className="flex-1 text-xs text-muted-foreground">{q.question}</span>
-                          <Badge variant="secondary" className={`text-[10px] ${q.relevance === "alta" ? "text-red-600" : q.relevance === "média" ? "text-amber-600" : "text-muted-foreground"}`}>{q.relevance}</Badge>
+                        <div key={i} className="rounded-lg border border-border p-2">
+                          <div className="flex items-start gap-2">
+                            <Badge variant="outline" className="shrink-0 text-[10px]">{q.area}</Badge>
+                            <span className="flex-1 text-xs text-muted-foreground">{q.question}</span>
+                            <Badge variant="secondary" className={`text-[10px] ${q.relevance === "alta" ? "text-red-600" : q.relevance === "média" ? "text-amber-600" : "text-muted-foreground"}`}>{q.relevance}</Badge>
+                          </div>
+                          <div className="mt-1 flex items-center gap-2">
+                            <EpistemicBadge state={q.state} />
+                            {q.note && <span className="text-[10px] text-muted-foreground">{q.note}</span>}
+                          </div>
                         </div>
                       ))}
                     </CardContent>
@@ -505,10 +571,16 @@ export function Cerebro() {
                       </div>
                       {result.strategy.immediateActions && result.strategy.immediateActions.length > 0 && (
                         <div>
-                          <div className="mb-1 text-[10px] uppercase font-semibold text-muted-foreground">Ações imediatas</div>
-                          <ul className="space-y-1 text-xs">
+                          <div className="mb-1 text-[10px] uppercase font-semibold text-muted-foreground">Ações imediatas (hipóteses)</div>
+                          <ul className="space-y-2 text-xs">
                             {result.strategy.immediateActions.map((a, i) => (
-                              <li key={i} className="flex gap-2"><ArrowRight className="h-3 w-3 text-primary mt-0.5 shrink-0" /><span className="text-muted-foreground">{a}</span></li>
+                              <li key={i} className="rounded border border-border p-1.5">
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="text-muted-foreground">{a.claim}</span>
+                                  {a.state && <EpistemicBadge state={a.state} />}
+                                </div>
+                                {a.note && <p className="mt-0.5 text-[10px] text-muted-foreground">{a.note}</p>}
+                              </li>
                             ))}
                           </ul>
                         </div>
@@ -525,10 +597,16 @@ export function Cerebro() {
                       )}
                       {result.strategy.risks && result.strategy.risks.length > 0 && (
                         <div>
-                          <div className="mb-1 text-[10px] uppercase font-semibold text-red-600">Riscos</div>
-                          <ul className="space-y-1 text-xs">
+                          <div className="mb-1 text-[10px] uppercase font-semibold text-red-600">Riscos (hipóteses)</div>
+                          <ul className="space-y-2 text-xs">
                             {result.strategy.risks.map((r, i) => (
-                              <li key={i} className="flex gap-2"><AlertTriangle className="h-3 w-3 text-red-600 mt-0.5 shrink-0" /><span className="text-muted-foreground">{r}</span></li>
+                              <li key={i} className="rounded border border-red-500/20 p-1.5">
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="text-muted-foreground">{r.claim}</span>
+                                  {r.state && <EpistemicBadge state={r.state} />}
+                                </div>
+                                {r.note && <p className="mt-0.5 text-[10px] text-muted-foreground">{r.note}</p>}
+                              </li>
                             ))}
                           </ul>
                         </div>
@@ -549,8 +627,18 @@ export function Cerebro() {
                     size="lg"
                     className="w-full"
                     onClick={() => {
+                      // Passa o contexto da análise cerebral para o gerador
+                      const ctx = [
+                        `RAMO: ${result.ramoJuridico}`,
+                        `PARTES: ${JSON.stringify(result.parties)}`,
+                        `QUESTÕES: ${JSON.stringify(result.legalIssues?.map((q) => q.question))}`,
+                        `LEGISLAÇÃO: ${result.applicableLaw?.map((l) => l.diploma + " " + l.numero).join(", ")}`,
+                        `VIABILIDADE: ${result.viability?.hypothesis} — ${result.viability?.reasoning?.slice(0, 300)}`,
+                        `ESTRATÉGIA: ${result.strategy?.proceduralPath}`,
+                      ].join("\n");
+                      setBrainContext(ctx);
                       setAppTab("generator");
-                      toast({ title: "Use os fatos do caso no gerador", description: "A análise cerebral serve como contexto" });
+                      toast({ title: "Contexto cerebral transferido", description: "Cole os fatos do caso — o contexto será usado na geração" });
                     }}
                   >
                     <Wand2 className="mr-2 h-4 w-4" />
@@ -567,6 +655,7 @@ export function Cerebro() {
 }
 
 const STEPS_PLACEHOLDER: BrainStep[] = [
+  { id: "classify", name: "Classificação do ramo jurídico", status: "pending" },
   { id: "extract", name: "Extração estruturada", status: "pending" },
   { id: "issues", name: "Questões jurídicas", status: "pending" },
   { id: "law", name: "Legislação aplicável", status: "pending" },

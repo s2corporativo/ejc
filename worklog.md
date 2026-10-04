@@ -433,3 +433,35 @@ Stage Summary:
 - "Chance de êxito" percentual é perigoso — qualificar como hipótese.
 - Corpus do dossiê "GPT advogado Brasil" lista fontes por área para expandir nossa base LegalSource.
 - Próximo passo: implementar Evidence Ledger (estados epistêmicos) + qualificar probability + conectar Cérebro→Gerador.
+
+---
+Task ID: 18 (Evidence Ledger + Cérebro→Gerador + Classificação por ramo)
+Agent: main (Z.ai Code)
+Task: Implementar Evidence Ledger com estados epistêmicos, qualificar probability como hipótese, conectar Cérebro→Gerador, auto-classificação por ramo jurídico.
+
+Work Log:
+- EVIDENCE LEDGER implementado no /api/brain: 7 estados epistêmicos (fato_extraido, alegacao_cliente, inferencia_ia, fato_controvertido, direito_positivo, jurisprudencia, hipotese). Cada afirmação da análise agora é rotulada com sua origem epistêmica — o advogado distingue fato de inferência.
+- AUTO-CLASSIFICAÇÃO POR RAMO adicionada como Etapa 0: LLM classifica o caso em 1 de 16 ramos jurídicos (civil, penal, trabalhista, tributario, consumer, family, previdenciario, empresarial, administrativo, bancario, ambiental, saude, imobiliario, internacional, digital_lgpd, transito) com score de confiança. Cérebro agora tem 8 etapas (era 7).
+- PROBABILITY → HYPOTHESIS: removido "chance de êxito" percentual (perigoso sem base estatística). Substituído por "hypothesis" (favorável/incerto/desfavorável) + hypothesisNote que explica: "Hipótese sem base estatística — requer validação jurisprudencial e revisão humana."
+- STORE expandido: brainContext (string|null) para passar contexto da análise cerebral ao gerador de minutas.
+- CÉREBRO → GERADOR conectado: botão "Gerar minuta a partir desta análise" constrói contexto estruturado (ramo + partes + questões + legislação + viabilidade + estratégia) e passa ao gerador via setBrainContext(). Gerador mostra banner "Contexto da análise cerebral ativo" com preview removível.
+- COMPONENTE Cérebro atualizado: EpistemicBadge (componente reutilizável com 7 cores/ícones), HYPOTHESIS_CONFIG (favorável=verde/incerto=amber/desfavorável=vermelho), card de ramo jurídico detectado, aviso de hipótese sem base estatística, strengths/weaknesses/acoes/riscos com EpistemicBadge em cada item, 8 etapas no progress.
+- ESLint limpo (0 erros, 0 warnings). Dev server ativo (PID 18895, HTTP 200).
+- Verificação end-to-end da API: POST /api/brain com caso de inscrição indevida SERASA:
+  - Ramo: consumer (90% confiança)
+  - 8/8 etapas done
+  - Parties: [fato_extraido] autor João + [fato_extraido] réu Banco XYZ
+  - Legal issues: [fato_extraido] inscrição indevida + [alegacao_cliente] indenização + [inferencia_ia] valor adequado
+  - Viability: hypothesis=incerto, hypothesisNote="Hipótese sem base estatística", strengths com [fato_extraido] e [jurisprudencia], weaknesses com [alegacao_cliente] e [inferencia_ia], 3 evidence items
+  - Strategy: 5 immediateActions [hipotese], 4 risks [hipotese]
+  - Total: 7143 tokens
+
+Stage Summary:
+- Evidence Ledger implementado: 7 estados epistêmicos rotulam cada afirmação (fato_extraido, alegacao_cliente, inferencia_ia, fato_controvertido, direito_positivo, jurisprudencia, hipotese).
+- "Chance de êxito" removido → substituído por "hipótese" com aviso explícito de falta de base estatística.
+- Auto-classificação por ramo jurídico (1 de 16 ramos) com score de confiança.
+- Cérebro→Gerador conectado: contexto da análise passa automaticamente para a geração de minutas.
+- Cérebro agora tem 8 etapas (era 7): classificação → extração → questões → legislação → jurisprudência → viabilidade → lacunas → estratégia.
+- UI mostra EpistemicBadge colorido em cada item, card de ramo detectado, aviso de hipótese.
+- 0 erros console, 0 ESLint, dev server saudável.
+- Próxima fase: expandir corpus LegalSource com fontes do dossiê GPT advogado Brasil, upload de PDF/DOCX no Cérebro, RAG-lite com embeddings em SQLite.

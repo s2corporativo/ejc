@@ -1,0 +1,2907 @@
+# PROMPT MESTRE — IMPLEMENTAÇÃO DO NÚCLEO DE INTELIGÊNCIA JURÍDICA VERIFICÁVEL
+
+Atue como Arquiteto de Software, Engenheiro Full-Stack Sênior, Engenheiro de IA e especialista em sistemas jurídicos críticos.
+
+Sua tarefa é implementar, em um **novo sistema jurídico**, um núcleo de inteligência jurídica verificável inspirado nos melhores componentes já validados no EJC, porém **sem copiar a arquitetura histórica inteira, sem reproduzir dívida técnica, sem transportar migrations antigas e sem criar abstrações desnecessárias**.
+
+O objetivo não é criar apenas um chatbot jurídico.
+
+O sistema deverá possuir:
+
+```text
+DOCUMENTOS
+    ↓
+EVIDÊNCIAS
+    ↓
+CASE MAPPER
+    ↓
+FATOS / EVENTOS / AFIRMAÇÕES
+    ↓
+LEGAL GRAPH
+    ↓
+LEGAL BRAIN
+    ↓
+SKILLS
+    ↓
+PESQUISA / RAG
+    ↓
+AI GATEWAY
+    ↓
+PROVIDER
+    ↓
+EVIDENCE GATE + CITATION GATE
+    ↓
+REVISÃO HUMANA
+    ↓
+SNAPSHOT JURÍDICO APROVADO
+```
+
+---
+
+# 1. PRINCÍPIOS INEGOCIÁVEIS
+
+Implemente estas regras como invariantes de backend, não apenas como instruções de prompt.
+
+1. IA nunca cria fato automaticamente confirmado.
+2. IA nunca confirma prazo.
+3. IA nunca aprova tese.
+4. IA nunca cria jurisprudência, lei, número de processo ou fonte inexistente.
+5. Todo fato relevante deve apontar para evidência.
+6. Evidência deve pertencer ao mesmo caso.
+7. Um modelo não pode inventar `evidence_ref_id`.
+8. Saída de IA começa sempre como `candidate`.
+9. Confirmação jurídica depende de revisão humana.
+10. Provider externo nunca recebe PII real quando política exigir pseudonimização.
+11. Caso marcado `local_only` nunca pode ser enviado a provider externo.
+12. Na ausência de provider local elegível para caso `local_only`, falhar fechado.
+13. Toda execução de IA deve possuir `AgentRun`.
+14. Toda chamada de modelo deve passar pelo `AI Gateway`.
+15. Nenhum service jurídico chama SDK OpenAI, Anthropic, Groq, Maritaca etc. diretamente.
+16. Toda execução deve registrar provider, modelo, tokens, custo, duração e versão do contrato utilizado.
+17. Não registrar OCR integral, prompt integral com PII ou respostas sensíveis em logs.
+18. Falha do LLM nunca deve destruir o resultado determinístico.
+19. Banco do sistema é a fonte da verdade.
+20. Ferramentas externas apenas enriquecem o sistema.
+
+---
+
+# 2. STACK
+
+Use:
+
+```text
+Backend:
+Python 3.12+
+FastAPI
+Pydantic 2
+SQLAlchemy 2 async
+PostgreSQL 16
+Alembic
+pgvector quando necessário
+
+Frontend:
+React
+TypeScript
+Vite
+
+Testes:
+pytest
+pytest-asyncio
+
+Infra:
+Docker
+Docker Compose
+```
+
+Não introduza Redis, Celery, Kafka ou microservices nesta primeira implementação sem necessidade comprovada.
+
+Comece como **monólito modular**.
+
+---
+
+# 3. ESTRUTURA DO BACKEND
+
+Crie aproximadamente:
+
+```text
+backend/app/
+
+    api/
+        cases_intelligence.py
+        agent_runs.py
+        skills.py
+
+    models/
+        evidence.py
+        legal_graph.py
+        legal_assertion.py
+        agent_run.py
+        skill.py
+        intelligence_snapshot.py
+
+    schemas/
+        evidence.py
+        case_mapper.py
+        legal_graph.py
+        legal_brain.py
+        agent_run.py
+        skill.py
+        ai.py
+
+    services/
+
+        evidence/
+            service.py
+            citation_gate.py
+
+        graph/
+            service.py
+
+        case_mapper/
+            deterministic.py
+            llm_mapper.py
+            orchestrator.py
+
+        legal_brain/
+            contracts.py
+            issue_engine.py
+            research.py
+            precedent_validity.py
+            brain.py
+
+        skills/
+            registry.py
+            selector.py
+
+        ai/
+            gateway.py
+            registry.py
+            policy.py
+            sanitization.py
+            pseudonymizer.py
+
+            providers/
+                base.py
+                ollama.py
+                maritaca.py
+                groq.py
+                anthropic.py
+
+        agent_runs/
+            service.py
+
+    tests/
+        intelligence/
+```
+
+---
+
+# 4. NÃO COPIAR MIGRATIONS ANTIGAS
+
+Este é um sistema novo.
+
+Não transportar migrations históricas.
+
+Crie:
+
+```text
+001_legal_intelligence_core.py
+```
+
+Essa migration deverá criar diretamente o estado correto do núcleo.
+
+---
+
+# 5. EVIDENCE — MODELO CENTRAL DE PROVENIÊNCIA
+
+Crie:
+
+```python
+# models/evidence.py
+
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    Index,
+    func,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+
+from app.db.base import Base
+
+
+class EvidenceRef(Base):
+    __tablename__ = "evidence_refs"
+
+    id = Column(String(36), primary_key=True)
+
+    case_id = Column(
+        String(36),
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    document_id = Column(
+        String(36),
+        ForeignKey("documents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    knowledge_chunk_id = Column(
+        String(36),
+        nullable=True,
+    )
+
+    page_number = Column(Integer, nullable=True)
+
+    section_label = Column(String(255), nullable=True)
+
+    char_start = Column(Integer, nullable=True)
+    char_end = Column(Integer, nullable=True)
+
+    quote = Column(Text, nullable=False)
+
+    quote_hash = Column(
+        String(64),
+        nullable=False,
+        index=True,
+    )
+
+    document_hash = Column(
+        String(64),
+        nullable=True,
+    )
+
+    source_kind = Column(
+        String(32),
+        nullable=False,
+    )
+
+    retrieval_method = Column(
+        String(32),
+        nullable=False,
+    )
+
+    metadata_json = Column(
+        JSONB,
+        nullable=False,
+        default=dict,
+    )
+
+    verified = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
+    verified_by = Column(
+        String(36),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    verified_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "case_id",
+            "document_id",
+            "page_number",
+            "quote_hash",
+            name="uq_evidence_document_quote",
+        ),
+        Index(
+            "ix_evidence_case_document",
+            "case_id",
+            "document_id",
+        ),
+    )
+```
+
+---
+
+# 6. HASH DA EVIDÊNCIA
+
+Implemente:
+
+```python
+import hashlib
+import re
+
+
+def normalize_quote(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip()
+
+
+def quote_hash(text: str) -> str:
+    normalized = normalize_quote(text)
+
+    if not normalized:
+        raise ValueError("Evidence quote cannot be empty")
+
+    return hashlib.sha256(
+        normalized.encode("utf-8")
+    ).hexdigest()
+```
+
+---
+
+# 7. EVIDENCE SERVICE
+
+Crie obrigatoriamente verificação de ownership.
+
+```python
+async def create_evidence(
+    db,
+    *,
+    case_id: str,
+    document_id: str,
+    quote: str,
+    page_number: int | None,
+    source_kind: str,
+    retrieval_method: str,
+    actor,
+):
+    await verify_case_access(
+        db,
+        actor,
+        case_id,
+    )
+
+    document = await get_document(
+        db,
+        document_id,
+    )
+
+    if not document:
+        raise NotFoundError(
+            "Documento não encontrado"
+        )
+
+    if str(document.case_id) != str(case_id):
+        raise ForbiddenError(
+            "Documento não pertence ao caso"
+        )
+
+    normalized = normalize_quote(
+        quote
+    )
+
+    if not normalized:
+        raise ValueError(
+            "Trecho vazio"
+        )
+
+    qhash = quote_hash(
+        normalized
+    )
+
+    existing = await find_existing_evidence(
+        db,
+        case_id=case_id,
+        document_id=document_id,
+        page_number=page_number,
+        quote_hash=qhash,
+    )
+
+    if existing:
+        return existing
+
+    evidence = EvidenceRef(
+        id=new_uuid(),
+        case_id=case_id,
+        document_id=document_id,
+        page_number=page_number,
+        quote=normalized,
+        quote_hash=qhash,
+        document_hash=document.sha256,
+        source_kind=source_kind,
+        retrieval_method=retrieval_method,
+    )
+
+    db.add(evidence)
+
+    await db.commit()
+    await db.refresh(evidence)
+
+    return evidence
+```
+
+---
+
+# 8. ASSERTIONS — NÃO DUPLICAR ESTADOS
+
+Não recriar diversos modelos incompatíveis de estado epistemológico.
+
+Use três dimensões independentes.
+
+```python
+class AssertionKind(StrEnum):
+    FACT = "fact"
+    INFERENCE = "inference"
+    GAP = "gap"
+    RISK = "risk"
+    RULE = "rule"
+    PRECEDENT = "precedent"
+    CONCLUSION = "conclusion"
+
+
+class SupportStatus(StrEnum):
+    SUPPORTED = "supported"
+    PARTIAL = "partial"
+    ABSENT = "absent"
+    CONFLICTING = "conflicting"
+
+
+class ReviewStatus(StrEnum):
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    CORRECTED = "corrected"
+    REJECTED = "rejected"
+```
+
+Crie:
+
+```python
+class LegalAssertion(Base):
+    __tablename__ = "legal_assertions"
+
+    id = Column(
+        String(36),
+        primary_key=True,
+    )
+
+    case_id = Column(
+        String(36),
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    text = Column(
+        Text,
+        nullable=False,
+    )
+
+    kind = Column(
+        String(24),
+        nullable=False,
+    )
+
+    support_status = Column(
+        String(24),
+        nullable=False,
+        default="absent",
+    )
+
+    review_status = Column(
+        String(24),
+        nullable=False,
+        default="pending",
+    )
+
+    created_by_ai = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
+    created_by_run_id = Column(
+        String(36),
+        ForeignKey("agent_runs.id"),
+        nullable=True,
+    )
+
+    reviewed_by = Column(
+        String(36),
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+
+    reviewed_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+```
+
+Não colocar apenas um `evidence_ref_id`.
+
+Uma afirmação poderá possuir diversas fontes.
+
+Crie tabela:
+
+```text
+assertion_evidence
+```
+
+com:
+
+```text
+assertion_id
+evidence_id
+relation_type
+created_at
+```
+
+---
+
+# 9. LEGAL GRAPH
+
+Criar somente dois elementos estruturais:
+
+```text
+GraphNode
+GraphEdge
+```
+
+Não duplicar fato em várias tabelas se não houver necessidade.
+
+## NODE TYPES
+
+```python
+class NodeType(StrEnum):
+    PERSON = "person"
+    ENTITY = "entity"
+    DOCUMENT = "document"
+
+    FACT = "fact"
+    EVENT = "event"
+
+    CONTRACT = "contract"
+    OBLIGATION = "obligation"
+
+    REQUEST = "request"
+    REQUIREMENT = "requirement"
+
+    EVIDENCE = "evidence"
+
+    RULE = "rule"
+    PRECEDENT = "precedent"
+
+    THESIS = "thesis"
+    RISK = "risk"
+```
+
+## EDGE TYPES
+
+```python
+class EdgeType(StrEnum):
+    PARTY_TO = "party_to"
+    REPRESENTS = "represents"
+
+    SIGNED = "signed"
+    OBLIGATED_TO = "obligated_to"
+
+    OCCURRED_AT = "occurred_at"
+
+    PROVES = "proves"
+    ALLEGES = "alleges"
+    ADMITS = "admits"
+    DENIES = "denies"
+
+    SUPPORTS = "supports"
+    CONTRADICTS = "contradicts"
+
+    GROUNDS = "grounds"
+    REQUIRES = "requires"
+    DEPENDS_ON = "depends_on"
+
+    RESULTS_IN = "results_in"
+
+    HAS_REQUEST = "has_request"
+    HAS_RISK = "has_risk"
+```
+
+---
+
+# 10. GRAPH NODE
+
+```python
+class GraphNode(Base):
+    __tablename__ = "graph_nodes"
+
+    id = Column(
+        String(36),
+        primary_key=True,
+    )
+
+    case_id = Column(
+        String(36),
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    node_type = Column(
+        String(32),
+        nullable=False,
+    )
+
+    label = Column(
+        String(500),
+        nullable=False,
+    )
+
+    description = Column(
+        Text,
+        nullable=True,
+    )
+
+    payload = Column(
+        JSONB,
+        nullable=False,
+        default=dict,
+    )
+
+    confidence = Column(
+        Numeric(5,4),
+        nullable=True,
+    )
+
+    status = Column(
+        String(16),
+        nullable=False,
+        default="candidate",
+    )
+
+    source_evidence_id = Column(
+        String(36),
+        ForeignKey("evidence_refs.id"),
+        nullable=True,
+    )
+
+    created_by_run_id = Column(
+        String(36),
+        ForeignKey("agent_runs.id"),
+        nullable=True,
+    )
+
+    reviewed_by = Column(
+        String(36),
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+
+    reviewed_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+```
+
+---
+
+# 11. GRAPH EDGE
+
+```python
+class GraphEdge(Base):
+    __tablename__ = "graph_edges"
+
+    id = Column(
+        String(36),
+        primary_key=True,
+    )
+
+    case_id = Column(
+        String(36),
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    from_node_id = Column(
+        String(36),
+        ForeignKey("graph_nodes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    to_node_id = Column(
+        String(36),
+        ForeignKey("graph_nodes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    edge_type = Column(
+        String(32),
+        nullable=False,
+    )
+
+    polarity = Column(
+        String(16),
+        nullable=False,
+        default="neutral",
+    )
+
+    weight = Column(
+        Numeric(5,4),
+        nullable=True,
+    )
+
+    status = Column(
+        String(16),
+        nullable=False,
+        default="candidate",
+    )
+
+    source_evidence_id = Column(
+        String(36),
+        ForeignKey("evidence_refs.id"),
+        nullable=True,
+    )
+
+    created_by_run_id = Column(
+        String(36),
+        ForeignKey("agent_runs.id"),
+        nullable=True,
+    )
+```
+
+Crie constraint:
+
+```text
+from_node_id != to_node_id
+```
+
+e bloqueie qualquer ligação entre nós de casos diferentes.
+
+---
+
+# 12. GRAPH SERVICE
+
+Implementar:
+
+```python
+async def add_candidate_node(...)
+async def add_candidate_edge(...)
+async def confirm_node(...)
+async def reject_node(...)
+async def confirm_edge(...)
+async def reject_edge(...)
+async def get_case_graph(...)
+```
+
+IA só pode chamar:
+
+```text
+add_candidate_node
+add_candidate_edge
+```
+
+Nunca:
+
+```text
+confirm_node
+confirm_edge
+```
+
+---
+
+# 13. HUMAN-IN-THE-LOOP
+
+Confirmação exige:
+
+```python
+async def confirm_node(
+    db,
+    *,
+    case_id,
+    node_id,
+    reviewer,
+):
+    node = await get_node_for_update(
+        db,
+        case_id,
+        node_id,
+    )
+
+    if not node.source_evidence_id:
+        raise ValidationError(
+            "Confirmação exige evidência"
+        )
+
+    await validate_evidence_same_case(
+        db,
+        case_id,
+        node.source_evidence_id,
+    )
+
+    node.status = "confirmed"
+    node.reviewed_by = reviewer.id
+    node.reviewed_at = utcnow()
+
+    await db.commit()
+```
+
+---
+
+# 14. AGENT RUNS
+
+Toda execução inteligente deve possuir auditoria.
+
+## AgentRun
+
+```python
+class AgentRun(Base):
+    __tablename__ = "agent_runs"
+
+    id = Column(
+        String(36),
+        primary_key=True,
+    )
+
+    case_id = Column(
+        String(36),
+        ForeignKey("cases.id"),
+        nullable=False,
+        index=True,
+    )
+
+    user_id = Column(
+        String(36),
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+
+    agent_slug = Column(
+        String(100),
+        nullable=False,
+    )
+
+    task_type = Column(
+        String(32),
+        nullable=False,
+    )
+
+    status = Column(
+        String(24),
+        nullable=False,
+        default="queued",
+    )
+
+    input_hash = Column(
+        String(64),
+        nullable=False,
+    )
+
+    idempotency_key = Column(
+        String(255),
+        nullable=True,
+    )
+
+    policy_snapshot = Column(
+        JSONB,
+        nullable=False,
+        default=dict,
+    )
+
+    provider_snapshot = Column(
+        JSONB,
+        nullable=False,
+        default=dict,
+    )
+
+    contract_version = Column(
+        String(50),
+        nullable=True,
+    )
+
+    prompt_version = Column(
+        String(50),
+        nullable=True,
+    )
+
+    budget_brl = Column(
+        Numeric(12,4),
+        nullable=False,
+    )
+
+    cost_brl = Column(
+        Numeric(12,4),
+        nullable=False,
+        default=0,
+    )
+
+    tokens_in = Column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    tokens_out = Column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    result_snapshot_id = Column(
+        String(36),
+        nullable=True,
+    )
+
+    error_code = Column(
+        String(80),
+        nullable=True,
+    )
+
+    started_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    finished_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+```
+
+Estados:
+
+```text
+queued
+running
+paused_hitl
+completed
+failed
+cancelled
+expired
+```
+
+---
+
+# 15. AGENT RUN STEP
+
+```python
+class AgentRunStep(Base):
+    __tablename__ = "agent_run_steps"
+
+    id = Column(
+        String(36),
+        primary_key=True,
+    )
+
+    run_id = Column(
+        String(36),
+        ForeignKey("agent_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    step_no = Column(
+        Integer,
+        nullable=False,
+    )
+
+    kind = Column(
+        String(24),
+        nullable=False,
+    )
+
+    status = Column(
+        String(24),
+        nullable=False,
+    )
+
+    tool_name = Column(
+        String(100),
+        nullable=True,
+    )
+
+    input_hash = Column(
+        String(64),
+        nullable=True,
+    )
+
+    output_hash = Column(
+        String(64),
+        nullable=True,
+    )
+
+    source_ids = Column(
+        JSONB,
+        nullable=False,
+        default=list,
+    )
+
+    provider = Column(
+        String(50),
+        nullable=True,
+    )
+
+    model = Column(
+        String(120),
+        nullable=True,
+    )
+
+    duration_ms = Column(
+        Integer,
+        nullable=True,
+    )
+
+    cost_brl = Column(
+        Numeric(12,4),
+        nullable=True,
+    )
+
+    requires_human = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+```
+
+Não persistir prompt completo.
+
+Persistir hash.
+
+---
+
+# 16. IDEMPOTÊNCIA
+
+Crie:
+
+```python
+def canonical_hash(
+    payload,
+) -> str:
+    raw = json.dumps(
+        payload,
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        default=str,
+    )
+
+    return hashlib.sha256(
+        raw.encode()
+    ).hexdigest()
+```
+
+A combinação:
+
+```text
+case_id
+agent_slug
+input_hash
+contract_version
+```
+
+deve impedir duplicações de execução ativa.
+
+---
+
+# 17. SKILLS
+
+Crie apenas:
+
+```text
+Skill
+SkillVersion
+SkillRunLink
+```
+
+## SkillVersion
+
+```python
+class SkillVersion(Base):
+    __tablename__ = "skill_versions"
+
+    id = Column(String(36), primary_key=True)
+
+    slug = Column(
+        String(160),
+        nullable=False,
+    )
+
+    version = Column(
+        Integer,
+        nullable=False,
+    )
+
+    area = Column(
+        String(80),
+        nullable=False,
+    )
+
+    description = Column(
+        Text,
+        nullable=False,
+    )
+
+    triggers = Column(
+        JSONB,
+        nullable=False,
+        default=dict,
+    )
+
+    required_sources = Column(
+        JSONB,
+        nullable=False,
+        default=list,
+    )
+
+    required_evidence = Column(
+        JSONB,
+        nullable=False,
+        default=list,
+    )
+
+    rules = Column(
+        JSONB,
+        nullable=False,
+        default=list,
+    )
+
+    exceptions = Column(
+        JSONB,
+        nullable=False,
+        default=list,
+    )
+
+    forbidden_claims = Column(
+        JSONB,
+        nullable=False,
+        default=list,
+    )
+
+    allowed_tools = Column(
+        JSONB,
+        nullable=False,
+        default=list,
+    )
+
+    output_schema = Column(
+        JSONB,
+        nullable=False,
+        default=dict,
+    )
+
+    status = Column(
+        String(20),
+        nullable=False,
+        default="draft",
+    )
+
+    content_hash = Column(
+        String(64),
+        nullable=False,
+    )
+
+    approved_by = Column(
+        String(36),
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+
+    approved_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+```
+
+Estados:
+
+```text
+draft
+review
+approved
+retired
+```
+
+Somente `approved` pode orientar execução de produção.
+
+---
+
+# 18. SKILLS INICIAIS
+
+Criar inicialmente:
+
+```text
+case_mapper_facts
+case_mapper_evidence
+case_mapper_requests
+case_mapper_risks
+
+legal_issue_identification
+legal_research
+precedent_validation
+legal_strategy
+legal_draft
+legal_review
+```
+
+Não criar dezenas de skills antes de validar essas dez.
+
+---
+
+# 19. AI PROVIDER INTERFACE
+
+Crie:
+
+```python
+from typing import Protocol
+
+
+class AIProvider(Protocol):
+
+    name: str
+    external: bool
+
+    async def chat(
+        self,
+        *,
+        messages: list[dict],
+        model: str | None,
+        temperature: float,
+        max_tokens: int,
+        response_schema: dict | None,
+    ) -> "ProviderResponse":
+        ...
+```
+
+Response:
+
+```python
+class ProviderResponse(BaseModel):
+    text: str
+
+    provider: str
+    model: str
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+    estimated_cost_brl: Decimal = Decimal("0")
+
+    latency_ms: int | None = None
+```
+
+---
+
+# 20. PROVIDER REGISTRY
+
+Centralize.
+
+```python
+class ProviderSpec(BaseModel):
+    name: str
+    external: bool
+    enabled: bool
+
+    supports_json_schema: bool = False
+    supports_tools: bool = False
+
+
+PROVIDERS = {
+    "ollama": ProviderSpec(
+        name="ollama",
+        external=False,
+        enabled=True,
+        supports_json_schema=True,
+    ),
+
+    "maritaca": ProviderSpec(
+        name="maritaca",
+        external=True,
+        enabled=True,
+    ),
+
+    "groq": ProviderSpec(
+        name="groq",
+        external=True,
+        enabled=True,
+    ),
+
+    "anthropic": ProviderSpec(
+        name="anthropic",
+        external=True,
+        enabled=True,
+    ),
+}
+```
+
+Nenhuma outra camada conhece configuração ou chave de API.
+
+---
+
+# 21. SANITIZATION POLICY
+
+Simplifique para três modos principais:
+
+```python
+class SanitizationMode(StrEnum):
+
+    LOCAL_ONLY = "local_only"
+
+    EXTERNAL_PSEUDONYMIZED = (
+        "external_pseudonymized"
+    )
+
+    EXTERNAL_MASKED = (
+        "external_masked"
+    )
+```
+
+Regra:
+
+```python
+def provider_allowed(
+    *,
+    provider: ProviderSpec,
+    mode: SanitizationMode,
+) -> bool:
+
+    if mode == SanitizationMode.LOCAL_ONLY:
+        return not provider.external
+
+    return True
+```
+
+Se:
+
+```text
+LOCAL_ONLY
+```
+
+e nenhum provider local estiver elegível:
+
+```python
+raise AIProviderUnavailable(
+    "Nenhum provider local elegível"
+)
+```
+
+Não fazer fallback externo.
+
+---
+
+# 22. PSEUDONIMIZAÇÃO
+
+Crie um mapa efêmero por execução:
+
+```python
+@dataclass
+class PseudonymMap:
+
+    forward: dict[str, str]
+
+    reverse: dict[str, str]
+
+
+def pseudonymize_entities(
+    text: str,
+    entities: list[str],
+) -> tuple[str, PseudonymMap]:
+
+    forward = {}
+    reverse = {}
+
+    output = text
+
+    for index, value in enumerate(
+        sorted(
+            set(entities),
+            key=len,
+            reverse=True,
+        ),
+        start=1,
+    ):
+        token = f"[ENTIDADE_{index}]"
+
+        forward[value] = token
+        reverse[token] = value
+
+        output = output.replace(
+            value,
+            token,
+        )
+
+    return (
+        output,
+        PseudonymMap(
+            forward=forward,
+            reverse=reverse,
+        ),
+    )
+```
+
+O mapa de reidratação:
+
+- não vai para o provider;
+- não deve aparecer em logs;
+- deve existir somente durante a execução quando possível.
+
+---
+
+# 23. EVIDENCE CITATION GATE
+
+Este gate é diferente do verificador de jurisprudência.
+
+Ele responde:
+
+> A IA está usando apenas evidências que realmente foram fornecidas?
+
+```python
+class EvidenceGateError(
+    ValueError
+):
+    pass
+
+
+def validate_evidence_ids(
+    *,
+    requested_ids: list[str],
+    allowed_ids: set[str],
+):
+    if not requested_ids:
+        raise EvidenceGateError(
+            "Item sem evidência"
+        )
+
+    invalid = (
+        set(requested_ids)
+        - allowed_ids
+    )
+
+    if invalid:
+        raise EvidenceGateError(
+            f"Evidências não autorizadas: "
+            f"{sorted(invalid)}"
+        )
+```
+
+---
+
+# 24. VALIDAR HASH DA EVIDÊNCIA
+
+Antes do merge:
+
+```python
+async def validate_evidence_integrity(
+    db,
+    *,
+    case_id: str,
+    evidence_id: str,
+):
+
+    evidence = await get_evidence(
+        db,
+        evidence_id,
+    )
+
+    if not evidence:
+        raise EvidenceGateError(
+            "Evidência inexistente"
+        )
+
+    if str(evidence.case_id) != str(case_id):
+        raise EvidenceGateError(
+            "Evidência pertence a outro caso"
+        )
+
+    current_hash = quote_hash(
+        evidence.quote
+    )
+
+    if current_hash != evidence.quote_hash:
+        raise EvidenceGateError(
+            "Integridade da evidência inválida"
+        )
+
+    return evidence
+```
+
+---
+
+# 25. LEGAL AUTHORITY CITATION GATE
+
+Também criar um segundo gate para:
+
+```text
+leis
+artigos
+súmulas
+precedentes
+temas
+jurisprudência
+```
+
+Contratos:
+
+```python
+class LegalReference(BaseModel):
+
+    source_id: str
+
+    kind: Literal[
+        "law",
+        "article",
+        "precedent",
+        "binding_precedent",
+        "summary",
+        "regulation",
+    ]
+
+    citation: str
+
+    official: bool = False
+
+    verified_at: datetime | None = None
+
+    legal_status: str | None = None
+```
+
+Uma conclusão jurídica que dependa de autoridade externa deve indicar:
+
+```text
+legal_reference_ids
+```
+
+Nunca permitir URL ou citação criada livremente pelo modelo como substituto de `source_id`.
+
+---
+
+# 26. LEGAL BRAIN — CONTRATOS
+
+Crie:
+
+```python
+class LegalIssue(BaseModel):
+
+    key: str
+
+    title: str
+
+    area: str
+
+    question: str
+
+    matched_terms: list[str] = []
+
+    required_questions: list[str] = []
+
+    required_evidence: list[str] = []
+
+    risks: list[str] = []
+```
+
+---
+
+# 27. RESEARCH COVERAGE
+
+```python
+class ResearchCoverage(
+    BaseModel
+):
+
+    primary_source: bool = False
+
+    current_validity: bool = False
+
+    supporting_precedent: bool = False
+
+    adverse_precedent: bool = False
+
+    factual_fit: bool = False
+
+    @property
+    def complete(self) -> bool:
+        return all([
+            self.primary_source,
+            self.current_validity,
+            self.supporting_precedent,
+            self.adverse_precedent,
+            self.factual_fit,
+        ])
+```
+
+Essa regra é especialmente importante.
+
+O sistema não deve considerar uma pesquisa suficiente apenas porque encontrou jurisprudência favorável.
+
+Ele deve procurar:
+
+```text
+fonte primária
+vigência
+precedente favorável
+precedente contrário
+aderência aos fatos
+```
+
+---
+
+# 28. RESEARCH PLAN
+
+```python
+class ResearchStep(BaseModel):
+
+    order: int
+
+    purpose: str
+
+    query: str
+
+    source_classes: list[str]
+
+    mandatory: bool = True
+
+
+class ResearchPlan(BaseModel):
+
+    issue_key: str
+
+    area: str
+
+    max_cycles: int = 3
+
+    steps: list[ResearchStep]
+
+    stop_when: list[str]
+
+    insufficient_evidence_message: str = (
+        "EVIDÊNCIA JURÍDICA "
+        "INSUFICIENTE PARA "
+        "CONCLUSÃO SEGURA."
+    )
+```
+
+---
+
+# 29. CASE MAPPER OUTPUT
+
+Não deixe o modelo retornar texto livre.
+
+Use:
+
+```python
+class MapperFact(BaseModel):
+
+    text: str = Field(
+        min_length=1,
+        max_length=1000,
+    )
+
+    evidence_ref_ids: list[str] = Field(
+        min_length=1,
+    )
+
+    confidence: float = Field(
+        ge=0,
+        le=1,
+    )
+
+
+class MapperEvent(BaseModel):
+
+    description: str
+
+    date: date | None = None
+
+    date_status: Literal[
+        "exact",
+        "approximate",
+        "unknown",
+    ]
+
+    evidence_ref_ids: list[str]
+
+
+class MapperAssertion(BaseModel):
+
+    text: str
+
+    kind: Literal[
+        "fact",
+        "inference",
+        "gap",
+        "risk",
+    ]
+
+    evidence_ref_ids: list[str]
+
+    support_status: Literal[
+        "supported",
+        "partial",
+        "absent",
+    ]
+
+
+class MapperRelation(BaseModel):
+
+    from_fact_index: int
+
+    to_fact_index: int
+
+    edge_type: str
+
+    evidence_ref_ids: list[str]
+
+
+class CaseMapperOutput(BaseModel):
+
+    facts: list[MapperFact] = []
+
+    events: list[MapperEvent] = []
+
+    assertions: list[
+        MapperAssertion
+    ] = []
+
+    relations: list[
+        MapperRelation
+    ] = []
+
+    warnings: list[str] = []
+```
+
+---
+
+# 30. SYSTEM PROMPT DO CASE MAPPER
+
+Usar:
+
+```text
+Você é o extrator jurídico verificável do sistema.
+
+Sua função NÃO é decidir o caso.
+
+Sua função é organizar informações exclusivamente a partir das evidências autorizadas.
+
+REGRAS:
+
+1. Não invente fatos.
+2. Não invente datas.
+3. Não invente pessoas.
+4. Não invente valores.
+5. Não invente leis.
+6. Não invente jurisprudência.
+7. Não use conhecimento externo salvo quando a tarefa autorizar explicitamente pesquisa.
+8. Cada fato deve possuir evidence_ref_ids.
+9. Use somente IDs presentes em allowed_evidence.
+10. Diferencie fato de inferência.
+11. Registre ausência de informação como gap.
+12. Registre hipótese como risk ou inference.
+13. Nunca marque item como confirmado.
+14. Nunca gere decisão final.
+15. Nunca altere documentos.
+16. Nunca crie prazo processual automaticamente.
+17. Responda exclusivamente no schema solicitado.
+```
+
+---
+
+# 31. ENVELOPE PARA O MODELO
+
+```python
+context = {
+    "case_alias": "CURRENT_CASE",
+
+    "task": (
+        "case_mapper_extraction"
+    ),
+
+    "focus": [
+        "timeline",
+        "evidence",
+        "requests",
+        "risks",
+    ],
+
+    "allowed_evidence": [
+        {
+            "evidence_ref_id": str(
+                evidence.id
+            ),
+
+            "page_number": (
+                evidence.page_number
+            ),
+
+            "quote": (
+                evidence.quote
+            ),
+
+            "quote_hash": (
+                evidence.quote_hash
+            ),
+
+            "source_kind": (
+                evidence.source_kind
+            ),
+        }
+
+        for evidence in evidence_refs
+    ],
+
+    "output_contract": (
+        "case_mapper_v1"
+    ),
+}
+```
+
+O `case_id` real não precisa ir ao provider externo.
+
+---
+
+# 32. AI GATEWAY
+
+Esta é a única entrada de LLM.
+
+```python
+class AIRequest(BaseModel):
+
+    messages: list[dict]
+
+    task_type: str
+
+    model: str | None = None
+
+    temperature: float = 0
+
+    max_tokens: int = 4000
+
+    sanitization_mode: (
+        SanitizationMode
+    )
+
+    response_schema: dict | None = None
+
+
+class AIResponse(BaseModel):
+
+    text: str
+
+    provider: str
+
+    model: str
+
+    input_tokens: int = 0
+
+    output_tokens: int = 0
+
+    estimated_cost_brl: Decimal = (
+        Decimal("0")
+    )
+
+    latency_ms: int | None = None
+```
+
+---
+
+# 33. GATEWAY — FLUXO
+
+Implementar:
+
+```python
+async def chat(
+    request: AIRequest,
+) -> AIResponse:
+
+    candidates = (
+        provider_policy.resolve(
+            task_type=request.task_type,
+            sanitization_mode=(
+                request.sanitization_mode
+            ),
+        )
+    )
+
+    if not candidates:
+        raise AIProviderUnavailable(
+            "Nenhum provider elegível"
+        )
+
+    prepared_messages = (
+        await sanitize_messages(
+            request.messages,
+            mode=request.sanitization_mode,
+        )
+    )
+
+    last_error = None
+
+    for provider_name in candidates:
+
+        try:
+            provider = registry.get(
+                provider_name
+            )
+
+            response = await provider.chat(
+                messages=prepared_messages,
+                model=request.model,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                response_schema=(
+                    request.response_schema
+                ),
+            )
+
+            return response
+
+        except Exception as exc:
+            last_error = exc
+
+    raise AIProviderUnavailable(
+        str(last_error)
+    )
+```
+
+---
+
+# 34. CASE MAPPER — ORQUESTRADOR
+
+Fluxo:
+
+```python
+async def map_case(
+    *,
+    db,
+    user,
+    case_id,
+    document_ids=None,
+    budget_brl=Decimal("5.00"),
+):
+
+    await verify_case_access(
+        db,
+        user,
+        case_id,
+    )
+
+    run = await create_agent_run(
+        db,
+        case_id=case_id,
+        agent_slug="case_mapper",
+        task_type="map",
+        budget_brl=budget_brl,
+    )
+
+    try:
+
+        documents = (
+            await inventory_documents(
+                db,
+                case_id,
+                document_ids,
+            )
+        )
+
+        evidence_refs = (
+            await extract_evidence(
+                db,
+                case_id=case_id,
+                documents=documents,
+            )
+        )
+
+        deterministic_draft = (
+            await build_deterministic_draft(
+                db,
+                case_id,
+                evidence_refs,
+                run,
+            )
+        )
+
+        await record_step(
+            db,
+            run,
+            "deterministic_map",
+        )
+
+        llm_output = (
+            await enrich_with_llm(
+                case_id=case_id,
+                evidence_refs=evidence_refs,
+            )
+        )
+
+        validated = (
+            await validate_mapper_output(
+                db,
+                case_id=case_id,
+                output=llm_output,
+                evidence_refs=evidence_refs,
+            )
+        )
+
+        merged = await merge_candidates(
+            db,
+            case_id=case_id,
+            run_id=run.id,
+            deterministic=(
+                deterministic_draft
+            ),
+            llm=validated,
+        )
+
+        snapshot = (
+            await create_snapshot(
+                db,
+                case_id=case_id,
+                payload=merged,
+                is_draft=True,
+            )
+        )
+
+        await complete_run(
+            db,
+            run,
+            snapshot.id,
+        )
+
+        return snapshot
+
+    except LLMError:
+
+        # IMPORTANTE:
+        # falha da IA não destrói
+        # o mapa determinístico.
+
+        snapshot = (
+            await create_snapshot(
+                db,
+                case_id=case_id,
+                payload=deterministic_draft,
+                is_draft=True,
+            )
+        )
+
+        await fail_run(
+            db,
+            run,
+            partial=True,
+        )
+
+        return snapshot
+```
+
+---
+
+# 35. VALIDAR OUTPUT DO LLM
+
+```python
+async def validate_mapper_output(
+    db,
+    *,
+    case_id,
+    output,
+    evidence_refs,
+):
+
+    allowed = {
+        str(ref.id)
+        for ref in evidence_refs
+    }
+
+    valid_facts = []
+
+    for fact in output.facts:
+
+        validate_evidence_ids(
+            requested_ids=(
+                fact.evidence_ref_ids
+            ),
+            allowed_ids=allowed,
+        )
+
+        for evidence_id in (
+            fact.evidence_ref_ids
+        ):
+            await validate_evidence_integrity(
+                db,
+                case_id=case_id,
+                evidence_id=evidence_id,
+            )
+
+        valid_facts.append(
+            fact
+        )
+
+    for relation in (
+        output.relations
+    ):
+
+        if (
+            relation.from_fact_index
+            >= len(output.facts)
+        ):
+            raise ValidationError(
+                "from_fact_index inválido"
+            )
+
+        if (
+            relation.to_fact_index
+            >= len(output.facts)
+        ):
+            raise ValidationError(
+                "to_fact_index inválido"
+            )
+
+    return output
+```
+
+---
+
+# 36. LEGAL BRAIN
+
+O Legal Brain não deve chamar diretamente o modelo.
+
+Ele primeiro constrói um plano determinístico.
+
+```python
+class LegalBrainPlan(BaseModel):
+
+    area: str | None
+
+    issues: list[LegalIssue]
+
+    skills: list[str]
+
+    research_plans: list[
+        ResearchPlan
+    ]
+
+    warnings: list[str] = []
+```
+
+---
+
+# 37. ISSUE ENGINE
+
+Primeira versão:
+
+```python
+def identify_issues(
+    *,
+    text: str,
+    area: str | None,
+) -> list[LegalIssue]:
+
+    issues = []
+
+    lowered = text.lower()
+
+    if "prescrição" in lowered:
+        issues.append(
+            LegalIssue(
+                key="prescription",
+                title="Prescrição",
+                area=area or "general",
+                question=(
+                    "Existe prescrição "
+                    "aplicável ao caso?"
+                ),
+                required_evidence=[
+                    "data do fato",
+                    "marcos interruptivos",
+                    "ajuizamento",
+                ],
+            )
+        )
+
+    return issues
+```
+
+Não usar LLM para tudo.
+
+Começar determinístico.
+
+Depois permitir enriquecimento por IA.
+
+---
+
+# 38. RESEARCH LOOP
+
+Nunca permitir loop infinito.
+
+```python
+async def research_issue(
+    issue,
+    *,
+    max_cycles=3,
+):
+
+    coverage = (
+        ResearchCoverage()
+    )
+
+    sources = []
+
+    for cycle in range(
+        max_cycles
+    ):
+
+        gap = next_gap(
+            coverage
+        )
+
+        if not gap:
+            break
+
+        result = await search_sources(
+            issue,
+            gap,
+        )
+
+        sources.extend(
+            result.sources
+        )
+
+        coverage = (
+            evaluate_coverage(
+                sources
+            )
+        )
+
+        if coverage.complete:
+            break
+
+    return {
+        "sources": sources,
+        "coverage": coverage,
+        "complete": coverage.complete,
+    }
+```
+
+---
+
+# 39. SNAPSHOT
+
+Crie:
+
+```python
+class IntelligenceSnapshot(Base):
+    __tablename__ = (
+        "intelligence_snapshots"
+    )
+
+    id = Column(
+        String(36),
+        primary_key=True,
+    )
+
+    case_id = Column(
+        String(36),
+        ForeignKey("cases.id"),
+        nullable=False,
+    )
+
+    version = Column(
+        Integer,
+        nullable=False,
+    )
+
+    payload = Column(
+        JSONB,
+        nullable=False,
+    )
+
+    is_draft = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+    )
+
+    approved_by = Column(
+        String(36),
+        nullable=True,
+    )
+
+    approved_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+```
+
+Snapshots devem ser append-only.
+
+Não sobrescrever versão aprovada.
+
+---
+
+# 40. API
+
+Criar inicialmente apenas:
+
+```text
+POST
+/api/cases/{case_id}/intelligence/map
+
+GET
+/api/cases/{case_id}/intelligence/graph
+
+GET
+/api/cases/{case_id}/intelligence/assertions
+
+GET
+/api/cases/{case_id}/intelligence/snapshots
+
+POST
+/api/cases/{case_id}/intelligence/nodes/{node_id}/review
+
+POST
+/api/cases/{case_id}/intelligence/edges/{edge_id}/review
+
+POST
+/api/cases/{case_id}/intelligence/assertions/{assertion_id}/review
+
+GET
+/api/cases/{case_id}/agent-runs
+
+GET
+/api/cases/{case_id}/agent-runs/{run_id}
+```
+
+Não criar dezenas de endpoints prematuramente.
+
+---
+
+# 41. FRONTEND INICIAL
+
+No Caso, criar aba:
+
+```text
+Inteligência Jurídica
+```
+
+Com seis seções:
+
+```text
+Resumo
+Cronologia
+Fatos
+Provas
+Grafo
+Riscos
+```
+
+Cada item de IA deve apresentar:
+
+```text
+RASCUNHO IA
+
+Fonte:
+Documento X
+Página Y
+
+Confiança:
+0.76
+
+Status:
+Pendente
+
+[Confirmar]
+[Corrigir]
+[Rejeitar]
+```
+
+Nunca esconder a origem.
+
+---
+
+# 42. GRAFO VISUAL
+
+O frontend deve permitir clicar em:
+
+```text
+fato
+→ prova
+→ tese
+→ precedente
+→ risco
+```
+
+Ao clicar em um nó com evidência:
+
+mostrar imediatamente:
+
+```text
+documento
+página
+trecho
+hash
+estado da evidência
+```
+
+---
+
+# 43. TESTES OBRIGATÓRIOS
+
+Não considerar implementação concluída sem estes testes:
+
+```text
+01. Documento de outro caso é rejeitado.
+
+02. EvidenceRef de outro caso é rejeitado.
+
+03. GraphNode de outro caso não pode ser ligado.
+
+04. GraphEdge entre casos é impossível.
+
+05. IA nunca cria node confirmed.
+
+06. IA nunca cria assertion confirmed.
+
+07. evidence_ref_id inventado é rejeitado.
+
+08. Evidence sem quote é rejeitada.
+
+09. Quote adulterada falha no hash.
+
+10. Confirmação humana exige evidência.
+
+11. Assertion support=absent não pode ser confirmada.
+
+12. Caso local_only não utiliza provider externo.
+
+13. Ausência de provider local falha fechado.
+
+14. PII real não sai para provider externo.
+
+15. Idempotency key não cria execução duplicada.
+
+16. Mesmo input não duplica run ativo.
+
+17. Budget excedido encerra execução.
+
+18. Falha do LLM mantém mapa determinístico.
+
+19. Somente SkillVersion approved é usada.
+
+20. Skill version utilizada fica vinculada ao run.
+
+21. Run registra provider/model.
+
+22. Run registra tokens/custo.
+
+23. Logs não armazenam PII.
+
+24. Snapshot aprovado não é sobrescrito.
+
+25. Citation Gate rejeita fonte não autorizada.
+
+26. Relação com índice inexistente é rejeitada.
+
+27. Provider SDK não aparece fora de providers/.
+
+28. Nenhum service jurídico chama SDK diretamente.
+
+29. Usuário sem acesso ao caso recebe 403.
+
+30. Todos os endpoints validam case ownership.
+```
+
+---
+
+# 44. ORDEM DE IMPLEMENTAÇÃO
+
+Execute exatamente nesta sequência:
+
+```text
+FASE 1
+Estrutura limpa do projeto.
+
+FASE 2
+Migration 001.
+
+FASE 3
+Evidence.
+
+FASE 4
+Assertions.
+
+FASE 5
+Legal Graph.
+
+FASE 6
+Agent Runs.
+
+FASE 7
+Skills.
+
+FASE 8
+Sanitização.
+
+FASE 9
+Provider Registry.
+
+FASE 10
+AI Gateway.
+
+FASE 11
+Evidence Citation Gate.
+
+FASE 12
+Legal Authority Citation Gate.
+
+FASE 13
+Case Mapper determinístico.
+
+FASE 14
+Case Mapper + LLM.
+
+FASE 15
+Legal Brain.
+
+FASE 16
+Snapshots.
+
+FASE 17
+API.
+
+FASE 18
+Frontend.
+
+FASE 19
+Testes E2E.
+
+FASE 20
+Hardening e homologação.
+```
+
+---
+
+# 45. COMMITS
+
+Após cada módulo funcional:
+
+```text
+feat(evidence): implement verified evidence references
+
+feat(graph): implement legal graph candidate model
+
+feat(agent-runs): add auditable AI executions
+
+feat(skills): add versioned legal skills
+
+feat(ai): implement provider registry and gateway
+
+feat(ai): add privacy and pseudonymization policy
+
+feat(citations): add evidence citation gate
+
+feat(case-mapper): implement deterministic mapping
+
+feat(case-mapper): add governed LLM enrichment
+
+feat(legal-brain): add deterministic legal reasoning plan
+
+feat(ui): add verifiable legal intelligence workspace
+
+test(intelligence): add cross-case and hallucination gates
+```
+
+Faça commits pequenos.
+
+Não misture vários módulos em um único commit.
+
+---
+
+# 46. REGRAS DE EXECUÇÃO PARA O AGENTE
+
+Você está autorizado a executar a implementação.
+
+Não fique apenas produzindo análise.
+
+Antes de alterar:
+
+```text
+1. inspecione o repositório;
+2. identifique stack real;
+3. identifique convenções existentes;
+4. identifique autenticação;
+5. identifique models Case/User/Document;
+6. adapte os códigos acima às convenções reais.
+```
+
+Os snippets deste documento representam **contratos arquiteturais**, não autorização para duplicar classes já existentes.
+
+Se já existir estrutura equivalente:
+
+```text
+REUTILIZE
+ou
+REFATORE
+```
+
+Não crie duplicação.
+
+---
+
+# 47. PROIBIÇÕES
+
+Não:
+
+```text
+inventar arquivo existente;
+inventar migration existente;
+inventar resultado de teste;
+inventar endpoint;
+afirmar que publicou sem evidência;
+ignorar erro para obter build verde;
+remover teste porque falhou;
+usar mock para mascarar falha real;
+criar fallback inseguro;
+enviar PII a provider externo;
+confirmar resultado jurídico por IA;
+armazenar chave de API no banco;
+registrar segredo em logs;
+misturar código de provider nos agentes;
+criar 100 routers;
+criar dezenas de services vazios;
+transportar legado desnecessário.
+```
+
+---
+
+# 48. POLÍTICA DE BLOQUEIO
+
+Se um recurso secundário falhar:
+
+```text
+registre o bloqueio
+isole o módulo
+continue nas etapas independentes
+```
+
+Não parar todo o projeto por:
+
+```text
+lint não relacionado;
+integração externa indisponível;
+provider sem chave;
+serviço opcional ausente.
+```
+
+Mas falhar fechado em:
+
+```text
+ownership;
+isolamento entre casos;
+sanitização;
+sigilo;
+integridade de evidência;
+confirmação sem fonte;
+autorização;
+migration inconsistente.
+```
+
+---
+
+# 49. CRITÉRIO DE ACEITE FINAL
+
+Só declarar o núcleo pronto quando for possível demonstrar:
+
+```text
+1. criar caso;
+
+2. adicionar documentos;
+
+3. extrair evidências;
+
+4. executar Case Mapper;
+
+5. produzir fatos candidatos;
+
+6. produzir afirmações candidatas;
+
+7. montar Legal Graph;
+
+8. localizar a origem de qualquer afirmação;
+
+9. selecionar SkillVersion aprovada;
+
+10. registrar AgentRun;
+
+11. chamar LLM exclusivamente pelo gateway;
+
+12. impedir provider externo em caso local_only;
+
+13. rejeitar evidence ID inventado;
+
+14. produzir LegalBrainPlan;
+
+15. executar pesquisa limitada;
+
+16. avaliar cobertura jurídica;
+
+17. gerar snapshot draft;
+
+18. advogado confirmar/corrigir/rejeitar;
+
+19. preservar auditoria completa;
+
+20. recuperar exatamente:
+    - quem executou;
+    - qual skill;
+    - qual versão;
+    - qual provider;
+    - qual modelo;
+    - quais fontes;
+    - quais evidências;
+    - quanto custou;
+    - qual decisão humana foi tomada.
+```
+
+---
+
+# 50. RESULTADO ARQUITETURAL ESPERADO
+
+O sistema final deve funcionar assim:
+
+```text
+                          CASO
+                           │
+                    ┌──────┴──────┐
+                    │             │
+               DOCUMENTOS      DADOS
+                    │
+                    ▼
+                EVIDENCE
+                    │
+                    ▼
+               CASE MAPPER
+                    │
+          ┌─────────┼─────────┐
+          │         │         │
+        FATOS     EVENTOS   RISCOS
+          │         │         │
+          └─────────┼─────────┘
+                    ▼
+                LEGAL GRAPH
+                    │
+                    ▼
+                LEGAL BRAIN
+                    │
+          ┌─────────┼─────────┐
+          │         │         │
+        ISSUES    SKILLS   RESEARCH
+          │         │         │
+          └─────────┼─────────┘
+                    ▼
+                 AI GATEWAY
+                    │
+           ┌────────┼────────┐
+           │        │        │
+        OLLAMA   MARITACA   GROQ
+                           ANTHROPIC
+                    │
+                    ▼
+              STRUCTURED OUTPUT
+                    │
+                    ▼
+              EVIDENCE GATE
+                    │
+                    ▼
+              CITATION GATE
+                    │
+                    ▼
+              HUMAN REVIEW
+                    │
+                    ▼
+             APPROVED SNAPSHOT
+```
+
+---
+
+# 51. OBJETIVO PRINCIPAL
+
+O objetivo não é construir uma IA que simplesmente:
+
+```text
+"escreva uma petição"
+```
+
+O objetivo é construir um sistema capaz de explicar:
+
+```text
+O que aconteceu?
+
+Qual documento demonstra isso?
+
+Qual trecho demonstra isso?
+
+Qual fato está confirmado?
+
+Qual fato é apenas alegado?
+
+Qual informação está faltando?
+
+Quais fatos se contradizem?
+
+Quais questões jurídicas surgem?
+
+Quais provas seriam necessárias?
+
+Qual legislação é aplicável?
+
+Qual jurisprudência sustenta?
+
+Qual jurisprudência contraria?
+
+O precedente continua válido?
+
+Qual tese é possível?
+
+Qual risco existe?
+
+O que é fato?
+
+O que é inferência?
+
+O que foi produzido pela IA?
+
+O que foi validado por um advogado?
+```
+
+Toda resposta relevante deverá ser rastreável.
+
+---
+
+# 52. REGRA FINAL
+
+Prefira:
+
+```text
+10 componentes sólidos
+```
+
+a:
+
+```text
+100 módulos superficiais.
+```
+
+Prioridade absoluta:
+
+```text
+CORREÇÃO
+→ PROVENIÊNCIA
+→ SEGURANÇA
+→ AUDITORIA
+→ RASTREABILIDADE
+→ QUALIDADE JURÍDICA
+→ VELOCIDADE
+→ NOVAS FUNCIONALIDADES
+```
+
+Inicie agora pela inspeção do repositório e pela FASE 1.
+
+Execute as fases sequencialmente.
+
+Não reinicie o trabalho quando houver interrupção.
+
+Use checkpoints.
+
+Ao retomar, determine primeiro o último checkpoint realmente

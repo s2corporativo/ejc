@@ -18,6 +18,7 @@ import {
   Landmark,
   Image,
   Mail,
+  Brain,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,6 +67,8 @@ export function Generator() {
     setAppTab,
     setCurrentDocId,
     user,
+    brainContext,
+    setBrainContext,
   } = useAppStore();
 
   const [templates, setTemplates] = useState<TemplateDTO[]>([]);
@@ -183,6 +186,27 @@ export function Generator() {
           </Badge>
         )}
       </div>
+
+      {/* Brain context banner */}
+      {brainContext && (
+        <div className="mb-4 rounded-lg border border-primary/40 bg-primary/5 p-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-2 text-sm font-medium text-primary">
+              <Brain className="h-4 w-4" />
+              Contexto da análise cerebral ativo
+            </div>
+            <button
+              onClick={() => setBrainContext(null)}
+              className="text-xs text-muted-foreground hover:text-destructive"
+            >
+              remover contexto
+            </button>
+          </div>
+          <pre className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap text-[10px] text-muted-foreground scrollbar-juridia">
+            {brainContext.slice(0, 500)}
+          </pre>
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         {/* Coluna principal */}
