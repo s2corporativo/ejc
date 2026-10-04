@@ -549,3 +549,87 @@ Stage Summary:
 - Navegação com 9 tabs em 2 zonas, atalhos de teclado, separador visual.
 - Integração ERP→IA: botão envia dados do caso para o módulo de Inteligência.
 - 0 erros console, 0 ESLint, dev server saudável.
+
+---
+Task ID: 21 (análise de 4 anexos do EJC)
+Agent: main (Z.ai Code)
+Task: Analisar 4 arquivos enviados: EJC Case Mapper (md), Manifesto de exportação (md), ejc-nucleo-importacao.zip (104 arquivos Python), EJC_Knowledge_Migration.zip (já analisado).
+
+Work Log:
+- ARQUIVO 1 "EJC Case Mapper — Pacote exportável": documentação do Case Mapper do EJC (Python/FastAPI/PostgreSQL/Alembic). Migration 174_case_mapper_skills. ORM case_assertions, skill_versions, skill_run_links. API /api/cases/{case_id}/inteligencia-grafo com endpoints map/assertions/graph/review. 31 testes aprovados. Limites: pipeline usa extração determinística de ocr_text como baseline; adaptador LLM deve ser conectado ao gateway em etapa posterior.
+  - NOSSO EQUIVALENTE: já temos IntelligenceSnapshot, LegalAssertion, GraphNode/Edge, AgentRun em Prisma. Nossa API /api/intelligence/map faz o mesmo Case Mapper (determinístico + LLM + validação + snapshot + HITL).
+  - DIFERENÇA principal: EJC tem SkillVersion versionado (draft/review/approved/retired); nossa Skill é estática (17 skills sem versionamento). Portar versionamento é viável.
+
+- ARQUIVO 2 "Manifesto de exportação": lista 4 migrations (171-174) e ~20 arquivos criados. Frontend TabInteligenciaVerificavel.tsx (aba no CasoDetalhe). Migrations: 171_documental_hardening, 172_grafo_juridico_p0, 173_agent_runs_p1, 174_case_mapper_skills.
+  - NOSSO EQUIVALENTE: já temos a aba "Inteligência" (inteligencia.tsx) com Resumo/Fatos/Grafo/Afirmações + Confirmar/Corrigir/Rejeitar. Funcionalmente equivalente ao TabInteligenciaVerificavel.
+
+- ARQUIVO 3 "ejc-nucleo-importacao.zip" (104 arquivos, 98 Python): NÚCLEO COMPLETO de IA do EJC. Componentes:
+  - SingleAICoreOrchestrator ("Cérebro EJC"): TUDA IA passa por aqui. Fluxo: intenção → agente → permissão RBAC → contexto dossiê/RAG → sanitização LGPD → policy de provider → ai_gateway → validação de resposta → HITL → AILog → resposta.
+  - Provider Registry: ollama/anthropic/maritaca/groq com kill-switch global (AI_ENABLED) e externo (AI_EXTERNAL_PROVIDERS_ALLOWED). Requisitos de habilitação por provedor (chave, flag, kill-switch).
+  - Sanitization Policy (4 modos): LOCAL_COMPLETO (só Ollama local, nunca externo), EXTERNO_PSEUDONIMIZADO (marcadores reversíveis → externo → reidrata local), EXTRACAO_LOCAL (PII extraída localmente antes do gateway), MASCARAMENTO (irreversível legado). Default por tarefa, override por config, piso não-rebaixável para crimes sexuais/menores.
+  - Pseudonymizer: pseudonimização REVERSÍVEL e CONSISTENTE (marcadores [CPF_1], [CLIENTE_1] — mesma entidade = mesmo marcador em todo texto). Reidratação local. Mapa nunca logado/persistido/enviado a externo.
+  - Reranker, Intent Classifier, Agent Loop (budget/HITL/tools), Context Builder, Response Validator (citações/promessas/base), Adversarial (prompt injection), NER Local.
+  - Ingestors: Planalto, STJ, TJMG, LexML, Senado, Câmara, DJEN (fontes oficiais brasileiras).
+  - 11 arquivos de teste: hardening documental, prompt injection delimitadores, IDOR case_id gates, citation gate hardening, RAG vigência gate, biblioteca jurídica fail-closed, context builder ownership, context dossiê estruturado.
+  - NOSSO EQUIVALENTE: temos os conceitos principais (tarja-1, citation gate, evidence gate, HITL, audit) mas NÃO temos: provider registry, sanitization policy graduada (4 modos), pseudonymizer reversível (nosso é irreversível), reranker, intent classifier, agent loop (budget/tools), ingestors de fontes oficiais.
+
+- ARQUIVO 4 "EJC_Knowledge_Migration_2026-10-03.zip" (já analisado em Task 17): pacote de migração de conhecimento PostgreSQL/pgvector. Scripts export/import Python, schema SQL, manifests SHA256. Dossiê "GPT advogado Brasil" com corpus por área (civil/penal/trabalhista/tributário/administrativo/constitucional/consumerista/família) e fontes oficiais (Planalto/DOU/LexML/DataJud/STF/STJ/TST/TJs).
+
+Análise de viabilidade para JuridIA:
+- JÁ IMPLEMENTADO (equivalente funcional):
+  ✅ Case Mapper (determinístico + LLM) → /api/intelligence/map
+  ✅ Evidence com quote_hash + dedup + ownership → evidence.ts
+  ✅ LegalAssertion com 3 dimensões (kind/support/review) → Prisma LegalAssertion
+  ✅ GraphNode + GraphEdge (candidate/confirmed/rejected) → Prisma GraphNode/Edge
+  ✅ AgentRun (audit de IA) → Prisma AgentRun
+  ✅ IntelligenceSnapshot (append-only) → Prisma IntelligenceSnapshot
+  ✅ HITL Confirmar/Corrigir/Rejeitar → /api/intelligence/review
+  ✅ Evidence Gate (rejeita IDs inventados) → validateEvidenceIds
+  ✅ Citation Gate (anti-alucinação) → citation_gate.ts
+  ✅ tarja-1 (anonimização local) → anonymize.ts
+  ✅ LegalSource (base curada de fontes) → 33 fontes com URL oficial + vigência
+  ✅ Casos ERP (cadastro completo, movimentações, audiências) → casos.tsx
+  ✅ Cérebro (8-step analysis com epistemic states) → cerebro.tsx + /api/brain
+
+- NÃO IMPLEMENTADO (gaps do EJC que faltam):
+  ❌ Provider Registry (ollama/anthropic/maritaca/groq com kill-switch)
+  ❌ Sanitization Policy graduada (4 modos: LOCAL_COMPLETO/EXTERNO_PSEUDONIMIZADO/EXTRACAO_LOCAL/MASCARAMENTO)
+  ❌ Pseudonymizer reversível (nosso tarja-1 é irreversível — marcadores não são reidratados)
+  ❌ SkillVersion versionado (draft/review/approved/retired — nossa Skill é estática)
+  ❌ Reranker (cross-encoder para RAG)
+  ❌ Intent Classifier (classificação de intenção do usuário)
+  ❌ Agent Loop (budget, HITL state, tools, registry)
+  ❌ Ingestors de fontes oficiais (Planalto/STJ/TJMG/LexML/Senado/Câmara/DJEN)
+  ❌ Response Validator (valida citações/promessas/base verificável na saída)
+  ❌ Adversarial (detecção de prompt injection em documentos)
+  ❌ NER Local (extração de entidades nomeadas localmente)
+  ❌ Testes focados (hardening, IDOR, citation gate, RAG vigência)
+
+- VIÁVEL PARA PORTAR (TS/SQLite):
+  🟡 Provider Registry: simples tabela de providers com enabled/external/kill-switch
+  🟡 Sanitization Policy: enum de 4 modos + mapeamento por tarefa
+  🟡 Pseudonymizer reversível: já temos anonymize.ts — adicionar mapa forward/reverse e reidratação
+  🟡 SkillVersion: adicionar modelo Prisma SkillVersion (slug, version, status, content_hash, approved_by/at)
+  🟡 Response Validator: validar saída do LLM contra regras (sem promessa de resultado, sem lei inventada)
+  🟡 Testes: criar testes focados para Evidence Gate, Citation Gate, ownership, integridade de hash
+
+- NÃO VIÁVEL PARA PORTAR DIRETAMENTE:
+  🔴 Reranker: requer modelo cross-encoder + infra de ML (não temos)
+  🔴 Ingestors de fontes oficiais: requer parsing HTML/XML de Planalto/STJ/etc + agendamento
+  🔴 Agent Loop completo: requer infra de fila/workers (não temos Redis/Celery)
+  🔴 NER Local: requer modelo NER treinado para português jurídico
+
+Recomendação: implementar os 5 itens 🟡 (viáveis) em ordem de impacto:
+1. Pseudonymizer reversível (evoluir tarja-1 para marcadores consistentes + reidratação)
+2. SkillVersion versionado (draft/review/approved/retired)
+3. Provider Registry (kill-switch + elegibilidade)
+4. Sanitization Policy graduada (4 modos)
+5. Response Validator (validar saída do LLM)
+
+Stage Summary:
+- 4 anexos analisados: EJC Case Mapper (md), Manifesto (md), núcleo-importação (zip 104 arquivos), Knowledge Migration (zip, já analisado).
+- O EJC tem 98 arquivos Python cobrindo: orquestrador único, providers, sanitização, pseudonimização, reranker, agentes, ingestors, 11 testes.
+- Nosso JuridIA já implementa equivalente funcional de 13 dos 25 componentes do EJC.
+- 5 componentes são viáveis para portar (pseudonymizer reversível, SkillVersion, Provider Registry, Sanitization Policy, Response Validator).
+- 4 componentes não são viáveis diretamente (reranker, ingestors, agent loop, NER local).
+- Próximo passo: implementar Pseudonymizer reversível (evoluir tarja-1) como prioridade máxima.
