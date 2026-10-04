@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Brain,
@@ -23,6 +23,7 @@ import {
   ArrowRight,
   Zap,
   Wand2,
+  History,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -138,8 +139,64 @@ export function Cerebro() {
   const [currentStep, setCurrentStep] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const [history, setHistory] = useState<{ id: string; title: string; ramoJuridico: string | null; hypothesis: string | null; tokensUsed: number; createdAt: string }[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
 
   const SAMPLE = `O cliente João da Silva foi inscrito indevidamente no SERASA em 15/01/2026 pelo Banco XYZ, após já ter quitado o débito de R$ 5.000,00 em 10/12/2025. O cliente possui comprovante de pagamento. Sofreu constrangimento ao tentar obter crédito. Pede indenização por danos morais no valor de R$ 50.000,00. Relação de consumo caracterizada.`;
+
+  // Carrega histórico de análises ao montar
+  useEffect(() => {
+    loadHistory();
+  }, []);
+
+  async function loadHistory() {
+    try {
+      const res = await fetch("/api/brain?caseId=cerebro-session");
+      const data = await res.json();
+      setHistory(data.analyses || []);
+    } catch { /* ignore */ }
+  }
+
+  // Atualiza histórico após nova análise
+  async function analyze() {
+    if (facts.trim().length < 30) {
+      toast({ title: "Descreva os fatos (mín. 30 caracteres)", variant: "destructive" });
+      return;
+    }
+    setLoading(true);
+    setResult(null);
+    setCurrentStep(0);
+
+    const stepInterval = setInterval(() => {
+      setCurrentStep((s) => Math.min(s + 1, 7));
+    }, 5000);
+
+    try {
+      const res = await fetch("/api/brain", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ facts, title: title || undefined, caseId: "cerebro-session" }),
+      });
+      const data = await res.json();
+      clearInterval(stepInterval);
+      if (data.error) {
+        toast({ title: data.error, variant: "destructive" });
+      } else {
+        setResult(data);
+        setCurrentStep(8);
+        await loadHistory(); // atualiza histórico
+        toast({
+          title: "Análise cerebral concluída",
+          description: `${data.steps?.filter((s: BrainStep) => s.status === "done").length || 0}/8 etapas completas · análise persistida`,
+        });
+      }
+    } catch {
+      clearInterval(stepInterval);
+      toast({ title: "Erro na análise", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handleUpload(file: File) {
     setUploading(true);
@@ -173,46 +230,6 @@ export function Cerebro() {
     setDragActive(false);
     const file = e.dataTransfer.files[0];
     if (file) handleUpload(file);
-  }
-
-  async function analyze() {
-    if (facts.trim().length < 30) {
-      toast({ title: "Descreva os fatos (mín. 30 caracteres)", variant: "destructive" });
-      return;
-    }
-    setLoading(true);
-    setResult(null);
-    setCurrentStep(0);
-
-    // Simula progressão das etapas enquanto a API processa
-    const stepInterval = setInterval(() => {
-      setCurrentStep((s) => Math.min(s + 1, 7));
-    }, 5000);
-
-    try {
-      const res = await fetch("/api/brain", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ facts, title: title || undefined }),
-      });
-      const data = await res.json();
-      clearInterval(stepInterval);
-      if (data.error) {
-        toast({ title: data.error, variant: "destructive" });
-      } else {
-        setResult(data);
-        setCurrentStep(8);
-        toast({
-          title: "Análise cerebral concluída",
-          description: `${data.steps?.filter((s: BrainStep) => s.status === "done").length || 0}/8 etapas completas`,
-        });
-      }
-    } catch {
-      clearInterval(stepInterval);
-      toast({ title: "Erro na análise", variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
   }
 
   return (
@@ -378,19 +395,55 @@ export function Cerebro() {
           )}
 
           {!loading && !result && (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-                <Brain className="h-16 w-16 text-muted-foreground/30" />
-                <div>
-                  <h3 className="font-semibold">Cérebro jurídico aguardando</h3>
-                  <p className="mt-1 text-sm text-muted-foreground max-w-sm">
-                    Descreva os fatos do caso e o cérebro fará análise profunda em 7 etapas:
-                    partes, questões jurídicas, legislação, jurisprudência, viabilidade,
-                    lacunas e estratégia.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+            <>
+              {history.length > 0 && (
+                <Card className="border-primary/20">
+                  <CardContent className="p-4">
+                    <button
+                      onClick={() => setShowHistory((v) => !v)}
+                      className="flex w-full items-center justify-between text-sm font-semibold"
+                    >
+                      <span className="flex items-center gap-2">
+                        <History className="h-4 w-4 text-primary" />
+                        Histórico de análises ({history.length})
+                      </span>
+                      <span className="text-xs text-muted-foreground">{showHistory ? "▲ ocultar" : "▼ mostrar"}</span>
+                    </button>
+                    {showHistory && (
+                      <div className="mt-3 space-y-1.5">
+                        {history.map((h, i) => (
+                          <div key={h.id} className="flex items-center gap-2 rounded-lg border border-border p-2 text-xs">
+                            <div className="flex-1 min-w-0">
+                              <div className="truncate font-medium">{h.title}</div>
+                              <div className="text-[10px] text-muted-foreground">
+                                {new Date(h.createdAt).toLocaleString("pt-BR")}
+                                {h.ramoJuridico && ` · ${h.ramoJuridico}`}
+                                {h.hypothesis && ` · ${h.hypothesis}`}
+                                {h.tokensUsed > 0 && ` · ${h.tokensUsed} tokens`}
+                              </div>
+                            </div>
+                            <Badge variant="outline" className="text-[10px]">#{i + 1}</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                  <Brain className="h-16 w-16 text-muted-foreground/30" />
+                  <div>
+                    <h3 className="font-semibold">Cérebro jurídico aguardando</h3>
+                    <p className="mt-1 text-sm text-muted-foreground max-w-sm">
+                      Descreva os fatos do caso e o cérebro fará análise profunda em 8 etapas:
+                      classificação, partes, questões jurídicas, legislação (RAG), jurisprudência, viabilidade,
+                      lacunas e estratégia.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </>
           )}
 
           {/* Results sections */}
