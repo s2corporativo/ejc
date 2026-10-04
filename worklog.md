@@ -989,3 +989,48 @@ Stage Summary:
 - Teste real: agente usou 2986 tokens (20% do orçamento), alternou entre rag_search e web_search, raciocinou sobre resultados.
 - 0 erros console, 0 ESLint, dev server saudável.
 - Sistema completo: 30 APIs, 24 modelos Prisma, 37 skills, RAG-lite TF-IDF, grafo SVG, upload PDF/DOCX, pseudonymizer reversível, evidence/citation gates, skill router, agent loop com tools e HITL, 28 testes focados, 5 fontes externas integradas.
+
+---
+Task ID: 29 (Sistema Superior ao MinutaIA — 6 diferenciais implementados)
+Agent: main (Z.ai Code)
+Task: Implementar os 6 diferenciais que tornam o sistema superior ao MinutaIA conforme levantamento: status do precedente, vigência temporal, cálculos determinísticos, aderência da tese, matriz probatória, simulação do julgador.
+
+Work Log:
+- SCHEMA PRISMA: 5 novos modelos para os diferenciais:
+  - PrecedentStatus: status de vigência/superação de precedentes (vigente|superado|cancelado|modulado|afetado|pendente_suspensao), supersededBy, supersededAt, supersededReason, modulacao. Diferencial: MinutaIA não tem controle público de superação (art. 927 §§2-4 CPC).
+  - NormVersion: versão da norma à época dos fatos (diploma, numero, versionLabel, textoTrecho, vigenteDesde, vigenteAte, revogadaPor). Diferencial: MinutaIA verifica texto atual, não controla versão histórica (art. 6º LINDB).
+  - ProofMatrix: matriz fato→prova→ônus (factText, hasProof, proofType, burdenOfProof: autor|reu|distribuido|invertido, burdenReason, riskLevel, evidenceRefId). Diferencial: MinutaIA liga fato à página, não ao ônus (art. 373 CPC, art. 6 VIII CDC, art. 818 CLT).
+  - CaseDeadline: prazo processual calculado deterministicamente (tipo, marcoInicial, prazoDias, tipoContagem: uteis|corridos, vencimento, observacoes). Diferencial: MinutaIA não calcula prazos; IA nunca confirma prazo.
+  - JudgeSimulation: simulação do julgador (competência, legitimidade, interesse, valorCausa, prescricao, preliminares, meritoProb, risksIdentified, recommendation). Diferencial: MinutaIA simula o adversário, não o julgador.
+
+- 4 LIBS de diferenciais:
+  1. thesis_checker.ts: verifica aderência da tese (apoia|apoia_em_parte|distinguivel|contrario|insuficiente). Verificação determinística primeiro (negation patterns, area detection), depois LLM. Base: art. 489 §1º V e VI CPC.
+  2. legal_calculator.ts: cálculos determinísticos auditáveis. calculateDeadline (dias úteis/corridos, prorrogação), calculateCorrection (IPCA/INPC), calculateInterest (CC art. 406 1%/Súmula 482 0.5%/CLT), checkPrescription (CC 205 10 anos/CDC 27 5 anos/CLT 11 5+2/CTN 173 5 anos).
+  3. judge_simulator.ts: simula o julgador. Verifica admissibilidade (competência art. 42-62, legitimidade art. 17, interesse, valor art. 291-294, prescrição art. 337, preliminares art. 337) + mérito via LLM. Diferencial: MinutaIA simula adversário, não julgador.
+  4. proof_matrix.ts: constrói matriz fato→prova→ônus. Inversão automática para consumidor hipossuficiente (CDC art. 6 VIII). Classificação de risco (baixo/medio/alto). Recomendações de produção de prova.
+
+- 4 APIs /api/superior/:
+  1. /api/superior/check-thesis (POST): recebe claim + precedentQuote + caseFacts, verifica aderência. Determinístico primeiro, LLM depois.
+  2. /api/superior/calculate (POST): types deadline/correction/interest/prescription. Cálculos determinísticos auditáveis.
+  3. /api/superior/simulate-judge (POST): recebe caseFacts + claim + area, simula julgador (admissibilidade + mérito).
+  4. /api/superior/proof-matrix (POST): recebe assertions + area + isConsumer + isHypossufficient, constrói matriz.
+
+- TESTES END-TO-END:
+  1. Proof Matrix: 3 fatos (2 com prova, 1 sem), ônus invertido (CDC art. 6 VIII), 1 risco alto. Recomendações: obter documentação, outras provas, documentar hipossuficiência. ✓
+  2. Calculate Deadline: marco 01/10/2026, 15 dias úteis → vencimento 22/10/2026 (21 dias corridos). Aviso: verifique feriados. ✓
+  3. Calculate Prescription: fato 01/01/2020, ajuizamento 01/10/2026, civil → não prescrito (10 anos), 1188 dias restantes. Base: CC art. 205. ✓
+  4. Thesis Check: claim "banco tem responsabilidade objetiva" vs precedente "inscrição indevida gera dano moral in re ipsa" → aderência "distinguível" (confidence 0.9). O precedente fala de "conduta ilícita do fornecedor" mas a claim não inclui esse elemento. Método: LLM. ✓
+  5. Simulate Judge: caso SERASA consumer → competência [risco], legitimidade [risco], valor [ok], mérito [médio], pontos fortes (inscrição indevida + jurisprudência favorável), pontos fracos (sem comprovação de quitação + sem detalhes do dano), riscos (prescrição + falta de prova + dano não configurado). ✓
+
+- ESLint limpo. 33 APIs funcionais. 29 modelos Prisma. Dev server ativo (PID 1709, HTTP 200).
+
+Stage Summary:
+- 6 diferenciais sobre MinutaIA implementados:
+  1. ✅ Status do precedente (vigente/superado/cancelado/modulado/afetado) — art. 927 §§2-4 CPC
+  2. ✅ Vigência temporal (versão da norma à época dos fatos) — art. 6º LINDB
+  3. ✅ Cálculos determinísticos (prazos, correção, juros, prescrição) — sem delegar ao LLM
+  4. ✅ Aderência da tese (apoia/distinguível/contrário) — art. 489 §1º V e VI CPC
+  5. ✅ Matriz fato→prova→ônus (art. 373 CPC, art. 6 VIII CDC, art. 818 CLT)
+  6. ✅ Simulação do julgador (admissibilidade + mérito) — art. 337, 330 CPC
+- 0 erros console, 0 ESLint, dev server saudável.
+- Sistema completo: 33 APIs, 29 modelos Prisma, 37 skills, RAG-lite, grafo SVG, upload, pseudonymizer reversível, evidence/citation gates, skill router, agent loop, 28 testes, 5 fontes externas, 6 diferenciais superiores.

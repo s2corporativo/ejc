@@ -458,3 +458,106 @@ model BrainAnalysis {
   @@index([caseId])
   @@index([createdAt])
 }
+
+// ── SISTEMA SUPERIOR: diferenciais sobre MinutaIA ──────────────────────────
+
+// PrecedentStatus — status de vigência/superação de precedentes (art. 927 §§2-4 CPC)
+// Diferencial: MinutaIA não tem controle público de superação
+model PrecedentStatus {
+  id              String   @id @default(cuid())
+  legalSourceId   String?  // FK para LegalSource (se a fonte for um precedente)
+  sourceLabel     String   // "REsp 1.234.567/SP" ou "Tema 1076"
+  status          String   @default("vigente") // vigente | superado | cancelado | modulado | afetado | pendente_suspensao
+  supersededBy    String?  // ID do precedente que superou (se aplicável)
+  supersededAt    DateTime? // data da superação
+  supersededReason String? // "Recurso repetitivo julgado", "Tema novo", etc.
+  modulacao       String?  // descrição da modulação dos efeitos
+  verificadoPor   String?
+  verificadoEm    DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([legalSourceId])
+  @@index([status])
+}
+
+// NormVersion — versão da norma à época dos fatos (vigência temporal)
+// Diferencial: MinutaIA verifica texto atual; não controla versão histórica
+model NormVersion {
+  id              String   @id @default(cuid())
+  diploma         String   // CC, CPC, CLT, CP, CDC, CTN, etc.
+  numero          String   // art. 927
+  versionLabel    String   // "Lei 10.406/2002 (vigente)" ou "Lei 8.666/93 (revogada pela Lei 14.133/21)"
+  textoTrecho     String   // texto da versão específica
+  vigenteDesde    DateTime? // quando entrou em vigor
+  vigenteAte      DateTime? // quando foi revogada/alterada (null = vigente)
+  revogadaPor     String?  // diploma que revogou
+  urlOficial      String?
+  verificadoPor   String?
+  verificadoEm    DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([diploma, numero])
+  @@index([vigenteDesde, vigenteAte])
+}
+
+// ProofMatrix — matriz fato→prova→ônus (art. 373 CPC, art. 6 VIII CDC, art. 818 CLT)
+// Diferencial: MinutaIA liga fato à página, não ao ônus probatório
+model ProofMatrix {
+  id              String   @id @default(cuid())
+  caseId          String   @default("default-case")
+  factId          String?  // FK para GraphNode do tipo fact
+  factText        String   // o fato alegado
+  hasProof        Boolean  @default(false)
+  proofType       String?  // documental | testemunhal | pericial | presuncao
+  proofDescription String? // descrição da prova (ou ausência)
+  burdenOfProof    String   // autor | reu | distribuido | invertido (CDC art. 6 VIII)
+  burdenReason    String?  // "hipossuficiência técnica do consumidor" etc.
+  riskLevel       String   @default("medio") // baixo | medio | alto
+  riskDescription String?
+  evidenceRefId   String?  // FK para EvidenceRef (se há prova)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([caseId])
+  @@index([factId])
+}
+
+// CaseDeadline — prazo processual calculado deterministicamente
+// Diferencial: MinutaIA não calcula prazos; IA nunca confirma prazo
+model CaseDeadline {
+  id              String   @id @default(cuid())
+  caseId          String   @default("default-case")
+  tipo            String   // contestacao | recurso | intimacao | audiencia | outro
+  descricao       String
+  marcoInicial    DateTime // data do ato que inicia o prazo
+  prazoDias       Int      // número de dias (úteis ou corridos)
+  tipoContagem    String   @default("uteis") // uteis | corridos
+  vencimento      DateTime // data calculada (sem feriados — requer calendário)
+  observacoes     String?
+  createdAt       DateTime @default(now())
+
+  @@index([caseId])
+  @@index([vencimento])
+}
+
+// JudgeSimulation — simulação do julgador (admissibilidade + mérito)
+// Diferencial: MinutaIA simula o adversário, não o julgador
+model JudgeSimulation {
+  id              String   @id @default(cuid())
+  caseId          String   @default("default-case")
+  documentId      String?  // minuta avaliada
+  competência     String?  // juízo competente?
+  legitimidade   String?  // partes legítimas?
+  interesse       String?  // interesse processual?
+  condicaoAcao    String?  // condições da ação verificadas?
+  valorCausa      String?  // valor adequado?
+  prescricao      String?  // prescrição verificada?
+  preliminares    String?  // preliminares do art. 337 CPC
+  meritoProb      String?  // probabilidade de procedência (hipótese)
+  risksIdentified String   @default("[]") // JSON array de riscos
+  recommendation  String?  // recomendacao final
+  createdAt       DateTime @default(now())
+
+  @@index([caseId])
+}
