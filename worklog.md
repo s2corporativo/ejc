@@ -296,3 +296,47 @@ Stage Summary:
 - 3 recursos já existem no JuridIA (tarja-1, HITL, auditoria).
 - Manus API é viável mas requer chave paga + infra de webhook.
 - Próximo passo: implementar Citation Gate (citation_gate.ts + LegalSource Prisma model) se o usuário confirmar.
+
+---
+Task ID: 15 (Citation Gate — anti-alucinação implementado)
+Agent: main (Z.ai Code)
+Task: Implementar Citation Gate (prioridade máxima da análise de viabilidade do EJC) — extrair citações, verificar contra base curada, fail-closed.
+
+Work Log:
+- SCHEMA PRISMA: modelo LegalSource adicionado (tipo, diploma, numero, tribunal, textoTrecho, vigente, urlOficial, hashConteudo, dataConsulta, revisadoPor). Unique constraint em (tipo, diploma, numero, tribunal). `bun run db:push` aplicado.
+- LIB citation_gate.ts criada (portada do citation_gate.py do EJC):
+  - extractCitations(text): 3 padrões regex — artigos de lei (art. X do CC/CPC/CLT/CP/CDC/CTN/CF), súmulas (Súmula X do STJ/STF/TST, Vinculante), jurisprudência (REsp/RE/AgInt/HC/REsp/ADI etc.).
+  - verifyCitations(text, legalSources): verifica cada citação contra a base curada, classifica em verificada/identificada/suspeita/generica, retorna VerifyResult com total/verificadas/identificadas/suspeitas/genericas/bloquear/citations.
+  - Fail-closed: bloquear=true se houver suspeitas (citação não encontrada na base = possível alucinação).
+  - STATUS_LABELS com cores e ícones para UI.
+- 2 NOVAS APIs:
+  - /api/legal-sources (GET com filtros tipo/diploma, POST cria, PATCH atualiza vigência/texto, DELETE) com logAuditEvent.
+  - /api/citations/verify (POST): recebe text + documentId, carrega TODAS as fontes curadas, chama verifyCitations(), registra audit event.
+- SEED de 33 fontes jurídicas reais brasileiras (scripts/seed-legal-sources.ts):
+  - CC: art. 186, 927, 932 (vigente), 938 (não vigente) — Código Civil.
+  - CPC: art. 203, 300, 311, 319, 334, 489, 85, 1009, 355, 202 — Código de Processo Civil.
+  - CDC: art. 6, 14, 51 — Código de Defesa do Consumidor.
+  - Súmulas STJ: 381 (vigente), 482 e 332 (não vigentes).
+  - Súmula STF: 7 (não vigente).
+  - Súmulas TST: 308, 381 (não vigente), 277.
+  - CLT: art. 840, 11.
+  - CP: art. 138 (calúnia), 139 (difamação), 140 (injúria).
+  - CTN: art. 142 (lançamento), 173 (prescrição).
+  - CF: art. 5, 133 (advogado indispensável).
+  - Cada fonte com URL oficial (planalto.gov.br, stj.jus.br, stf.jus.br, tst.jus.br), textoTrecho, vigente/não-vigente, dataConsulta.
+- COMPONENTE CitationChecker (src/components/app/citation-checker.tsx): botão "Verificar citações" no editor, Dialog com summary cards (Total/Verificadas/Identificadas/Suspeitas), warning de bloqueio fail-closed, lista de citações com badges coloridos por status, trecho da base curada, link para fonte oficial, botão "Verificar novamente".
+- EDITOR integrado: botão CitationChecker adicionado na toolbar (entre Pedir sugestão e PDF).
+- ESLint limpo (0 erros, 0 warnings). Dev server reiniciado (PID 16711, HTTP 200).
+- Verificação end-to-end:
+  - API test: POST com texto contendo art. 927 do CC (verificada), art. 999 do CC (suspeita), Súmula 308 do TST (verificada), Súmula 999 do STJ (suspeita) → retornou total=4, verificadas=2, suspeitas=2, bloquear=true (fail-closed funcionando).
+  - agent-browser: editor aberto, botão "Verificar citações" clicado, Dialog abriu com "Verificação de citações", detectou 2 citações genéricas (art. 43 e art. 5 sem diploma), status "Genérica" com warning correto.
+  - 0 erros de console.
+
+Stage Summary:
+- Citation Gate (anti-alucinação) implementado e funcional, portado do EJC (Python) para TypeScript/Next.js.
+- 33 fontes jurídicas reais brasileiras na base curada (CC, CPC, CDC, CLT, CP, CTN, CF + Súmulas STJ/STF/TST).
+- Fail-closed funcionando: citação não encontrada na base = bloqueia aprovação.
+- 4 status de citação: verificada (na base, vigente), identificada (jurisprudência sem base), suspeita (artigo/súmula não encontrada — bloqueia), generica (sem identificar diploma).
+- UI integrada no editor com Dialog, summary cards, badges coloridos, trechos da base, links para fonte oficial.
+- 2 novas APIs, 1 nova lib, 1 novo componente, 1 novo modelo Prisma, 1 script de seed.
+- Próxima fase: RAG-lite com embeddings em SQLite, Gold Set pessoal do escritório.

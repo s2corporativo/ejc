@@ -36,6 +36,7 @@ import { useAppStore } from "@/lib/store";
 import { toast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import { MoldeMode } from "./molde-mode";
+import { CitationChecker } from "./citation-checker";
 
 export function Editor() {
   const { currentDocId, setAppTab, writingStyle } = useAppStore();
@@ -484,6 +485,7 @@ export function Editor() {
             </DialogContent>
           </Dialog>
 
+          <CitationChecker content={content} documentId={doc.id} />
           <Button variant="outline" size="sm" onClick={printPdf}>
             <Printer className="mr-1.5 h-4 w-4" /> PDF
           </Button>

@@ -115,6 +115,27 @@ model JurisprudenceSearch {
   createdAt DateTime @default(now())
 }
 
+// Base curada de fontes jurídicas para o Citation Gate (anti-alucinação)
+model LegalSource {
+  id              String   @id @default(cuid())
+  tipo             String   // artigo_lei | sumula | jurisprudencia | doutrina
+  diploma         String   // CC | CPC | CLT | CP | CDC | CTN | CF | Lei X
+  numero          String   // art. 927 / 308 / 1.009 | Súmula 308 | REsp 1.234.567
+  tribunal        String?  // STJ | STF | TST | TJ | TRT | null para legislação
+  textoTrecho      String   // trecho do texto da norma/súmula (para pertinência)
+  vigente          Boolean  @default(true)
+  urlOficial       String?
+  hashConteudo     String?  // SHA-256 do snapshot
+  dataConsulta     DateTime?
+  revisadoPor      String?  // curador
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([tipo, diploma, numero, tribunal])
+  @@index([diploma, numero])
+  @@index([tipo, vigente])
+}
+
 model NewsItem {
   id          String   @id @default(cuid())
   slug        String   @unique
