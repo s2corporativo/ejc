@@ -689,3 +689,46 @@ Stage Summary:
 - generate-minuta API integrado: pseudonymize→LLM→rehydrate→validate→ensureDraftMarker→persist.
 - 0 erros console, 0 ESLint, dev server saudável.
 - Próxima fase: ingestors de fontes oficiais (Planalto/STJ/LexML), Agent Loop (budget/HITL/tools), testes focados.
+
+---
+Task ID: 23 (Bloco Legal Skills v1 — Resolver + Catálogo + Router)
+Agent: main (Z.ai Code)
+Task: Executar Bloco Legal Skills v1 conforme plano EJC: Reference Resolver, catálogo consumidor/bancário, Skill Router, integração.
+
+Work Log:
+- LEGAL REFERENCE RESOLVER (src/lib/reference_resolver.ts):
+  - resolveReference(sourceRef): valida existência no LegalSource, vigência, URL oficial rastreável, revisor identificado.
+  - 5 estados: VALIDATED / PENDING_REVIEW / REJECTED / EXPIRED / NOT_FOUND.
+  - Regras: só entra como fundamento quando existe + vigente + URL oficial + revisor. Caso marcado local_only nunca enviado a externo.
+  - resolveReferences(sourceRefs[]): validação em lote.
+  - Valida: origem rastreável, autoridade identificada, não revogada, escopo permitido.
+
+- CATÁLOGO CONSUMIDOR/BANCÁRIO (10 skills reais via seed-consumer-skills.ts):
+  - fraude-bancaria: gatilhos (fraude, conta invadida, transação não reconhecida), teses (responsabilidade objetiva, fortuito interno), contrateses (culpa exclusiva, engenharia social), jurisprudência STJ, provas (extratos, BO, logs), pedidos.
+  - pix-fraudulento: gatilhos (PIX não reconhecido, transferência indevida), teses (Lei 12.865/2013 art. 10), contrateses (senha compartilhada), provas, pedidos.
+  - negativacao-indevida: gatilhos (SERASA, SPC, inscrição indevida), teses (dano moral in re ipsa, art. 43 CDC), contrateses (dívida real), jurisprudência STJ Súmula 359.
+  - cobranca-indevida: teses (devolução em dobro art. 42 CDC), contrateses (serviço prestado).
+  - responsabilidade-objetiva-bancaria: teses (art. 14 CDC, fortuito interno), contrateses (culpa exclusiva, fortuito externo).
+  - fortuito-interno: teses (risco da atividade), contrateses (fortuito externo, fato de terceiro).
+  - dano-moral-consumerista: teses (in re ipsa, quantificação), contrateses (mero aborrecimento).
+  - inversao-onus-prova-consumerista: teses (art. 6 VIII CDC), contrateses (não hipossuficiência).
+  - tutela-urgencia-consumerista: teses (art. 300/311 CPC), contrateses (ausência de periculum).
+  - repeticao-debito: teses (art. 42 CDC parágrafo único, enriquecimento sem causa).
+  - Cada skill: gatilhos, questões obrigatórias, provas, teses, contrateses, jurisprudência, legislação, riscos, pedidos, versão, contentHash SHA-256, status=approved.
+  - 10 skills criadas como SkillVersion v1 approved. Total: 27 SkillVersions (17 gerais + 10 consumer).
+
+- SKILL ROUTER (src/lib/skill_router.ts + /api/skill-router):
+  - routeSkills(facts): 1) Issue Engine determinístico identifica questões por keywords; 2) carrega SkillVersions approved; 3) compara gatilhos contra texto dos fatos; 4) ranqueia por score (gatilhos matched + bônus por área); 5) determina área predominante.
+  - Retorna: matches (slug, name, area, matchScore, matchedTriggers, content), issues, area.
+  - API POST /api/skill-router recebe facts + caseId, retorna matches + audit event.
+  - Teste 1 ("conta invadida, PIX fraudulento, R$ 50 mil, dano moral"): matched fraude-bancaria + pix-fraudulento + responsabilidade-objetiva-bancaria + dano-moral-consumerista (4 skills relevantes com gatilhos corretos).
+  - Teste 2 ("negativação indevida SERASA após quitação"): matched negativacao-indevida score=0.6 (alto — 2 gatilhos matched), área=consumer.
+
+- ESLint limpo (0 erros, 0 warnings). Dev server ativo (PID 21484, HTTP 200). 15 APIs funcionais.
+
+Stage Summary:
+- Bloco Legal Skills v1 concluído: Reference Resolver + 10 skills consumidor/bancário + Skill Router.
+- Reference Resolver valida fontes jurídicas (5 estados: VALIDATED/PENDING_REVIEW/REJECTED/EXPIRED/NOT_FOUND).
+- Catálogo com 27 SkillVersions approved (17 gerais + 10 consumer/bancário), cada uma com estrutura jurídica completa (gatilhos, teses, contrateses, provas, pedidos, riscos).
+- Skill Router identifica automaticamente skills relevantes a partir dos fatos do caso, com score de matching e área predominante.
+- 0 erros console, 0 ESLint, dev server saudável.
