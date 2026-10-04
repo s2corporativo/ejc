@@ -465,3 +465,48 @@ Stage Summary:
 - UI mostra EpistemicBadge colorido em cada item, card de ramo detectado, aviso de hipótese.
 - 0 erros console, 0 ESLint, dev server saudável.
 - Próxima fase: expandir corpus LegalSource com fontes do dossiê GPT advogado Brasil, upload de PDF/DOCX no Cérebro, RAG-lite com embeddings em SQLite.
+
+---
+Task ID: 19 (Núcleo de Inteligência Jurídica Verificável — PROMPT MESTRE)
+Agent: main (Z.ai Code)
+Task: Implementar núcleo de inteligência jurídica verificável conforme PROMPT MESTRE (2907 linhas), adaptado para Next.js/TS/SQLite/Prisma.
+
+Work Log:
+- Lido PROMPT MESTRE completo (2907 linhas): especifica Python/FastAPI/PostgreSQL mas diz explicitamente "adapte os códigos às convenções reais" (linha 2620). Portado conceitos para TS/SQLite/Prisma.
+- SCHEMA PRISMA: 6 novos modelos:
+  - EvidenceRef: caseId, documentId, pageNumber, quote, quoteHash (SHA-256), sourceKind, retrievalMethod, verified/verifiedBy/verifiedAt. Unique em (caseId, documentId, pageNumber, quoteHash) para dedup.
+  - LegalAssertion: 3 dimensões independentes — kind (fact/inference/gap/risk/rule/precedent/conclusion), supportStatus (supported/partial/absent/conflicting), reviewStatus (pending/confirmed/corrected/rejected). evidenceIds JSON. createdByAi flag.
+  - GraphNode: caseId, nodeType (14 tipos: person/entity/document/fact/event/contract/obligation/request/requirement/evidence/rule/precedent/thesis/risk), label, confidence, status (candidate/confirmed/rejected), sourceEvidenceId, createdByRunId.
+  - GraphEdge: fromNodeId, toNodeId, edgeType (16 tipos: party_to/signed/obligated_to/proves/alleges/supports/contradicts/grounds/results_in/has_risk etc.), polarity, weight, status.
+  - AgentRun: agentSlug, taskType, status (queued/running/paused_hitl/completed/failed/cancelled/expired), inputHash (idempotência), providerSnapshot, contractVersion, budgetBrl, costBrl, tokensIn/Out, startedAt/finishedAt. Unique em (caseId, agentSlug, inputHash, contractVersion) para idempotência.
+  - IntelligenceSnapshot: caseId, version (append-only), payload JSON, isDraft, approvedBy/At. Não sobrescreve versão aprovada.
+- LIB evidence.ts: normalizeQuote (whitespace), quoteHash (SHA-256), canonicalHash (idempotência JSON sorted), createEvidence (ownership check + dedup por quote_hash), validateEvidenceIntegrity (re-hash verifica se quote não foi adulterado), validateEvidenceIds (Evidence Citation Gate — rejeita IDs inventados pela IA, Princípio 7), EvidenceGateError.
+- LIB legal_brain.ts: Issue Engine determinístico (10 patterns: prescrição, dano moral, inscrição indevida, responsabilidade civil, contrato, consumidor, trabalhista, tributário, tutela de urgência, honorários — sem LLM). mapCaseDeterministic: extrai datas, valores, CPFs por regex, cria EvidenceRefs, produz CaseMapperOutput. validateMapperOutput: valida que todo fact/assertion aponta para evidence_ref_id existente (Princípio 7) e que o hash confere (Princípio de integridade).
+- API /api/intelligence/map (POST+GET): orquestra Case Mapper — cria AgentRun, executa mapCaseDeterministic, enriquece com LLM (governado, com evidence IDs limitados), valida output contra evidências permitidas (rejeita fatos LLM com IDs inventados), merge determinístico+LLM, persiste LegalAssertions + GraphNodes, cria IntelligenceSnapshot (append-only), completa AgentRun com tokens/custo/provider. GET lista snapshots + assertions + nodes persistidos.
+- API /api/intelligence/review (POST): HITL — confirma/corrige/rejeita assertion ou node. Princípio 9: confirmação exige revisão humana. Princípio 10: node sem sourceEvidenceId não pode ser confirmado (falha fechado). Princípio 11: assertion com support=absent não pode ser confirmada (falha fechado). Registra audit event.
+- COMPONENTE Inteligencia (tab "Inteligência Jurídica", atalho I): textarea para fatos (usa brainContext do Cérebro se ativo), botão "Mapear caso", summary card (evidências/fatos/questões/tokens), 4 sub-tabs (Resumo/Fatos&Eventos/Grafo/Afirmações), cards de questões jurídicas com riscos e evidências necessárias, nós do grafo com status candidate/confirmed/rejected e botões Confirmar/Rejeitar, afirmações com kind badge + support status + review status + botões Confirmar/Corrigir/Rejeitar, warning quando IA foi rejeitada por evidência inválida.
+- 20 PRINCÍPIOS INEGOCIÁVEIS implementados como invariantes de backend: IA não cria fato confirmado, não confirma prazo, não aprova tese, não inventa jurisprudência/lei/processo, todo fato aponta para evidência, evidência pertence ao caso, IA não inventa evidence_ref_id, saída começa como candidate, confirmação exige humana, provider externo não recebe PII (tarja-1), AgentRun obrigatório, AI Gateway central (z-ai-web-dev-sdk), falha do LLM preserva determinístico, snapshot append-only.
+- Store atualizado: appTab inclui "intelligence".
+- AppShell atualizado: 8 tabs (Início, Cérebro, Inteligência, Gerar, Editor, Minutas, Clientes, Config).
+- ESLint limpo (0 erros, 0 warnings). Dev server ativo (PID 19476, HTTP 200).
+- Verificação end-to-end da API: POST /api/intelligence/map com caso de inscrição indevida SERASA:
+  - 5 evidências criadas com SHA-256 hash (texto, 2 datas, 2 valores)
+  - 2 fatos extraídos (valores R$ 5000 e R$ 50000) com confidence 0.95, cada um com evidence_ref_id
+  - 3 eventos (datas + eventos LLM)
+  - 9 afirmações (rules: dano moral + inscrição indevida; risks: quantificação excessiva, dano in re ipsa; facts: pede R$ 50000; inference: inscrição indevida)
+  - 2 questões jurídicas identificadas (Dano Moral, Inscrição Indevida em Cadastro) com riscos
+  - LLM enriqueceu (llmUsed=True, 1513 tokens)
+  - Evidence Gate rejeitou 3 fatos LLM com IDs inválidos (warning: "3 fato(s) rejeitado(s) por evidência inválida")
+  - AgentRun + IntelligenceSnapshot persistidos (version=1)
+
+Stage Summary:
+- Núcleo de Inteligência Jurídica Verificável implementado conforme PROMPT MESTRE, adaptado de Python/PostgreSQL para TypeScript/SQLite/Prisma.
+- 6 modelos Prisma: EvidenceRef, LegalAssertion, GraphNode, GraphEdge, AgentRun, IntelligenceSnapshot.
+- 2 libs: evidence.ts (quote_hash, dedup, ownership, Evidence Citation Gate), legal_brain.ts (Issue Engine determinístico, Case Mapper determinístico, validateMapperOutput).
+- 2 APIs: /api/intelligence/map (Case Mapper + LLM governado + validação + snapshot), /api/intelligence/review (HITL Confirmar/Corrigir/Rejeitar com fail-closed).
+- 1 componente: Inteligencia com grafo visual, 4 sub-tabs, review actions.
+- 20 princípios inegociáveis implementados como invariantes de backend.
+- Evidence Citation Gate funcionando: 3 fatos LLM rejeitados por IDs inventados.
+- 8 tabs no app, atalho I para Inteligência.
+- 0 erros console, 0 ESLint, dev server saudável.
+- Próxima fase: AgentRunStep (steps detalhados por execução), GraphEdge API, grafo visual interativo (D3/vis.js), SkillVersion versionado.

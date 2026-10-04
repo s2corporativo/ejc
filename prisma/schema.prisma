@@ -209,3 +209,131 @@ model UsageLedger {
   @@index([userId])
   @@index([createdAt])
 }
+
+// ── NÚCLEO DE INTELIGÊNCIA JURÍDICA VERIFICÁVEL ─────────────────────────────
+// Adaptado do "PROMPT MESTRE" para SQLite/Prisma (sem pgvector, sem PostgreSQL)
+
+// EvidenceRef — proveniência central: cada afirmação aponta para um trecho de documento
+model EvidenceRef {
+  id              String   @id @default(cuid())
+  caseId          String   @default("default-case")
+  documentId      String?  // referência ao documento (se houver upload)
+  pageNumber      Int?
+  sectionLabel    String?
+  charStart       Int?
+  charEnd         Int?
+  quote           String   // trecho literal normalizado
+  quoteHash       String   // SHA-256 do quote normalizado (dedup + integridade)
+  documentHash    String?
+  sourceKind      String   // text | ocr | manual | llm_extracted
+  retrievalMethod String   // deterministic | llm | manual
+  metadata        String   @default("{}") // JSON
+  verified        Boolean  @default(false)
+  verifiedBy      String?
+  verifiedAt      DateTime?
+  createdAt       DateTime @default(now())
+
+  @@unique([caseId, documentId, pageNumber, quoteHash])
+  @@index([caseId])
+  @@index([quoteHash])
+}
+
+// LegalAssertion — 3 dimensões independentes (kind, support, review)
+model LegalAssertion {
+  id              String   @id @default(cuid())
+  caseId          String   @default("default-case")
+  text            String   // a afirmação
+  kind            String   // fact | inference | gap | risk | rule | precedent | conclusion
+  supportStatus   String   @default("absent") // supported | partial | absent | conflicting
+  reviewStatus    String   @default("pending") // pending | confirmed | corrected | rejected
+  createdByAi      Boolean  @default(false)
+  createdByRunId  String?
+  evidenceIds     String   @default("[]") // JSON array de EvidenceRef IDs
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([caseId])
+  @@index([reviewStatus])
+}
+
+// GraphNode — nó do grafo jurídico (pessoa, fato, evento, regra, tese, risco...)
+model GraphNode {
+  id                String   @id @default(cuid())
+  caseId            String   @default("default-case")
+  nodeType          String   // person | entity | document | fact | event | contract | obligation | request | requirement | evidence | rule | precedent | thesis | risk
+  label             String
+  description       String?
+  payload           String   @default("{}") // JSON
+  confidence        Float?
+  status            String   @default("candidate") // candidate | confirmed | rejected
+  sourceEvidenceId  String?
+  createdByRunId    String?
+  reviewedBy        String?
+  reviewedAt        DateTime?
+  createdAt         DateTime @default(now())
+
+  @@index([caseId])
+  @@index([status])
+}
+
+// GraphEdge — aresta do grafo jurídico (proves, alleges, supports, contradicts...)
+model GraphEdge {
+  id                String   @id @default(cuid())
+  caseId            String   @default("default-case")
+  fromNodeId        String
+  toNodeId          String
+  edgeType          String   // party_to | represents | signed | obligated_to | occurred_at | proves | alleges | admits | denies | supports | contradicts | grounds | requires | depends_on | results_in | has_request | has_risk
+  polarity          String   @default("neutral") // positive | negative | neutral
+  weight            Float?
+  status            String   @default("candidate")
+  sourceEvidenceId  String?
+  createdByRunId    String?
+  createdAt         DateTime @default(now())
+
+  @@index([caseId])
+  @@index([fromNodeId])
+  @@index([toNodeId])
+}
+
+// AgentRun — auditoria de toda execução de IA
+model AgentRun {
+  id              String   @id @default(cuid())
+  caseId          String   @default("default-case")
+  userId          String?
+  agentSlug       String   // case_mapper | legal_brain | legal_research | legal_draft
+  taskType        String   // map | analyze | research | draft | review
+  status          String   @default("queued") // queued | running | paused_hitl | completed | failed | cancelled | expired
+  inputHash       String   // hash do input (idempotência)
+  idempotencyKey  String?
+  providerSnapshot String  @default("{}") // JSON: provider, model, tokens, cost
+  contractVersion String?
+  promptVersion   String?
+  budgetBrl       Float    @default(5.0)
+  costBrl         Float    @default(0)
+  tokensIn        Int      @default(0)
+  tokensOut       Int      @default(0)
+  resultSnapshotId String?
+  errorCode       String?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([caseId])
+  @@index([status])
+  @@unique([caseId, agentSlug, inputHash, contractVersion])
+}
+
+// IntelligenceSnapshot — append-only, não sobrescrever versão aprovada
+model IntelligenceSnapshot {
+  id          String   @id @default(cuid())
+  caseId      String   @default("default-case")
+  version     Int      @default(1)
+  payload     String   // JSON com fatos, eventos, afirmações, grafo, etc.
+  isDraft     Boolean  @default(true)
+  approvedBy  String?
+  approvedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([caseId])
+}

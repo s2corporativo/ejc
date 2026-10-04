@@ -25,6 +25,7 @@ interface AppState {
   appTab:
     | "dashboard"
     | "cerebro"
+    | "intelligence"
     | "generator"
     | "editor"
     | "documents"

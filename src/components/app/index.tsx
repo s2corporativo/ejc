@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   Settings as SettingsIcon,
   Users,
+  Network,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppStore } from "@/lib/store";
@@ -19,10 +20,12 @@ import { Dashboard } from "./dashboard";
 import { Settings } from "./settings";
 import { ClientsCases } from "./clients-cases";
 import { Cerebro } from "./cerebro";
+import { Inteligencia } from "./inteligencia";
 
 const TABS = [
   { id: "dashboard" as const, label: "Início", icon: LayoutDashboard, key: "1" },
   { id: "cerebro" as const, label: "Cérebro", icon: Brain, key: "b" },
+  { id: "intelligence" as const, label: "Inteligência", icon: Network, key: "i" },
   { id: "generator" as const, label: "Gerar minuta", icon: Wand2, key: "g" },
   { id: "editor" as const, label: "Editor", icon: FileText, key: "e" },
   { id: "documents" as const, label: "Minutas", icon: FolderOpen, key: "m" },
@@ -89,6 +92,7 @@ export function AppShell() {
       <div>
         {appTab === "dashboard" && <Dashboard />}
         {appTab === "cerebro" && <Cerebro />}
+        {appTab === "intelligence" && <Inteligencia />}
         {appTab === "generator" && <Generator />}
         {appTab === "editor" && <Editor />}
         {appTab === "documents" && <DocumentsList />}
