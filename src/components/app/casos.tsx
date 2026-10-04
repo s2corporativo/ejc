@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useAppStore } from "@/lib/store";
+import { FluxoJuridico } from "./fluxo-juridico";
 import { toast } from "@/hooks/use-toast";
 
 // ── Tipos ──────────────────────────────────────────────────────────────────
@@ -430,7 +431,12 @@ export function Casos() {
                   <AnimatePresence>
                     {selectedCase?.id === c.id && (
                       <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
-                        <div className="mt-3 border-t border-border pt-3">
+                        <div className="mt-3 border-t border-border pt-3 space-y-3">
+                          {/* Fluxo jurídico completo */}
+                          <FluxoJuridico
+                            caseTitle={c.title}
+                            caseFacts={c.notes || `${c.title} — ${c.clientName} — ${AREA_LABELS[c.area] || c.area} — ${c.number || "sem número"}`}
+                          />
                           <Tabs defaultValue="movimentos">
                             <TabsList className="h-8">
                               <TabsTrigger value="movimentos" className="text-xs">Movimentações ({movimentos.length})</TabsTrigger>

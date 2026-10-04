@@ -732,3 +732,57 @@ Stage Summary:
 - Catálogo com 27 SkillVersions approved (17 gerais + 10 consumer/bancário), cada uma com estrutura jurídica completa (gatilhos, teses, contrateses, provas, pedidos, riscos).
 - Skill Router identifica automaticamente skills relevantes a partir dos fatos do caso, com score de matching e área predominante.
 - 0 erros console, 0 ESLint, dev server saudável.
+
+---
+Task ID: 24 (4 opções executadas: fluxo completo + grafo + expansão skills + frontend router)
+Agent: main (Z.ai Code)
+Task: Aplicar todas as 4 opções: fechar fluxo completo, Knowledge Graph, expandir catálogo, frontend Skill Router.
+
+Work Log:
+- OPÇÃO 4 — FECHAR FLUXO COMPLETO (src/components/app/fluxo-juridico.tsx):
+  - FluxoJuridico: pipeline visual Cliente→Caso→Análise→Skills→Pesquisa→Peça→Revisão→CitationGate
+  - 8 steps com ícones e status (done/pending), clicáveis para navegar entre tabs
+  - Auto-executa Skill Router quando há fatos do caso (mostra skills matched automaticamente)
+  - Botões: "Iniciar análise" (envia contexto ao Cérebro), "Gerar peça com skills" (envia contexto completo ao Generator), "Revisar peça" (abre Editor)
+  - Integrado no Casos: aparece no card do caso quando expandido, usa title + notes como fatos
+  - Contexto completo: CASO + FATOS + SKILLS IDENTIFICADAS (slug, name, score)
+
+- OPÇÃO 1 — KNOWLEDGE GRAPH JURÍDICO (src/app/api/intelligence/graph/route.ts):
+  - GET /api/intelligence/graph?caseId: retorna nós + arestas + summary (totalNodes, totalEdges, candidates, confirmed, rejected, nodeTypes, edgeTypes)
+  - POST /api/intelligence/graph: cria GraphEdge (IA só pode criar candidate, nunca confirmed)
+  - Validação: bloqueia vínculos entre nós de casos diferentes (Princípio: isolamento por caso)
+  - Validação: fromNodeId != toNodeId (não permite self-loop)
+  - 16 edge types: party_to, represents, signed, obligated_to, occurred_at, proves, alleges, admits, denies, supports, contradicts, grounds, requires, depends_on, results_in, has_request, has_risk
+
+- OPÇÃO 2 — EXPANDIR CATÁLOGO (scripts/seed-extra-skills.ts):
+  - 10 novas skills em 5 novas áreas (37 total):
+    - Trabalhista (4): horas-extras, rescisao-indireta, assedio-moral-trabalhista + clt-peticao existente
+    - Tributário (3): execucao-fiscal, repeticao-tributo + ctn-lancamento existente
+    - Penal (2): defesa-penal + cp-legitimacao existente
+    - Família (3): alimentos, divorcio + familia-alimentos existente
+    - Administrativo (2): responsabilidade-estatal, improbidade-administrativa
+  - Cada skill: gatilhos, questões obrigatórias, provas, teses, contrateses, jurisprudência, legislação, riscos, pedidos, contentHash, approved.
+  - Catálogo completo: 37 skills approved em 8 áreas (civil 10, consumer 12, trabalhista 4, tributário 3, family 3, administrativo 2, penal 2, previdenciário 1)
+
+- OPÇÃO 3 — FRONTEND SKILL ROUTER (no FluxoJuridico):
+  - Skills matched aparecem automaticamente no card do caso (badges com nome + score)
+  - Score ≥ 0.4 marcado com ★ (alta relevância)
+  - Top 6 skills exibidas como badges no fluxo
+  - Área predominante exibida no header
+
+- TESTES END-TO-END do Skill Router em 4 áreas:
+  - Trabalhista: "horas extras não pagas + assédio moral + rescisão indireta" → matched rescisao-indireta (0.45), assedio-moral (0.40), horas-extras (0.40) ✓
+  - Tributário: "execução fiscal + CDA + repetição de indébito" → matched repeticao-tributo (0.70!), execucao-fiscal (0.60) ✓
+  - Família: "divórcio + partilha + filhos + alimentos" → matched divorcio (0.60), alimentos (0.20) ✓
+  - Administrativo: "servidor público + dano + responsabilidade do Estado + improbidade" → matched responsabilidade-estatal (0.50), improbidade-administrativa (0.20) ✓
+
+- ESLint limpo (0 erros, 0 warnings). Dev server ativo (PID novo, HTTP 200). 16 APIs funcionais.
+
+Stage Summary:
+- 4 opções executadas:
+  1. ✅ Fluxo completo: pipeline visual integrado no Casos, com auto-routing de skills, botões para Cérebro/Generator/Editor.
+  2. ✅ Knowledge Graph: API retorna nós+arestas+summary, bloqueia vínculos cruzados, IA só cria candidate.
+  3. ✅ Catálogo expandido: 37 skills em 8 áreas (5 novas áreas + consumer/bancário).
+  4. ✅ Frontend Skill Router: skills matched aparecem automaticamente no fluxo do caso.
+- Skill Router testado em 4 áreas com matching correto (trabalhista/tributário/família/administrativo).
+- 0 erros console, 0 ESLint, dev server saudável.
