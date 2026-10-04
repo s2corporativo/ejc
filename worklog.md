@@ -371,3 +371,65 @@ Stage Summary:
 - Botão para gerar minuta diretamente da análise cerebral.
 - Auditoria + ledger de créditos integrados (3 créditos por análise).
 - Próxima fase: conectar a análise cerebral ao gerador de minutas (passar contexto automaticamente), permitir salvar análises no DB, histórico de análises por cliente/caso.
+
+---
+Task ID: 17 (análise dos anexos — EJC raciocínio + knowledge migration)
+Agent: main (Z.ai Code)
+Task: Analisar 2 novos ZIPs do EJC: (1) auditoria do raciocínio jurídico da IA, (2) pacote de migração de conhecimento.
+
+Work Log:
+- ZIP 1 "Avaliar raciocínio": 9 arquivos documentando auditoria do raciocínio central do EJC.
+  - Auditoria principal: EJC está "parcialmente apto". Problema central = raciocínio fragmentado em pipelines com contratos diferentes. Entrada Única faz fusão mínima.
+  - P0: resultado pode parecer completo sem estar epistemicamente completo (mistura fato com inferência).
+  - P0: fundamentos jurídicos e vigência não garantidos na entrada.
+  - P0: honorários não integram fluxo de novo caso.
+  - P0: prazo detectado mas não calculado com segurança.
+  - Conceito de Evidence Ledger: cada afirmação deve ter origem, trecho/página, documento, confiança, estado epistemológico, fundamento, vigência, revisão humana.
+  - Estados epistêmicos: fato confirmado, alegação do cliente, alegação da parte contrária, fato controvertido, inferência da IA.
+  - "Chance de êxito" percentual é perigoso sem base estatística.
+  - REGRAS_JURIDICAS.md: cada regra jurídica em código precisa de fonte oficial + vigência + teste + exceções + estado (VIGENTE/ALTERADA/REVOGADA/EM VERIFICAÇÃO/PENDENTE DE FONTE).
+  - GOVERNANCA_IA.md v4.0: governança proporcional (leitura=livre, escrita=gates, irreversível=humano). P0=safety/LGPD/legal blocks release.
+  - DESENHO_ENTRADA_UNICA: tela única com 1 textarea + 1 drop zone, inferir tudo, <2 min para caso completo.
+  - Missão declarada: ENTRADA BRUTA → LEITURA → EXTRAÇÃO → ESTRUTURAÇÃO → CLASSIFICAÇÃO → LACUNAS → PESQUISA → ANÁLISE → ESTRATÉGIAS → PROVAS → RISCOS → AÇÕES → VALIDAÇÃO → CASO.
+  - Grafo arquitetural: 163 routers, 810 endpoints, 233 serviços, 98 tabelas, 85 páginas React.
+  - Importação por ramos: 16 ramos jurídicos para classificação documental.
+
+- ZIP 2 "Knowledge Migration": pacote de migração PostgreSQL/pgvector → novo sistema.
+  - Scripts Python: export_ejc_knowledge.py, validate_bundle.py, import_into_new_ejc.py.
+  - Schema SQL knowledge_core_v2.sql (PostgreSQL).
+  - Manifests com SHA256 para integridade.
+  - AUDITORIA_PRESERVACAO.md: KnowledgeDoc preserva texto, proveniência, base_rag (publica/escritorio/caso), client_id, case_id, hash, versionamento, vigência, revisão humana, soft-delete.
+  - Dossiê "GPT advogado Brasil" (não autoritativo): análise estratégica completa.
+    - Arquitetura: RAG com fontes primárias oficiais + fine-tuning só onde mensurável.
+    - 6 macrocompetências: recuperar normas, recuperar jurisprudência, classificar, redigir, criticar/revisar, governar.
+    - Corpus por área: civil, penal, trabalhista, tributário, administrativo, constitucional, consumerista, família — cada um com legislação nuclear + súmulas + fontes oficiais + doutrina.
+    - Fontes públicas: Planalto, DOU/INLabs, LexML, DataJud CNJ, STF Corte Aberta, STJ Dados Abertos, TST/Falcão, TJs/TRFs/TRTs.
+    - Dados em camadas: normativa, jurisprudência, metadados, documentos internos, datasets supervisionados.
+    - Contexto: 75M processos pendentes, 157 projetos de IA no judiciário, 45% cortes usam IA generativa, Resolução CNJ 615/2025.
+
+Análise de viabilidade para o JuridIA:
+- NOSSO CÉREBRO JÁ É A "ENTRADA ÚNICA": temos 1 textarea → 7 etapas. O EJC tem 15 ações em 8 módulos. Estamos à frente em unificação.
+- EVIDENCE LEDGER (P0 do EJC): precisamos adicionar estados epistêmicos às nossas saídas — distinguir "fato extraído do documento" de "inferência da IA" de "alegação do cliente". Hoje nosso Cérebro mistura tudo.
+- REMOVER/QUALIFICAR "PROBABILITY": nosso Cérebro retorna "alta/média/baixa". A auditoria diz que percentual sem base estatística é perigoso. Devemos qualificar como "hipótese sem base estatística".
+- REGRAS_JURIDICAS.md: nosso LegalSource já tem URL oficial + vigência. Falta adicionar teste + exceções + data de verificação obrigatória.
+- EXPANDIR CORPUS: o dossiê lista fontes por área. Podemos expandir nossa base LegalSource com mais súmulas/precedentes de STF/STJ/TST.
+- CLASSIFICAÇÃO POR RAMO: adicionar auto-classificação do caso em 1 dos 16 ramos jurídicos.
+- CONECTAR CÉREBRO → GERADOR: a análise cerebral deve passar contexto automaticamente para a geração de minuta.
+- LAYERED KNOWLEDGE: separar base normativa (leis) de jurisprudencial (precedentes) de interna (precedentes do escritório). Já temos `tipo` no LegalSource.
+- NÃO PORTAR: PostgreSQL/pgvector (SQLite não suporta), FastAPI/163 routers (stack diferente), scripts Python de migração.
+
+Recomendações prioritárias para evoluir o Cérebro:
+1. Evidence Ledger com estados epistêmicos (P0 do EJC) — distinguir fato de inferência.
+2. Qualificar/remover "probability" como "hipótese sem base estatística".
+3. Conectar Cérebro → Gerador de minutas (passar contexto automaticamente).
+4. Auto-classificação por ramo jurídico (1 de 16 ramos).
+5. Expandir corpus LegalSource com fontes do dossiê (mais súmulas STF/STJ/TST).
+6. Adicionar upload de arquivo (PDF/DOCX) na entrada do Cérebro.
+
+Stage Summary:
+- Análise de 2 ZIPs do EJC concluída: auditoria do raciocínio + pacote de migração de conhecimento.
+- Insight principal: nosso Cérebro já é a "Entrada Única" que o EJC quer ser — estamos à frente em unificação cognitiva.
+- Gap crítico identificado: Evidence Ledger com estados epistêmicos (distinguir fato de inferência) — P0 do EJC que precisamos implementar.
+- "Chance de êxito" percentual é perigoso — qualificar como hipótese.
+- Corpus do dossiê "GPT advogado Brasil" lista fontes por área para expandir nossa base LegalSource.
+- Próximo passo: implementar Evidence Ledger (estados epistêmicos) + qualificar probability + conectar Cérebro→Gerador.
