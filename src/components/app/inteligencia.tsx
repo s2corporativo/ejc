@@ -23,6 +23,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useAppStore } from "@/lib/store";
 import { toast } from "@/hooks/use-toast";
+import { GraphVisual } from "./graph-visual";
 import type { EpistemicState } from "@/lib/citation_gate";
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
@@ -407,41 +408,38 @@ function ResultView({
         )}
 
         {activeTab === "grafo" && (
-          <motion.div key="grafo" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-2">
-            {stored?.nodes?.filter((n) => n.status === "candidate").length === 0 && (
-              <p className="py-4 text-center text-sm text-muted-foreground">Grafo vazio — execute o mapeamento.</p>
+          <motion.div key="grafo" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3">
+            <GraphVisual caseId="default-case" />
+            {/* Lista de nós para review (mantém a funcionalidade de confirmar/rejeitar) */}
+            {stored?.nodes && stored.nodes.filter((n) => n.status === "candidate").length > 0 && (
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-sm">
+                    <Network className="h-4 w-4 text-primary" />
+                    Nós pendentes de revisão
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {stored.nodes.filter((n) => n.status === "candidate").map((n, i) => {
+                    const cfg = NODE_TYPE_CONFIG[n.nodeType] || NODE_TYPE_CONFIG.fact;
+                    const Icon = cfg.icon;
+                    return (
+                      <div key={n.id} className="flex items-center gap-2 rounded-lg border border-border p-2">
+                        <Icon className="h-4 w-4 text-primary" />
+                        <span className="flex-1 truncate text-xs">{n.label}</span>
+                        <Badge variant="outline" className="text-[10px]">{cfg.label}</Badge>
+                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onReview("node", n.id, "confirm")}>
+                          <CheckCircle2 className="h-3 w-3 text-green-600" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onReview("node", n.id, "reject")}>
+                          <XCircle className="h-3 w-3 text-red-600" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </CardContent>
+              </Card>
             )}
-            {stored?.nodes?.map((n, i) => {
-              const cfg = NODE_TYPE_CONFIG[n.nodeType] || NODE_TYPE_CONFIG.fact;
-              const Icon = cfg.icon;
-              return (
-                <Card key={n.id} className={n.status === "confirmed" ? "border-green-500/40 bg-green-500/5" : n.status === "rejected" ? "opacity-50 border-red-500/30" : ""}>
-                  <CardContent className="flex items-center gap-3 p-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                      <Icon className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">{n.label}</div>
-                      <div className="text-[10px] text-muted-foreground">
-                        {cfg.label} · {n.status === "candidate" ? "RASCUNHO IA" : n.status}
-                        {n.confidence != null && ` · conf: ${n.confidence.toFixed(2)}`}
-                        {n.sourceEvidenceId && ` · 📎 evidência`}
-                      </div>
-                    </div>
-                    {n.status === "candidate" && (
-                      <div className="flex gap-1">
-                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onReview("node", n.id, "confirm")} title="Confirmar">
-                          <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
-                        </Button>
-                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onReview("node", n.id, "reject")} title="Rejeitar">
-                          <XCircle className="h-3.5 w-3.5 text-red-600" />
-                        </Button>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
           </motion.div>
         )}
 

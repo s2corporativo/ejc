@@ -412,3 +412,20 @@ model SkillVersion {
   @@index([status])
   @@index([area])
 }
+
+// BrainAnalysis — memória jurídica por processo: persiste análises do Cérebro vinculadas a um caso
+// Permite ao advogado ver a evolução do entendimento sobre o caso ao longo do tempo
+model BrainAnalysis {
+  id          String   @id @default(cuid())
+  caseId      String   @default("default-case")
+  title       String
+  factsInput  String   // fatos que foram analisados
+  result      String   // JSON completo do resultado do Cérebro (8 etapas)
+  ramoJuridico String?
+  hypothesis  String?  // favorável | incerto | desfavorável
+  tokensUsed  Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([caseId])
+  @@index([createdAt])
+}

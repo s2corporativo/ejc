@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
 import { logAuditEvent, logUsageEntry } from "@/lib/audit";
+import { ragSearch } from "@/lib/rag_lite";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 180;
@@ -138,26 +139,24 @@ export async function POST(req: NextRequest) {
     tok(c); steps[2].status = "done"; steps[2].result = r.legalIssues;
   } catch (e) { steps[2].status = "error"; steps[2].error = e instanceof Error ? e.message : "Erro"; r.legalIssues = []; }
 
-  // ── ETAPA 3: Legislação aplicável (base curada LegalSource) ──────────────
+  // ── ETAPA 3: Legislação aplicável (RAG-lite TF-IDF cosine similarity) ─────
   steps[3].status = "running";
   try {
     const issues = r.legalIssues || [];
-    const areas = issues.map((i) => i.area).filter(Boolean);
-    const query = `${facts} ${issues.map((i) => i.question).join(" ")}`.toLowerCase();
-    const allSources = await db.legalSource.findMany({ where: { vigente: true }, orderBy: [{ diploma: "asc" }, { numero: "asc" }] });
-    r.applicableLaw = allSources
-      .filter((s) => {
-        if (query.includes(s.diploma.toLowerCase())) return true;
-        if (areas.includes("civil") && ["CC", "CPC"].includes(s.diploma)) return true;
-        if (areas.includes("trabalhista") && s.diploma === "CLT") return true;
-        if (areas.includes("consumer") && s.diploma === "CDC") return true;
-        if (areas.includes("tributario") && s.diploma === "CTN") return true;
-        if (areas.includes("penal") && s.diploma === "CP") return true;
-        const trecho = s.textoTrecho.toLowerCase();
-        return query.split(" ").some((w) => w.length > 5 && trecho.includes(w));
-      })
-      .slice(0, 8)
-      .map((s) => ({ diploma: s.diploma, numero: s.numero, textoTrecho: s.textoTrecho, vigente: s.vigente, urlOficial: s.urlOficial, applicability: `Aplicável: ${s.diploma} ${s.numero} ${s.tribunal || ""}`, state: "direito_positivo" as const, confidence: 0.9 }));
+    // Constroi query combinando fatos + questões jurídicas
+    const ragQuery = `${facts} ${issues.map((i) => i.question).join(" ")}`;
+    // Busca semântica na base curada (TF-IDF cosine similarity)
+    const ragResults = await ragSearch(ragQuery, 8);
+    r.applicableLaw = ragResults.map((res) => ({
+      diploma: res.source.diploma,
+      numero: res.source.numero,
+      textoTrecho: res.source.textoTrecho,
+      vigente: res.source.vigente,
+      urlOficial: res.source.urlOficial,
+      applicability: `RAG score: ${res.score.toFixed(3)} — ${res.source.diploma} ${res.source.numero} ${res.source.tribunal || ""}`,
+      state: "direito_positivo" as const,
+      confidence: Math.min(1, res.score + 0.3), // ajusta confiança com base no score
+    }));
     steps[3].status = "done"; steps[3].result = r.applicableLaw.length;
   } catch (e) { steps[3].status = "error"; steps[3].error = e instanceof Error ? e.message : "Erro"; r.applicableLaw = []; }
 
@@ -225,5 +224,47 @@ export async function POST(req: NextRequest) {
   await logAuditEvent({ action: "brain_analysis", resource: "case", resourceId: body.caseId || null, metadata: { title, totalTokens: tokens, stepsCompleted: steps.filter((s) => s.status === "done").length } });
   await logUsageEntry({ type: "debit", operation: "brain_analysis", amount: -3, reason: `Análise cerebral: ${title}`, metadata: { totalTokens: tokens, caseId: body.caseId } });
 
+  // ── Persistir análise (memória jurídica por processo) ──────────────────
+  if (body.caseId) {
+    try {
+      await db.brainAnalysis.create({
+        data: {
+          caseId: body.caseId,
+          title,
+          factsInput: facts,
+          result: JSON.stringify({ ...r, steps, totalTokens: tokens }),
+          ramoJuridico: r.ramoJuridico || null,
+          hypothesis: r.viability?.hypothesis || null,
+          tokensUsed: tokens,
+        },
+      });
+    } catch { /* não bloquear o fluxo se falhar a persistência */ }
+  }
+
   return NextResponse.json({ ...r, steps, totalTokens: tokens } as BrainResult);
+}
+
+// GET /api/brain — lista histórico de análises por caso
+export async function GET(req: NextRequest) {
+  const url = new URL(req.url);
+  const caseId = url.searchParams.get("caseId") || "default-case";
+
+  const analyses = await db.brainAnalysis.findMany({
+    where: { caseId },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+  });
+
+  return NextResponse.json({
+    analyses: analyses.map((a) => ({
+      id: a.id,
+      caseId: a.caseId,
+      title: a.title,
+      factsInput: a.factsInput.slice(0, 200),
+      ramoJuridico: a.ramoJuridico,
+      hypothesis: a.hypothesis,
+      tokensUsed: a.tokensUsed,
+      createdAt: a.createdAt.toISOString(),
+    })),
+  });
 }

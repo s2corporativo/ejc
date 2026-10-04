@@ -835,3 +835,57 @@ Stage Summary:
   4. ✅ Testes focados: 28/28 testes aprovados cobrindo Evidence Gate, Pseudonymizer, Response Validator, Citation Gate, Ownership, Fail-closed.
 - 0 erros console, 0 ESLint, 28/28 testes passando, dev server saudável.
 - Sistema completo com: ERP (Clientes/Casos/Movimentações/Audiências) + IA (Cérebro 8 etapas + Inteligência verificável + Skills 37 em 8 áreas + Skill Router + Citation Gate + Evidence Gate + Pseudonymizer reversível + Response Validator + RAG-lite + Grafo visual + Upload documentos + 28 testes).
+
+---
+Task ID: 26 (RAG no Cérebro + Grafo visual + Ingestors probe + Memória por processo)
+Agent: main (Z.ai Code)
+Task: Implementar Opções 1-4: RAG-lite no Cérebro, GraphVisual na Inteligência, probe de fontes oficiais, memória jurídica por processo.
+
+Work Log:
+- OPÇÃO 1 — RAG-LITE NO CÉREBRO:
+  - Etapa 3 do /api/brain substituiu match heurístico de keywords por ragSearch() (TF-IDF cosine similarity).
+  - Query combina fatos + questões jurídicas. Retorna top-8 documentos da base LegalSource com score de similaridade.
+  - Scores visíveis no resultado: CC art. 186 (0.243), CC art. 927 (0.206), CLT art. 11 (0.103).
+  - Confidence ajustada: min(1, score + 0.3).
+  - Teste: caso SERASA → 8 fontes recuperadas com scores semânticos (vs 8 por keyword antes, mas agora ranqueados por relevância semântica).
+
+- OPÇÃO 2 — GRAFO VISUAL NA INTELIGÊNCIA:
+  - GraphVisual (SVG interativo) integrado como sub-tab "Grafo" na aba Inteligência.
+  - Nós em layout circular agrupados por tipo, arestas como linhas (cor por polarity, tracejado para candidate).
+  - Click no nó → painel de detalhe (tipo, status, texto, confiança, evidência vinculada).
+  - Lista de nós pendentes de revisão mantida abaixo do grafo (Confirmar/Rejeitar).
+
+- OPÇÃO 3 — PROBE DE FONTES OFICIAIS (scripts/probe-fontes.ts):
+  - 13 fontes testadas com fetch sem auth:
+    - ✅ IBGE/SIDRA (IPCA/INPC) — JSON acessível, retorna séries do IPCA.
+    - ✅ Querido Diário (municipal) — JSON acessível, retorna diários oficiais.
+    - ✅ STF/gov.br — HTML acessível (TSE não STF Corte Aberta que é CSV/BigQuery).
+    - ❌ BCB Ranking — 404 (URL mudou, descobrir nova).
+    - ❌ Câmara v2 — timeout 10s (aumentar timeout ou usar endpoint alternativo).
+    - ❌ Senado — 404 (modernizado 05/2025, descobrir novo endpoint).
+    - ❌ CNJ TPU — 404 (SOAP endpoint, não REST).
+    - ❌ STJ CKAN — connection error (domínio diferente).
+    - ❌ Consumidor.gov.br — 404 (API mudou).
+    - ❌ Planalto — socket closed (HTTP vs HTTPS, tentar HTTPS).
+    - ❌ ANPD — 401 (requer auth ou URL diferente).
+    - ❌ PGFN — 404 (URL desatualizado).
+    - ❌ ANS — 404 (URL desatualizado).
+  - Resultado: 3/13 acessíveis diretamente. 10 precisam URLs atualizadas, auth ou abordagem diferente (scraping vs API).
+
+- OPÇÃO 4 — MEMÓRIA JURÍDICA POR PROCESSO:
+  - Modelo Prisma BrainAnalysis: caseId, title, factsInput, result (JSON completo), ramoJuridico, hypothesis, tokensUsed, createdAt.
+  - /api/brain POST: persiste análise quando caseId é fornecido. Armazena resultado completo (8 etapas) + ramo + hypothesis + tokens.
+  - /api/brain GET: lista histórico de análises por caseId (últimas 20, ordenadas por data desc).
+  - Teste: análise de "test-case-1" persistida, history API retorna 1 análise ✓.
+  - Permite ao advogado ver a evolução do entendimento sobre o caso ao longo do tempo.
+
+- ESLint limpo (0 erros, 0 warnings). 28/28 testes aprovados. Dev server ativo (HTTP 200).
+
+Stage Summary:
+- 4 opções executadas:
+  1. ✅ RAG-lite no Cérebro: Etapa 3 agora usa TF-IDF cosine similarity (scores semânticos vs keyword matching).
+  2. ✅ Grafo visual: SVG interativo na aba Inteligência com click-to-detail + lista de revisão.
+  3. ✅ Probe de fontes: 13 APIs testadas, 3 acessíveis (IBGE/SIDRA, Querido Diário, STF/gov.br), 10 precisam atualização.
+  4. ✅ Memória por processo: BrainAnalysis persiste análises do Cérebro por caso, API de histórico disponível.
+- 0 erros console, 0 ESLint, 28/28 testes, dev server saudável.
+- Sistema completo: 22 modelos Prisma, 18 APIs, 37 skills em 8 áreas, RAG-lite TF-IDF, grafo visual SVG, upload PDF/DOCX, pseudonymizer reversível, evidence/citation gates, 28 testes focados, probe de 13 fontes oficiais.
