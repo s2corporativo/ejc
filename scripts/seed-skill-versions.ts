@@ -1,5 +1,18 @@
+// ⚠️  DEPRECATED — NÃO RODAR EM PRODUÇÃO
+// Este script popula o banco com dados fictícios (skills, fontes, advogados fake, etc.)
+// Para produção, use apenas fontes REAIS oficiais (Planalto, CNJ, STJ, STF).
+// Em desenvolvimento: pode rodar para popular a base de conhecimento,
+// mas NÃO deve ser incluído em deploy scripts ou CI/CD.
 import { db } from "@/lib/db";
 import { createHash } from "crypto";
+
+// ── GUARD: bloqueia execução em produção ──────────────────────────────────
+if (process.env.NODE_ENV === "production") {
+  console.error("❌ Este script de seed NÃO deve rodar em produção.");
+  console.error("   Use apenas fontes REAIS oficiais (Planalto, CNJ, STJ, STF).");
+  process.exit(1);
+}
+
 
 async function seedSkillVersions() {
   console.log("🌱 Migrando skills para SkillVersion...");
