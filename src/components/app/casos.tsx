@@ -44,6 +44,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useAppStore } from "@/lib/store";
 import { FluxoJuridico } from "./fluxo-juridico";
+import { MapaCaso } from "./mapa-caso";
 import { toast } from "@/hooks/use-toast";
 
 // ── Tipos ──────────────────────────────────────────────────────────────────
@@ -436,6 +437,15 @@ export function Casos() {
                           <FluxoJuridico
                             caseTitle={c.title}
                             caseFacts={c.notes || `${c.title} — ${c.clientName} — ${AREA_LABELS[c.area] || c.area} — ${c.number || "sem número"}`}
+                          />
+                          {/* Mapa do caso (sub-componente) */}
+                          <MapaCaso
+                            caseId={c.id}
+                            caseTitle={c.title}
+                            caseFacts={c.notes || `${c.title} — ${c.clientName} — ${AREA_LABELS[c.area] || c.area} — ${c.number || "sem número"}`}
+                            caseArea={AREA_LABELS[c.area] || c.area}
+                            caseNumber={c.number}
+                            caseValor={c.valor}
                           />
                           <Tabs defaultValue="movimentos">
                             <TabsList className="h-8">

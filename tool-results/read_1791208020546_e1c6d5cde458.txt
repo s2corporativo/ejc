@@ -1,0 +1,516 @@
+     1→"use client";
+     2→
+     3→import { useEffect, useState, useMemo } from "react";
+     4→import { motion, AnimatePresence } from "framer-motion";
+     5→import {
+     6→  Briefcase,
+     7→  Plus,
+     8→  Trash2,
+     9→  Edit3,
+    10→  Search,
+    11→  CheckCircle2,
+    12→  Circle,
+    13→  Loader2,
+    14→  Users,
+    15→  Calendar,
+    16→  ArrowRight,
+    17→  FileText,
+    18→  Gavel,
+    19→  Clock,
+    20→  Flag,
+    21→  DollarSign,
+    22→  X,
+    23→} from "lucide-react";
+    24→import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+    25→import { Button } from "@/components/ui/button";
+    26→import { Input } from "@/components/ui/input";
+    27→import { Label } from "@/components/ui/label";
+    28→import { Textarea } from "@/components/ui/textarea";
+    29→import { Badge } from "@/components/ui/badge";
+    30→import {
+    31→  Dialog,
+    32→  DialogContent,
+    33→  DialogHeader,
+    34→  DialogTitle,
+    35→  DialogTrigger,
+    36→} from "@/components/ui/dialog";
+    37→import {
+    38→  Select,
+    39→  SelectContent,
+    40→  SelectItem,
+    41→  SelectTrigger,
+    42→  SelectValue,
+    43→} from "@/components/ui/select";
+    44→import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+    45→import { useAppStore } from "@/lib/store";
+    46→import { FluxoJuridico } from "./fluxo-juridico";
+    47→import { toast } from "@/hooks/use-toast";
+    48→
+    49→// ── Tipos ──────────────────────────────────────────────────────────────────
+    50→interface Client { id: string; name: string; }
+    51→interface CaseItem {
+    52→  id: string;
+    53→  title: string;
+    54→  number: string | null;
+    55→  area: string;
+    56→  responsavel: string | null;
+    57→  prioridade: string;
+    58→  valor: string | null;
+    59→  status: string;
+    60→  dataDistribuicao: string | null;
+    61→  dataEncerramento: string | null;
+    62→  resultado: string | null;
+    63→  notes: string | null;
+    64→  processosVinculados: string[];
+    65→  clientId: string;
+    66→  clientName: string;
+    67→  documentsCount: number;
+    68→  movimentosCount: number;
+    69→  audienciasCount: number;
+    70→  createdAt: string;
+    71→  updatedAt: string;
+    72→}
+    73→interface Movimento { id: string; data: string; tipo: string; descricao: string; numeroProc: string | null; }
+    74→interface Audiencia { id: string; data: string; tipo: string; local: string | null; orgao: string | null; status: string; resultado: string | null; observacoes: string | null; }
+    75→
+    76→const AREA_LABELS: Record<string, string> = {
+    77→  civil: "Cível", penal: "Penal", trabalhista: "Trabalhista", tributario: "Tributário",
+    78→  consumer: "Consumidor", family: "Família", previdenciario: "Previdenciário",
+    79→  empresarial: "Empresarial", administrativo: "Administrativo", bancario: "Bancário",
+    80→  ambiental: "Ambiental", digital_lgpd: "Digital/LGPD", transito: "Trânsito",
+    81→};
+    82→
+    83→const PRIORIDADE_CONFIG: Record<string, { label: string; color: string }> = {
+    84→  alta: { label: "Alta", color: "text-red-600 bg-red-500/10 border-red-500/30" },
+    85→  media: { label: "Média", color: "text-amber-600 bg-amber-500/10 border-amber-500/30" },
+    86→  baixa: { label: "Baixa", color: "text-green-600 bg-green-500/10 border-green-500/30" },
+    87→};
+    88→
+    89→const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+    90→  ativo: { label: "Ativo", color: "text-green-600" },
+    91→  suspenso: { label: "Suspenso", color: "text-amber-600" },
+    92→  encerrado: { label: "Encerrado", color: "text-muted-foreground" },
+    93→};
+    94→
+    95→const TIPO_MOV_LABELS: Record<string, string> = {
+    96→  petition: "Petição", despacho: "Despacho", decisao: "Decisão", sentenca: "Sentença",
+    97→  recurso: "Recurso", audiencia: "Audiência", outro: "Outro",
+    98→};
+    99→
+   100→const TIPO_AUD_LABELS: Record<string, string> = {
+   101→  conciliacao: "Conciliação", instrucao: "Instrução", julgamento: "Julgamento",
+   102→  oitiva: "Oitiva", outra: "Outra",
+   103→};
+   104→
+   105→export function Casos() {
+   106→  const { setBrainContext, setAppTab } = useAppStore();
+   107→  const [cases, setCases] = useState<CaseItem[]>([]);
+   108→  const [clients, setClients] = useState<Client[]>([]);
+   109→  const [loading, setLoading] = useState(true);
+   110→  const [filter, setFilter] = useState("");
+   111→  const [statusFilter, setStatusFilter] = useState("todos");
+   112→  const [areaFilter, setAreaFilter] = useState("todas");
+   113→  const [dialogOpen, setDialogOpen] = useState(false);
+   114→  const [editingCase, setEditingCase] = useState<CaseItem | null>(null);
+   115→  const [selectedCase, setSelectedCase] = useState<CaseItem | null>(null);
+   116→
+   117→  // Movimentações e audiências do caso selecionado
+   118→  const [movimentos, setMovimentos] = useState<Movimento[]>([]);
+   119→  const [audiencias, setAudiencias] = useState<Audiencia[]>([]);
+   120→  const [movForm, setMovForm] = useState({ tipo: "outro", descricao: "", numeroProc: "" });
+   121→  const [audForm, setAudForm] = useState({ data: "", tipo: "conciliacao", local: "", orgao: "", observacoes: "" });
+   122→
+   123→  // Form do caso
+   124→  const [form, setForm] = useState({
+   125→    clientId: "", title: "", number: "", area: "civil", responsavel: "",
+   126→    prioridade: "media", valor: "", notes: "", dataDistribuicao: "", processosVinculados: "" ,
+   127→  });
+   128→
+   129→  async function reload() {
+   130→    setLoading(true);
+   131→    try {
+   132→      const [cRes, clRes] = await Promise.all([fetch("/api/cases"), fetch("/api/clients")]);
+   133→      const cData = await cRes.json();
+   134→      const clData = await clRes.json();
+   135→      setCases(cData.cases || []);
+   136→      setClients(clData.clients?.map((c: { id: string; name: string }) => ({ id: c.id, name: c.name })) || []);
+   137→    } catch { /* ignore */ }
+   138→    finally { setLoading(false); }
+   139→  }
+   140→
+   141→  useEffect(() => { reload(); }, []);
+   142→
+   143→  async function loadCaseDetails(caseId: string) {
+   144→    try {
+   145→      const [mRes, aRes] = await Promise.all([
+   146→        fetch(`/api/cases/movements?caseId=${caseId}`),
+   147→        fetch(`/api/cases/hearings?caseId=${caseId}`),
+   148→      ]);
+   149→      const mData = await mRes.json();
+   150→      const aData = await aRes.json();
+   151→      setMovimentos(mData.movimentos || []);
+   152→      setAudiencias(aData.audiencias || []);
+   153→    } catch { /* ignore */ }
+   154→  }
+   155→
+   156→  const filtered = useMemo(() => {
+   157→    const q = filter.toLowerCase().trim();
+   158→    return cases.filter((c) => {
+   159→      if (statusFilter !== "todos" && c.status !== statusFilter) return false;
+   160→      if (areaFilter !== "todas" && c.area !== areaFilter) return false;
+   161→      if (!q) return true;
+   162→      return c.title.toLowerCase().includes(q) ||
+   163→        c.number?.toLowerCase().includes(q) ||
+   164→        c.clientName?.toLowerCase().includes(q) ||
+   165→        c.responsavel?.toLowerCase().includes(q);
+   166→    });
+   167→  }, [cases, filter, statusFilter, areaFilter]);
+   168→
+   169→  function openNewCase() {
+   170→    setEditingCase(null);
+   171→    setForm({ clientId: "", title: "", number: "", area: "civil", responsavel: "", prioridade: "media", valor: "", notes: "", dataDistribuicao: "", processosVinculados: "" });
+   172→    setDialogOpen(true);
+   173→  }
+   174→
+   175→  function openEditCase(c: CaseItem) {
+   176→    setEditingCase(c);
+   177→    setForm({
+   178→      clientId: c.clientId, title: c.title, number: c.number || "", area: c.area,
+   179→      responsavel: c.responsavel || "", prioridade: c.prioridade, valor: c.valor || "",
+   180→      notes: c.notes || "", dataDistribuicao: c.dataDistribuicao?.split("T")[0] || "",
+   181→      processosVinculados: c.processosVinculados?.join(", ") || "",
+   182→    });
+   183→    setDialogOpen(true);
+   184→  }
+   185→
+   186→  async function saveCase() {
+   187→    if (!form.clientId) { toast({ title: "Selecione um cliente", variant: "destructive" }); return; }
+   188→    if (!form.title.trim()) { toast({ title: "Título obrigatório", variant: "destructive" }); return; }
+   189→
+   190→    const payload = {
+   191→      ...form,
+   192→      processosVinculados: form.processosVinculados.split(",").map((s) => s.trim()).filter(Boolean),
+   193→    };
+   194→
+   195→    try {
+   196→      if (editingCase) {
+   197→        await fetch("/api/cases", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: editingCase.id, ...payload }) });
+   198→        toast({ title: "Caso atualizado" });
+   199→      } else {
+   200→        await fetch("/api/cases", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+   201→        toast({ title: "Caso criado" });
+   202→      }
+   203→      setDialogOpen(false);
+   204→      setEditingCase(null);
+   205→      reload();
+   206→    } catch { toast({ title: "Erro ao salvar", variant: "destructive" }); }
+   207→  }
+   208→
+   209→  async function deleteCase(id: string) {
+   210→    if (!confirm("Excluir este caso e todos os dados vinculados?")) return;
+   211→    try {
+   212→      await fetch(`/api/cases?id=${id}`, { method: "DELETE" });
+   213→      toast({ title: "Caso excluído" });
+   214→      if (selectedCase?.id === id) setSelectedCase(null);
+   215→      reload();
+   216→    } catch { toast({ title: "Erro ao excluir", variant: "destructive" }); }
+   217→  }
+   218→
+   219→  async function encerrarCaso(c: CaseItem) {
+   220→    const resultado = prompt("Resultado do caso (procedente/improcedente/acordo/extinto/parcial):", "acordo");
+   221→    if (!resultado) return;
+   222→    await fetch("/api/cases", {
+   223→      method: "PATCH",
+   224→      headers: { "Content-Type": "application/json" },
+   225→      body: JSON.stringify({ id: c.id, status: "encerrado", dataEncerramento: new Date().toISOString(), resultado }),
+   226→    });
+   227→    toast({ title: "Caso encerrado", description: `Resultado: ${resultado}` });
+   228→    reload();
+   229→  }
+   230→
+   231→  async function addMovimento() {
+   232→    if (!selectedCase || !movForm.descricao.trim()) return;
+   233→    await fetch("/api/cases/movements", {
+   234→      method: "POST", headers: { "Content-Type": "application/json" },
+   235→      body: JSON.stringify({ caseId: selectedCase.id, ...movForm }),
+   236→    });
+   237→    setMovForm({ tipo: "outro", descricao: "", numeroProc: "" });
+   238→    loadCaseDetails(selectedCase.id);
+   239→    toast({ title: "Movimentação registrada" });
+   240→  }
+   241→
+   242→  async function addAudiencia() {
+   243→    if (!selectedCase || !audForm.data) return;
+   244→    await fetch("/api/cases/hearings", {
+   245→      method: "POST", headers: { "Content-Type": "application/json" },
+   246→      body: JSON.stringify({ caseId: selectedCase.id, ...audForm }),
+   247→    });
+   248→    setAudForm({ data: "", tipo: "conciliacao", local: "", orgao: "", observacoes: "" });
+   249→    loadCaseDetails(selectedCase.id);
+   250→    toast({ title: "Audiência agendada" });
+   251→  }
+   252→
+   253→  async function delMovimento(id: string) {
+   254→    await fetch(`/api/cases/movements?id=${id}`, { method: "DELETE" });
+   255→    if (selectedCase) loadCaseDetails(selectedCase.id);
+   256→  }
+   257→
+   258→  async function delAudiencia(id: string) {
+   259→    await fetch(`/api/cases/hearings?id=${id}`, { method: "DELETE" });
+   260→    if (selectedCase) loadCaseDetails(selectedCase.id);
+   261→  }
+   262→
+   263→  function openCaseDetails(c: CaseItem) {
+   264→    setSelectedCase(c);
+   265→    loadCaseDetails(c.id);
+   266→  }
+   267→
+   268→  function sendToIntelligence(c: CaseItem) {
+   269→    const ctx = `CASO: ${c.title}\nCLIENTE: ${c.clientName}\nÁREA: ${AREA_LABELS[c.area] || c.area}\nRESPONSÁVEL: ${c.responsavel || "—"}\nVALOR: ${c.valor || "—"}\nNÚMERO: ${c.number || "—"}\nNOTAS: ${c.notes || "—"}`;
+   270→    setBrainContext(ctx);
+   271→    setAppTab("intelligence");
+   272→    toast({ title: "Caso enviado para Inteligência IA", description: "Os dados do caso serão usados como contexto" });
+   273→  }
+   274→
+   275→  return (
+   276→    <div className="container-juridia py-8">
+   277→      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+   278→        <div>
+   279→          <h1 className="text-2xl font-bold tracking-tight">Casos</h1>
+   280→          <p className="mt-1 text-sm text-muted-foreground">
+   281→            {cases.length} caso(s) · {cases.filter(c => c.status === "ativo").length} ativo(s) · {cases.filter(c => c.status === "encerrado").length} encerrado(s)
+   282→          </p>
+   283→        </div>
+   284→        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+   285→          <DialogTrigger asChild>
+   286→            <Button onClick={openNewCase}><Plus className="mr-2 h-4 w-4" /> Novo caso</Button>
+   287→          </DialogTrigger>
+   288→          <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto scrollbar-juridia">
+   289→            <DialogHeader><DialogTitle>{editingCase ? "Editar caso" : "Novo caso"}</DialogTitle></DialogHeader>
+   290→            <div className="space-y-3">
+   291→              <div className="space-y-1.5">
+   292→                <Label className="text-xs">Cliente *</Label>
+   293→                <Select value={form.clientId} onValueChange={(v) => setForm(s => ({ ...s, clientId: v }))}>
+   294→                  <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+   295→                  <SelectContent>{clients.map((cl) => <SelectItem key={cl.id} value={cl.id}>{cl.name}</SelectItem>)}</SelectContent>
+   296→                </Select>
+   297→              </div>
+   298→              <div className="space-y-1.5">
+   299→                <Label className="text-xs">Título do caso *</Label>
+   300→                <Input value={form.title} onChange={(e) => setForm(s => ({ ...s, title: e.target.value }))} placeholder="Ex: Ação indenizatória" />
+   301→              </div>
+   302→              <div className="grid grid-cols-2 gap-3">
+   303→                <div className="space-y-1.5">
+   304→                  <Label className="text-xs">Nº do processo</Label>
+   305→                  <Input value={form.number} onChange={(e) => setForm(s => ({ ...s, number: e.target.value }))} placeholder="0000000-00.0000.0.00.0000" />
+   306→                </div>
+   307→                <div className="space-y-1.5">
+   308→                  <Label className="text-xs">Área</Label>
+   309→                  <Select value={form.area} onValueChange={(v) => setForm(s => ({ ...s, area: v }))}>
+   310→                    <SelectTrigger><SelectValue /></SelectTrigger>
+   311→                    <SelectContent>{Object.entries(AREA_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+   312→                  </Select>
+   313→                </div>
+   314→              </div>
+   315→              <div className="grid grid-cols-2 gap-3">
+   316→                <div className="space-y-1.5">
+   317→                  <Label className="text-xs">Responsável</Label>
+   318→                  <Input value={form.responsavel} onChange={(e) => setForm(s => ({ ...s, responsavel: e.target.value }))} placeholder="Advogado" />
+   319→                </div>
+   320→                <div className="space-y-1.5">
+   321→                  <Label className="text-xs">Prioridade</Label>
+   322→                  <Select value={form.prioridade} onValueChange={(v) => setForm(s => ({ ...s, prioridade: v }))}>
+   323→                    <SelectTrigger><SelectValue /></SelectTrigger>
+   324→                    <SelectContent>
+   325→                      <SelectItem value="alta">Alta</SelectItem>
+   326→                      <SelectItem value="media">Média</SelectItem>
+   327→                      <SelectItem value="baixa">Baixa</SelectItem>
+   328→                    </SelectContent>
+   329→                  </Select>
+   330→                </div>
+   331→              </div>
+   332→              <div className="grid grid-cols-2 gap-3">
+   333→                <div className="space-y-1.5">
+   334→                  <Label className="text-xs">Valor da causa</Label>
+   335→                  <Input value={form.valor} onChange={(e) => setForm(s => ({ ...s, valor: e.target.value }))} placeholder="R$ 0.000,00" />
+   336→                </div>
+   337→                <div className="space-y-1.5">
+   338→                  <Label className="text-xs">Distribuição</Label>
+   339→                  <Input type="date" value={form.dataDistribuicao} onChange={(e) => setForm(s => ({ ...s, dataDistribuicao: e.target.value }))} />
+   340→                </div>
+   341→              </div>
+   342→              <div className="space-y-1.5">
+   343→                <Label className="text-xs">Processos vinculados (separe por vírgula)</Label>
+   344→                <Input value={form.processosVinculados} onChange={(e) => setForm(s => ({ ...s, processosVinculados: e.target.value }))} placeholder="0000000-00.0000.0.00.0000, ..." />
+   345→              </div>
+   346→              <div className="space-y-1.5">
+   347→                <Label className="text-xs">Observações</Label>
+   348→                <Textarea rows={2} value={form.notes} onChange={(e) => setForm(s => ({ ...s, notes: e.target.value }))} />
+   349→              </div>
+   350→              <Button onClick={saveCase} className="w-full">{editingCase ? "Salvar alterações" : "Criar caso"}</Button>
+   351→            </div>
+   352→          </DialogContent>
+   353→        </Dialog>
+   354→      </div>
+   355→
+   356→      {/* Filtros */}
+   357→      <div className="mb-4 flex flex-wrap gap-2">
+   358→        <div className="relative flex-1 max-w-xs">
+   359→          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+   360→          <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Buscar..." className="pl-9" />
+   361→        </div>
+   362→        <Select value={statusFilter} onValueChange={setStatusFilter}>
+   363→          <SelectTrigger className="w-[130px]"><SelectValue /></SelectTrigger>
+   364→          <SelectContent>
+   365→            <SelectItem value="todos">Todos status</SelectItem>
+   366→            <SelectItem value="ativo">Ativo</SelectItem>
+   367→            <SelectItem value="suspenso">Suspenso</SelectItem>
+   368→            <SelectItem value="encerrado">Encerrado</SelectItem>
+   369→          </SelectContent>
+   370→        </Select>
+   371→        <Select value={areaFilter} onValueChange={setAreaFilter}>
+   372→          <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+   373→          <SelectContent>
+   374→            <SelectItem value="todas">Todas áreas</SelectItem>
+   375→            {Object.entries(AREA_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+   376→          </SelectContent>
+   377→        </Select>
+   378→      </div>
+   379→
+   380→      {loading ? (
+   381→        <div className="flex h-48 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+   382→      ) : filtered.length === 0 ? (
+   383→        <Card><CardContent className="flex flex-col items-center gap-3 py-16 text-center">
+   384→          <Briefcase className="h-12 w-12 text-muted-foreground/40" />
+   385→          <div><h3 className="font-semibold">Nenhum caso encontrado</h3><p className="mt-1 text-sm text-muted-foreground">{filter || statusFilter !== "todos" ? "Tente outros filtros" : "Cadastre seu primeiro caso"}</p></div>
+   386→          <Button onClick={openNewCase}><Plus className="mr-2 h-4 w-4" /> Novo caso</Button>
+   387→        </CardContent></Card>
+   388→      ) : (
+   389→        <div className="space-y-3">
+   390→          {filtered.map((c, i) => (
+   391→            <motion.div key={c.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i * 0.03, 0.3) }}>
+   392→              <Card className={selectedCase?.id === c.id ? "ring-1 ring-primary/30" : ""}>
+   393→                <CardContent className="p-4">
+   394→                  <div className="flex items-start justify-between gap-3">
+   395→                    <button onClick={() => openCaseDetails(c)} className="flex-1 text-left">
+   396→                      <div className="flex flex-wrap items-center gap-2">
+   397→                        <h3 className="font-semibold">{c.title}</h3>
+   398→                        <Badge variant="outline" className="text-[10px]">{AREA_LABELS[c.area] || c.area}</Badge>
+   399→                        <Badge variant="outline" className={`text-[10px] ${PRIORIDADE_CONFIG[c.prioridade]?.color || ""}`}>
+   400→                          <Flag className="mr-1 h-2.5 w-2.5" />{PRIORIDADE_CONFIG[c.prioridade]?.label || c.prioridade}
+   401→                        </Badge>
+   402→                        <span className={`text-[10px] font-medium ${STATUS_CONFIG[c.status]?.color || ""}`}>● {STATUS_CONFIG[c.status]?.label || c.status}</span>
+   403→                      </div>
+   404→                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+   405→                        <span className="flex items-center gap-1"><Users className="h-3 w-3" />{c.clientName}</span>
+   406→                        {c.responsavel && <span className="flex items-center gap-1"><Briefcase className="h-3 w-3" />{c.responsavel}</span>}
+   407→                        {c.number && <span className="font-mono text-[10px]">{c.number}</span>}
+   408→                        {c.valor && <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" />{c.valor}</span>}
+   409→                        <span className="flex items-center gap-1"><FileText className="h-3 w-3" />{c.documentsCount} doc(s)</span>
+   410→                        <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{c.movimentosCount} mov.</span>
+   411→                        <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{c.audienciasCount} aud.</span>
+   412→                      </div>
+   413→                      {c.processosVinculados.length > 0 && (
+   414→                        <div className="mt-1 text-[10px] text-muted-foreground">Processos vinculados: {c.processosVinculados.join(", ")}</div>
+   415→                      )}
+   416→                      {c.resultado && <div className="mt-1 text-[10px] font-medium text-green-600">Resultado: {c.resultado}</div>}
+   417→                    </button>
+   418→                    <div className="flex gap-1">
+   419→                      <Button size="icon" variant="ghost" onClick={() => sendToIntelligence(c)} title="Enviar para IA">
+   420→                        <ArrowRight className="h-4 w-4 text-primary" />
+   421→                      </Button>
+   422→                      <Button size="icon" variant="ghost" onClick={() => openEditCase(c)} title="Editar"><Edit3 className="h-4 w-4" /></Button>
+   423→                      {c.status === "ativo" && (
+   424→                        <Button size="icon" variant="ghost" onClick={() => encerrarCaso(c)} title="Encerrar"><CheckCircle2 className="h-4 w-4 text-green-600" /></Button>
+   425→                      )}
+   426→                      <Button size="icon" variant="ghost" onClick={() => deleteCase(c.id)} title="Excluir"><Trash2 className="h-4 w-4" /></Button>
+   427→                    </div>
+   428→                  </div>
+   429→
+   430→                  {/* Detalhes do caso (movimentações + audiências) */}
+   431→                  <AnimatePresence>
+   432→                    {selectedCase?.id === c.id && (
+   433→                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
+   434→                        <div className="mt-3 border-t border-border pt-3 space-y-3">
+   435→                          {/* Fluxo jurídico completo */}
+   436→                          <FluxoJuridico
+   437→                            caseTitle={c.title}
+   438→                            caseFacts={c.notes || `${c.title} — ${c.clientName} — ${AREA_LABELS[c.area] || c.area} — ${c.number || "sem número"}`}
+   439→                          />
+   440→                          <Tabs defaultValue="movimentos">
+   441→                            <TabsList className="h-8">
+   442→                              <TabsTrigger value="movimentos" className="text-xs">Movimentações ({movimentos.length})</TabsTrigger>
+   443→                              <TabsTrigger value="audiencias" className="text-xs">Audiências ({audiencias.length})</TabsTrigger>
+   444→                            </TabsList>
+   445→
+   446→                            <TabsContent value="movimentos" className="mt-2">
+   447→                              <div className="mb-2 flex gap-2">
+   448→                                <Select value={movForm.tipo} onValueChange={(v) => setMovForm(s => ({ ...s, tipo: v }))}>
+   449→                                  <SelectTrigger className="w-[120px] h-8 text-xs"><SelectValue /></SelectTrigger>
+   450→                                  <SelectContent>{Object.entries(TIPO_MOV_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+   451→                                </Select>
+   452→                                <Input value={movForm.descricao} onChange={(e) => setMovForm(s => ({ ...s, descricao: e.target.value }))} placeholder="Descrição da movimentação..." className="h-8 text-xs flex-1" />
+   453→                                <Button size="sm" onClick={addMovimento} disabled={!movForm.descricao.trim()}>Adicionar</Button>
+   454→                              </div>
+   455→                              {movimentos.length === 0 ? (
+   456→                                <p className="py-3 text-center text-xs text-muted-foreground">Nenhuma movimentação.</p>
+   457→                              ) : (
+   458→                                <div className="space-y-1.5 max-h-48 overflow-y-auto scrollbar-juridia">
+   459→                                  {movimentos.map((m) => (
+   460→                                    <div key={m.id} className="flex items-center gap-2 rounded border border-border p-2 text-xs">
+   461→                                      <Badge variant="secondary" className="text-[10px]">{TIPO_MOV_LABELS[m.tipo] || m.tipo}</Badge>
+   462→                                      <span className="flex-1 text-muted-foreground">{m.descricao}</span>
+   463→                                      <span className="font-mono text-[10px] text-muted-foreground">{new Date(m.data).toLocaleDateString("pt-BR")}</span>
+   464→                                      <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => delMovimento(m.id)}><X className="h-3 w-3" /></Button>
+   465→                                    </div>
+   466→                                  ))}
+   467→                                </div>
+   468→                              )}
+   469→                            </TabsContent>
+   470→
+   471→                            <TabsContent value="audiencias" className="mt-2">
+   472→                              <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+   473→                                <Input type="datetime-local" value={audForm.data} onChange={(e) => setAudForm(s => ({ ...s, data: e.target.value }))} className="h-8 text-xs" />
+   474→                                <Select value={audForm.tipo} onValueChange={(v) => setAudForm(s => ({ ...s, tipo: v }))}>
+   475→                                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+   476→                                  <SelectContent>{Object.entries(TIPO_AUD_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+   477→                                </Select>
+   478→                                <Input value={audForm.local} onChange={(e) => setAudForm(s => ({ ...s, local: e.target.value }))} placeholder="Local" className="h-8 text-xs" />
+   479→                                <Input value={audForm.orgao} onChange={(e) => setAudForm(s => ({ ...s, orgao: e.target.value }))} placeholder="Vara/Órgão" className="h-8 text-xs" />
+   480→                                <Input value={audForm.observacoes} onChange={(e) => setAudForm(s => ({ ...s, observacoes: e.target.value }))} placeholder="Observações" className="h-8 text-xs" />
+   481→                                <Button size="sm" onClick={addAudiencia} disabled={!audForm.data}>Agendar</Button>
+   482→                              </div>
+   483→                              {audiencias.length === 0 ? (
+   484→                                <p className="py-3 text-center text-xs text-muted-foreground">Nenhuma audiência.</p>
+   485→                              ) : (
+   486→                                <div className="space-y-1.5 max-h-48 overflow-y-auto scrollbar-juridia">
+   487→                                  {audiencias.map((a) => (
+   488→                                    <div key={a.id} className="flex items-center gap-2 rounded border border-border p-2 text-xs">
+   489→                                      <Calendar className="h-3 w-3 text-primary" />
+   490→                                      <Badge variant="secondary" className="text-[10px]">{TIPO_AUD_LABELS[a.tipo] || a.tipo}</Badge>
+   491→                                      <span className="font-mono text-[10px] text-primary">{new Date(a.data).toLocaleString("pt-BR")}</span>
+   492→                                      {a.local && <span className="text-muted-foreground">{a.local}</span>}
+   493→                                      {a.orgao && <span className="text-muted-foreground">{a.orgao}</span>}
+   494→                                      <Badge variant="outline" className={`text-[10px] ${a.status === "realizada" ? "text-green-600" : a.status === "cancelada" ? "text-red-600" : ""}`}>{a.status}</Badge>
+   495→                                      {a.resultado && <span className="text-[10px] text-muted-foreground">→ {a.resultado}</span>}
+   496→                                      <Button size="icon" variant="ghost" className="h-5 w-5 ml-auto" onClick={() => delAudiencia(a.id)}><X className="h-3 w-3" /></Button>
+   497→                                    </div>
+   498→                                  ))}
+   499→                                </div>
+   500→                              )}
+   501→                            </TabsContent>
+   502→                          </Tabs>
+   503→                        </div>
+   504→                      </motion.div>
+   505→                    )}
+   506→                  </AnimatePresence>
+   507→                </CardContent>
+   508→              </Card>
+   509→            </motion.div>
+   510→          ))}
+   511→        </div>
+   512→      )}
+   513→    </div>
+   514→  );
+   515→}
+   516→

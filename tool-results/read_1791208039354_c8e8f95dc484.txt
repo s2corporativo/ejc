@@ -1,0 +1,814 @@
+     1→"""Execução do assistente: entende o pedido, coleta o que falta, chama a ferramenta certa e responde.
+     2→
+     3→Princípios:
+     4→- determinístico primeiro (entidades + intenção); IA só para desempate, se houver provedor real;
+     5→- nunca inventa: cada resultado cita a base legal ou a fonte; o que não está na base é dito;
+     6→- pergunta só o essencial, uma coisa por vez, com opções clicáveis;
+     7→- ações que gravam (registrar intimação, iniciar minuta, coletar lei) respeitam papel e acesso ao caso.
+     8→"""
+     9→from __future__ import annotations
+    10→
+    11→import re
+    12→from dataclasses import dataclass, field
+    13→from datetime import date, timedelta
+    14→
+    15→from sqlalchemy import select
+    16→from sqlalchemy.orm import Session
+    17→
+    18→from ..config import get_config
+    19→from ..core import entidades as ent_mod
+    20→from ..core import salvaguardas, triagem
+    21→from ..core.prazos import Calendario, Contagem, Termo, calcular_prazo
+    22→from ..core.texto import normalizar
+    23→from ..models import (Alerta, Caso, Conversa, Documento, Intimacao, Lote, LoteItem, MensagemAssistente, Minuta, Norma,
+    24→                      PerfilEstilo, Precedente)
+    25→from ..servicos import acesso, auditoria
+    26→from . import intencoes
+    27→
+    28→
+    29→@dataclass
+    30→class Falta:
+    31→    slot: str
+    32→    pergunta: str
+    33→    opcoes: list[str] = field(default_factory=list)
+    34→
+    35→
+    36→def R(texto: str, cartoes: list | None = None, acoes: list | None = None, opcoes: list | None = None) -> dict:
+    37→    return {"texto": texto, "cartoes": cartoes or [], "acoes": acoes or [], "opcoes": opcoes or []}
+    38→
+    39→
+    40→def _br(d: str | date | None) -> str:
+    41→    if not d:
+    42→        return "-"
+    43→    d = date.fromisoformat(d) if isinstance(d, str) else d
+    44→    return d.strftime("%d/%m/%Y")
+    45→
+    46→
+    47→def _pode_gravar() -> bool:
+    48→    return acesso.atual().papel != "leitor"
+    49→
+    50→
+    51→def _casos_recentes(db: Session) -> list[str]:
+    52→    vis = acesso.casos_visiveis(db)
+    53→    q = select(Caso).order_by(Caso.id.desc()).limit(4)
+    54→    if vis is not None:
+    55→        q = q.where(Caso.id.in_(vis or {-1}))
+    56→    return [f"#{c.id} {c.titulo[:40]}" for c in db.scalars(q)]
+    57→
+    58→
+    59→def _caso_de_texto(db: Session, texto: str) -> int | None:
+    60→    m = re.search(r"#(\d+)\b|\bcaso\s+(\d+)\b", texto or "", re.I)
+    61→    if m:
+    62→        cid = int(m.group(1) or m.group(2))
+    63→        if acesso.permissao_caso(db, acesso.atual(), cid):
+    64→            return cid
+    65→    for n in ent_mod.cnj(texto):
+    66→        dig = re.sub(r"\D", "", n)
+    67→        for c in db.scalars(select(Caso).where(Caso.numero_processo.is_not(None))):
+    68→            if re.sub(r"\D", "", c.numero_processo or "") == dig and acesso.permissao_caso(db, acesso.atual(), c.id):
+    69→                return c.id
+    70→    return None
+    71→
+    72→
+    73→# ================================================================== executores
+    74→def ex_briefing(db: Session, s: dict) -> dict:
+    75→    vis = acesso.casos_visiveis(db)
+    76→    ok = lambda cid: vis is None or cid is None or cid in vis  # noqa: E731
+    77→    hoje = date.today()
+    78→    intim = [i for i in db.scalars(select(Intimacao).where(Intimacao.status == "pendente", Intimacao.vencimento.is_not(None))
+    79→                                   .order_by(Intimacao.vencimento)) if ok(i.caso_id) and i.vencimento <= hoje + timedelta(days=10)]
+    80→    alertas = [a for a in db.scalars(select(Alerta).where(Alerta.resolvido.is_(False)).order_by(Alerta.id.desc()).limit(200))
+    81→               if ok(a.caso_id) and a.nivel in ("critico", "alerta") and a.tipo != "prazo"]
+    82→    minutas = [m for m in db.scalars(select(Minuta).where(Minuta.status == "RASCUNHO").order_by(Minuta.id.desc()).limit(200)) if ok(m.caso_id)]
+    83→    revisao = [m for m in minutas if m.fase == "revisao"]
+    84→    bloqueadas = [m for m in revisao if (m.verificacao or {}).get("bloqueado")]
+    85→    com_erro = [m for m in minutas if (m.estado or {}).get("erro")]
+    86→    docs = [d for d in db.scalars(select(Documento).where(Documento.liberado_para_ia.is_(False))) if ok(d.caso_id)]
+    87→    incomp = db.scalars(select(LoteItem).where(LoteItem.status == "incompativel")).all()
+    88→    cartoes, acoes = [], []
+    89→    if intim:
+    90→        cartoes.append({"tipo": "lista", "titulo": "Prazos nos próximos 10 dias", "itens": [
+    91→            {"titulo": f"{_br(i.vencimento)} · {i.numero_processo or 'sem número'}", "texto": (i.texto or "")[:160],
+    92→             "meta": f"{(i.vencimento - hoje).days} dia(s) · prazo de {i.prazo_dias} dias",
+    93→             "nivel": "critico" if (i.vencimento - hoje).days <= 3 else "alerta"} for i in intim[:10]]})
+    94→    if alertas:
+    95→        cartoes.append({"tipo": "lista", "titulo": "Alertas", "itens": [
+    96→            {"titulo": a.tipo.replace("_", " "), "texto": a.mensagem, "nivel": a.nivel} for a in alertas[:8]]})
+    97→    pend = []
+    98→    if revisao:
+    99→        pend.append(f"{len(revisao)} minuta(s) aguardando sua revisão" + (f", {len(bloqueadas)} com bloqueio" if bloqueadas else ""))
+   100→    for m in com_erro[:3]:
+   101→        pend.append(f"Minuta #{m.id} parou na etapa {m.estado['erro'].get('fase')}")
+   102→        acoes.append({"rotulo": f"Retomar minuta #{m.id}", "acao": "retomar_minuta", "params": {"minuta_id": m.id}})
+   103→    if docs:
+   104→        pend.append(f"{len(docs)} documento(s) com suspeita de instrução oculta aguardando sua decisão")
+   105→    if incomp:
+   106→        pend.append(f"{len(incomp)} processo(s) de lote incompatíveis com o modelo")
+   107→    if pend:
+   108→        cartoes.append({"tipo": "resultado", "titulo": "Pendências", "linhas": pend})
+   109→    if not cartoes:
+   110→        prox = next((i for i in db.scalars(select(Intimacao).where(Intimacao.status == "pendente", Intimacao.vencimento > hoje)
+   111→                                            .order_by(Intimacao.vencimento)) if ok(i.caso_id)), None)
+   112→        extra = f" O próximo prazo cadastrado vence em {_br(prox.vencimento)} ({prox.numero_processo or 'sem número'})." if prox else ""
+   113→        return R("Nada urgente: nenhum prazo nos próximos 10 dias, nenhum alerta aberto e nenhuma minuta aguardando revisão." + extra,
+   114→                 opcoes=["Calcular um prazo", "Redigir uma peça", "Consultar um processo"])
+   115→    prox = f" O mais próximo vence em {_br(intim[0].vencimento)}." if intim else ""
+   116→    return R(f"{len(intim)} prazo(s) nos próximos 10 dias, {len(alertas)} alerta(s) aberto(s) e {len(revisao)} minuta(s) em revisão.{prox}",
+   117→             cartoes, acoes)
+   118→
+   119→
+   120→def _resultado_prazo(r, peca: str | None, base: str | None) -> dict:
+   121→    d = r.as_dict()
+   122→    return {"tipo": "resultado", "titulo": f"Prazo{(' para ' + peca) if peca else ''}", "destaque": f"Vence em {_br(d['vencimento'])}",
+   123→            "linhas": [f"{d['dias']} dias {'úteis' if d['contagem'] == 'uteis' else 'corridos'}" + (f" · {base}" if base else "")],
+   124→            "memoria": d["memoria"], "alertas": d["alertas"]}
+   125→
+   126→
+   127→def ex_prazo(db: Session, s: dict) -> dict | Falta:
+   128→    e, t = s["ent"], normalizar(s["texto"])
+   129→    if s.get("contagem") == "uteis_antes" or "Impugnação ao edital" in (s.get("peca"), e.get("tipo_peca")) or re.search(r"edital|licita|preg[aã]o", t):
+   130→        return ex_licitacao(db, {**s, "modo": "impugnacao"})
+   131→    dias = s.get("dias") or (e["dias"][0]["dias"] if e["dias"] else None)
+   132→    if not dias:
+   133→        return Falta("dias", "Qual o prazo, em dias?", ["5 dias úteis", "15 dias úteis", "10 dias úteis", "30 dias corridos"])
+   134→    data_ev = s.get("data") or (e["datas"][0] if e["datas"] else None)
+   135→    if not data_ev:
+   136→        return Falta("data", "Qual a data da disponibilização no diário ou da ciência?", ["Hoje", "Ontem"])
+   137→    contagem = s.get("contagem") or (e["dias"][0]["contagem"] if e["dias"] and e["dias"][0]["contagem"] else None)
+   138→    if not contagem:
+   139→        contagem = "corridos" if re.search(r"penal|criminal|cpp|corridos", t) else "uteis"
+   140→    termo = s.get("termo") or ("portal" if re.search(r"portal|sistema do tribunal|pje|eproc", t)
+   141→                               else "ciencia" if re.search(r"ci[eê]ncia|juntada|citad|autua", t) else "dje")
+   142→    r = calcular_prazo(date.fromisoformat(data_ev), int(dias), Termo(termo), Contagem(contagem), Calendario())
+   143→    acoes = []
+   144→    if s.get("caso_id") and s.get("peca"):
+   145→        acoes.append({"rotulo": f"Redigir {s['peca']}", "acao": "redigir", "params": {"tipo_peca": s["peca"], "caso_id": s["caso_id"]},
+   146→                      "estilo": "principal"})
+   147→    return R(f"Vence em {_br(r.vencimento)} ({dias} dias {'úteis' if contagem == 'uteis' else 'corridos'}, a partir de {_br(data_ev)}). "
+   148→             "Confira feriados locais e suspensões do tribunal.", [_resultado_prazo(r, s.get("peca"), s.get("base"))], acoes)
+   149→
+   150→
+   151→def ex_intimacao(db: Session, s: dict) -> dict | Falta:
+   152→    if not _pode_gravar():
+   153→        return R("Seu perfil é somente leitura: não registro intimações.")
+   154→    e = s["ent"]
+   155→    data_ev = s.get("data") or (e["datas"][0] if e["datas"] else None)
+   156→    if not data_ev:
+   157→        return Falta("data", "Qual a data de disponibilização desta intimação?", ["Hoje", "Ontem"])
+   158→    caso_id = s.get("caso_id") or _caso_de_texto(db, s["texto"])
+   159→    if caso_id:
+   160→        acesso.exigir_caso(db, caso_id, edicao=True)
+   161→    from ..servicos import intimacoes
+   162→    r = intimacoes.registrar(db, [{"numero_processo": (e["cnj"] or [None])[0], "data_disponibilizacao": data_ev,
+   163→                                   "texto": s["texto"], "caso_id": caso_id}], origem="assistente")
+   164→    if not r["novas"]:
+   165→        return R("Esta intimação já estava registrada.")
+   166→    it = db.get(Intimacao, r["novas"][0])
+   167→    tri = triagem.classificar(s["texto"])
+   168→    acoes = []
+   169→    if it.caso_id:
+   170→        peca = next((p["peca"] for p in triagem.providencias(tri["tipo"], tri["jec"])), None) or (e.get("tipo_peca"))
+   171→        if peca:
+   172→            acoes.append({"rotulo": f"Redigir {peca}", "acao": "redigir", "estilo": "principal",
+   173→                          "params": {"tipo_peca": peca, "caso_id": it.caso_id, "pedido": f"Responder à intimação de {_br(data_ev)}: {s['texto'][:600]}"}})
+   174→    if not it.prazo_dias:
+   175→        return R(f"Intimação #{it.id} registrada{' no caso #' + str(it.caso_id) if it.caso_id else ''}, mas o texto não traz o prazo em dias.",
+   176→                 opcoes=["5 dias", "15 dias", "10 dias"], acoes=acoes) | {"pendente": {"intencao": "_prazo_intimacao", "slots": {"intimacao_id": it.id}, "falta": "dias"}}
+   177→    card = {"tipo": "resultado", "titulo": f"Intimação #{it.id}", "destaque": f"Vence em {_br(it.vencimento)}",
+   178→            "linhas": [f"Prazo de {it.prazo_dias} dias extraído do texto", f"Caso: #{it.caso_id}" if it.caso_id else "Sem caso vinculado (número não encontrado nos casos)"],
+   179→            "memoria": it.memoria_prazo}
+   180→    return R(f"Registrei a intimação e calculei o prazo: vence em {_br(it.vencimento)}. Já aparece nos alertas e no resumo do dia.", [card], acoes)
+   181→
+   182→
+   183→def ex_prazo_intimacao(db: Session, s: dict) -> dict | Falta:
+   184→    e = s["ent"]
+   185→    dias = s.get("dias") or (e["dias"][0]["dias"] if e["dias"] else None)
+   186→    if not dias:
+   187→        return Falta("dias", "Quantos dias de prazo?", ["5 dias", "15 dias"])
+   188→    from ..servicos import intimacoes
+   189→    it = intimacoes.calcular(db, db.get(Intimacao, s["intimacao_id"]), int(dias))
+   190→    return R(f"Prazo calculado: vence em {_br(it.vencimento)}.", [{"tipo": "resultado", "titulo": f"Intimação #{it.id}",
+   191→             "destaque": f"Vence em {_br(it.vencimento)}", "memoria": it.memoria_prazo}])
+   192→
+   193→
+   194→def ex_redigir(db: Session, s: dict) -> dict | Falta:
+   195→    if not _pode_gravar():
+   196→        return R("Seu perfil é somente leitura: não inicio minutas.")
+   197→    tipo = s.get("tipo_peca") or s["ent"].get("tipo_peca")
+   198→    if not tipo:
+   199→        return Falta("tipo_peca", "Qual peça?", ["Petição inicial", "Contestação", "Réplica", "Apelação", "Manifestação"])
+   200→    caso_id = s.get("caso_id") or _caso_de_texto(db, s["texto"])
+   201→    if not caso_id and "sem_caso" not in s:
+   202→        casos = _casos_recentes(db)
+   203→        if casos:
+   204→            return Falta("caso", "Para qual caso? Os autos do caso dão as referências verificáveis.", casos + ["Sem caso"])
+   205→    if caso_id:
+   206→        acesso.exigir_caso(db, caso_id, edicao=True)
+   207→    from ..agente import pipeline
+   208→    from ..core.analise_instrucao import analisar
+   209→    pedido = s.get("pedido") or s["texto"]
+   210→    caso = db.get(Caso, caso_id) if caso_id else None
+   211→    an = analisar(tipo, pedido, tem_caso=bool(caso), data_fatos_informada=bool(caso and caso.data_fatos))
+   212→    perfil = db.scalars(select(PerfilEstilo).order_by(PerfilEstilo.id)).first()
+   213→    m = pipeline.iniciar(db, caso_id, tipo, pedido, perfil_estilo_id=perfil.id if perfil else None)
+   214→    return _resposta_minuta(m, an)
+   215→
+   216→
+   217→def _resposta_minuta(m: Minuta, analise: dict | None = None) -> dict:
+   218→    e = m.estado or {}
+   219→    cartoes = []
+   220→    if analise and not analise.get("ok"):
+   221→        cartoes.append({"tipo": "resultado", "titulo": "Pontos de atenção na instrução",
+   222→                        "alertas": (analise.get("contradicoes") or []) + (analise.get("conflitos_com_regras") or []) + (analise.get("omissoes") or [])[:4]})
+   223→    if m.fase == "perguntas":
+   224→        p = (e.get("perguntas") or [{}])[0]
+   225→        acoes = [{"rotulo": o, "acao": "responder_minuta", "params": {"minuta_id": m.id, "respostas": {p.get("id", "q1"): o}}}
+   226→                 for o in (p.get("opcoes") or ["Sim", "Não"])]
+   227→        return R(f"Minuta #{m.id} ({m.tipo_peca}) planejada. Antes do roteiro: {p.get('pergunta')}", cartoes, acoes) | {"minuta_id": m.id}
+   228→    if m.fase == "aprovar_roteiro":
+   229→        cartoes.append({"tipo": "resultado", "titulo": f"Roteiro da minuta #{m.id}",
+   230→                        "linhas": [f"{i + 1}. {x.get('titulo')}" for i, x in enumerate(e.get("roteiro") or [])]})
+   231→        return R("Confira o roteiro. Ao aprovar, pesquiso, redijo por seção e verifico cada citação.", cartoes,
+   232→                 [{"rotulo": "Aprovar roteiro e redigir", "acao": "aprovar_roteiro", "params": {"minuta_id": m.id}, "estilo": "principal"},
+   233→                  {"rotulo": "Ajustar no editor", "acao": "abrir_minuta", "params": {"minuta_id": m.id}}]) | {"minuta_id": m.id}
+   234→    if m.fase == "revisao":
+   235→        v = m.verificacao or {}
+   236→        probs = v.get("problemas") or []
+   237→        cartoes.append({"tipo": "resultado", "titulo": f"Minuta #{m.id} verificada",
+   238→                        "destaque": "Bloqueada: corrija antes de aprovar" if v.get("bloqueado") else "Sem bloqueio",
+   239→                        "linhas": [f"{len(v.get('citados', {}).get('juris', []))} precedente(s), {len(v.get('citados', {}).get('lei', []))} dispositivo(s) e "
+   240→                                   f"{len(v.get('citados', {}).get('autos', []))} referência(s) aos autos conferidos"],
+   241→                        "alertas": [p["mensagem"] for p in probs[:6]]})
+   242→        return R("Minuta pronta para sua revisão. Toda saída de IA é rascunho: aprove somente após ler.", cartoes,
+   243→                 [{"rotulo": "Revisar e aprovar", "acao": "abrir_minuta", "params": {"minuta_id": m.id}, "estilo": "principal"},
+   244→                  {"rotulo": "Baixar DOCX", "acao": "baixar_minuta", "params": {"minuta_id": m.id, "formato": "docx"}}]) | {"minuta_id": m.id}
+   245→    if e.get("erro"):
+   246→        return R(f"A minuta #{m.id} parou na etapa {e['erro'].get('fase')}: {e['erro'].get('mensagem')}", cartoes,
+   247→                 [{"rotulo": "Retomar", "acao": "retomar_minuta", "params": {"minuta_id": m.id}, "estilo": "principal"}]) | {"minuta_id": m.id}
+   248→    return R(f"Minuta #{m.id} na fase {m.fase}.", cartoes, [{"rotulo": "Abrir", "acao": "abrir_minuta", "params": {"minuta_id": m.id}}])
+   249→
+   250→
+   251→def ex_processo(db: Session, s: dict) -> dict | Falta:
+   252→    num = s.get("numero") or (s["ent"]["cnj"] or [None])[0]
+   253→    if not num:
+   254→        return Falta("numero", "Qual o número do processo (padrão CNJ)?")
+   255→    from ..integracoes import datajud
+   256→    try:
+   257→        achados = datajud.consultar_processo(num)
+   258→    except datajud.ErroDataJud as e:
+   259→        return R(f"DataJud indisponível agora: {e}")
+   260→    if not achados:
+   261→        return R(f"O processo {num} não foi encontrado no DataJud (pode estar sob sigilo ou ainda não indexado).")
+   262→    a = sorted(achados, key=lambda x: x.get("atualizado_em") or "")[-1]
+   263→    movs = [f"{_br((x.get('data') or '')[:10]) if x.get('data') else '-'} · {x.get('nome')}" for x in (a.get("ultimos_movimentos") or [])[-6:]][::-1]
+   264→    card = {"tipo": "resultado", "titulo": f"Processo {num}", "destaque": f"{a['tribunal']} · {(a.get('classe') or {}).get('nome', '')}",
+   265→            "linhas": [f"Órgão: {(a.get('orgao_julgador') or {}).get('nome', '-')}",
+   266→                       "Assuntos: " + ", ".join(x.get("nome", "") for x in a.get("assuntos") or []),
+   267→                       f"Ajuizamento: {_br(a.get('data_ajuizamento'))} · Sistema: {a.get('sistema') or '-'}"],
+   268→            "memoria": movs, "fonte": "DataJud (API pública do CNJ)"}
+   269→    caso_id = _caso_de_texto(db, num)
+   270→    acoes = []
+   271→    if caso_id:
+   272→        acoes.append({"rotulo": f"Atualizar caso #{caso_id} com estes dados", "acao": "enriquecer_caso", "params": {"caso_id": caso_id}})
+   273→    elif _pode_gravar():
+   274→        acoes.append({"rotulo": "Criar caso a partir deste processo", "acao": "criar_caso_processo", "params": {"numero": num}, "estilo": "principal"})
+   275→    return R(f"Encontrei o processo no {a['tribunal']}. Última atualização no DataJud: {_br((a.get('atualizado_em') or '')[:10])}.", [card], acoes)
+   276→
+   277→
+   278→def ex_lei(db: Session, s: dict) -> dict | Falta:
+   279→    ids = s["ent"]["dispositivos"]
+   280→    if not ids:
+   281→        return Falta("dispositivo", "Qual dispositivo? Ex.: art. 219 do CPC.")
+   282→    from ..integracoes import planalto
+   283→    from ..servicos import conhecimento
+   284→    cartoes, faltando = [], []
+   285→    for nid in ids[:4]:
+   286→        n = db.get(Norma, nid)
+   287→        if not n:
+   288→            faltando.append(nid)
+   289→            continue
+   290→        v = conhecimento.versao_vigente(n, date.today())
+   291→        al = ["Início de vigência desta redação não curado: confira a redação aplicável à data dos fatos (LINDB, art. 6º)."] \
+   292→            if v and v.vigencia_inicio is None else []
+   293→        cartoes.append({"tipo": "texto_legal", "titulo": n.rotulo, "texto": v.texto if v else "(sem redação vigente)",
+   294→                        "fonte": n.fonte_url, "alertas": al, "marcador": "{{lei:" + n.id + "}}"})
+   295→    acoes = []
+   296→    slugs = sorted({f.split("-")[0] for f in faltando if f.split("-")[0] in planalto.POR_SLUG})
+   297→    if slugs and acesso.atual().papel in ("admin", "advogado"):
+   298→        acoes.append({"rotulo": "Coletar do Planalto: " + ", ".join(planalto.POR_SLUG[x]["sigla"] for x in slugs),
+   299→                      "acao": "coletar_planalto", "params": {"slugs": slugs}, "estilo": "principal"})
+   300→    def rot(nid: str) -> str:
+   301→        slug, _, resto = nid.partition("-art-")
+   302→        d = planalto.POR_SLUG.get(slug)
+   303→        return f"{d['sigla'] if d else slug.upper()}, art. {resto.upper()}"
+   304→    texto = ("Texto oficial coletado do Planalto." if cartoes else "") + \
+   305→            (f" Ainda não tenho na base: {', '.join(rot(x) for x in faltando)}." if faltando else "")
+   306→    return R(texto.strip(), cartoes, acoes)
+   307→
+   308→
+   309→def ex_sumula(db: Session, s: dict) -> dict | Falta:
+   310→    sums = s["ent"]["sumulas"]
+   311→    if not sums:
+   312→        return ex_pesquisa(db, s)
+   313→    cartoes, faltam = [], []
+   314→    for x in sums[:3]:
+   315→        q = select(Precedente).where(Precedente.tipo.in_(["sumula", "sumula_vinculante", "sumula_tribunal"]), Precedente.numero == x["numero"])
+   316→        if x["tribunal"]:
+   317→            q = q.where(Precedente.tribunal == x["tribunal"])
+   318→        p = db.scalars(q).first()
+   319→        if not p:
+   320→            faltam.append(f"Súmula {x['numero']}{' do ' + x['tribunal'] if x['tribunal'] else ''}")
+   321→            continue
+   322→        cartoes.append({"tipo": "texto_legal", "titulo": p.rotulo, "texto": p.ementa, "fonte": p.fonte_url,
+   323→                        "alertas": [f"Status: {p.status}"] + ([] if p.verificado else ["Registro não conferido com a fonte oficial."]),
+   324→                        "marcador": "{{juris:" + p.id + "}}"})
+   325→    txt = "" if cartoes else "Não encontrei na base. "
+   326→    if faltam:
+   327→        txt += "Fora da base: " + ", ".join(faltam) + ". Importe a base pública do EJC ou cadastre com a fonte oficial."
+   328→    return R(txt.strip() or "Súmula encontrada na base.", cartoes)
+   329→
+   330→
+   331→def ex_pesquisa(db: Session, s: dict) -> dict:
+   332→    from ..servicos import conhecimento
+   333→    q = s["texto"]
+   334→    caso = db.get(Caso, s["caso_id"]) if s.get("caso_id") else None
+   335→    j = conhecimento.pesquisar_jurisprudencia(db, q, limite=5)["resultados"]
+   336→    l = conhecimento.pesquisar_legislacao(db, q, caso.data_fatos if caso else None, limite=4)["resultados"]
+   337→    d = conhecimento.pesquisar_fonte(db, "doutrina", q, limite=3)
+   338→    cartoes = []
+   339→    if j:
+   340→        cartoes.append({"tipo": "lista", "titulo": "Precedentes (ordem de autoridade, CPC, art. 927)", "itens": [
+   341→            {"titulo": x["rotulo"], "texto": (x.get("tese") or x["ementa"])[:400], "meta": f"{x.get('hierarquia') or x['tipo']} · {x['status']}",
+   342→             "marcador": x["marcador"], "link": x.get("fonte_url"), "nivel": "alerta" if x.get("alerta_status") else ""} for x in j]})
+   343→    if l:
+   344→        cartoes.append({"tipo": "lista", "titulo": "Legislação", "itens": [
+   345→            {"titulo": x["rotulo"], "texto": (x["texto_na_data_dos_fatos"] or "")[:400], "marcador": x["marcador"],
+   346→             "link": None, "meta": "; ".join(x["alertas"])} for x in l]})
+   347→    if d:
+   348→        cartoes.append({"tipo": "lista", "titulo": "Material de apoio", "itens": [
+   349→            {"titulo": x.get("titulo") or x["fonte_id"], "texto": x["trecho"][:300]} for x in d]})
+   350→    if not cartoes:
+   351→        return R("Não encontrei nada pertinente na base. A base só contém o que foi importado de fontes oficiais ou do EJC: "
+   352→                 "posso coletar legislação do Planalto ou você pode importar a base do EJC.",
+   353→                 acoes=[{"rotulo": "Ver fontes de conhecimento", "acao": "abrir_fontes", "params": {}}])
+   354→    return R("Resultados da base, com o marcador para citar na peça. A IA não redige ementas: o texto vem da base.", cartoes)
+   355→
+   356→
+   357→def ex_verificar(db: Session, s: dict) -> dict:
+   358→    from ..servicos import documentos
+   359→    caso = db.get(Caso, s["caso_id"]) if s.get("caso_id") else None
+   360→    res = documentos.resolver_citacoes(db, s["texto"], caso.data_fatos if caso else None)
+   361→    sv = salvaguardas.verificar(res.texto)
+   362→    alertas = [p.mensagem for p in res.problemas] + [f"Possível promessa de resultado: \"{x}\"" for x in sv["promessas"]] + \
+   363→              [f"\"{a['trecho']}\": prescrição e decadência resolvem o mérito (CPC, art. 487, II)" for a in sv["merito_prescricao"]] + sv["cdc"]
+   364→    card = {"tipo": "resultado", "titulo": "Verificação", "destaque": "Bloqueado" if res.bloqueado else "Sem bloqueio",
+   365→            "alertas": alertas[:12], "linhas": [f"{len(res.citados['juris'])} precedente(s), {len(res.citados['lei'])} dispositivo(s), "
+   366→                                                f"{len(res.citados['autos'])} referência(s) aos autos"]}
+   367→    return R("Verifiquei citações, vigência, trechos dos autos e riscos de redação.", [card])
+   368→
+   369→
+   370→CATALOGO_PRESCR = [(r"consum|fato do produto|fato do servi|acidente de consumo", "cdc_fato_do_produto"),
+   371→                   (r"trabalh|empregad|clt", "trabalhista"),
+   372→                   (r"fazenda|municipio|estado|uniao|autarquia", "fazenda_publica"),
+   373→                   (r"enriquecimento", "enriquecimento_sem_causa"),
+   374→                   (r"divida|cobran|nota promiss|cheque|contrato|instrumento", "divida_liquida_instrumento"),
+   375→                   (r"repara|indeniz|dano", "reparacao_civil")]
+   376→
+   377→
+   378→def ex_prescricao(db: Session, s: dict) -> dict | Falta:
+   379→    from ..core.prescricao import CATALOGO, calcular_prescricao
+   380→    t = normalizar(s["texto"] + " " + s.get("tipo_txt", ""))
+   381→    tipo = s.get("tipo") or next((k for rx, k in CATALOGO_PRESCR if re.search(rx, t)), None)
+   382→    if not tipo:
+   383→        return Falta("tipo_txt", "Qual pretensão?", [v["descricao"][:60] for v in CATALOGO.values()][:6])
+   384→    data_ini = s.get("data") or (s["ent"]["datas"][0] if s["ent"]["datas"] else None)
+   385→    if not data_ini:
+   386→        return Falta("data", f"Qual o termo inicial ({CATALOGO[tipo]['descricao'].lower()})? Informe a data.")
+   387→    r = calcular_prescricao(date.fromisoformat(data_ini), date.today(), tipo=tipo)
+   388→    d = r.as_dict()
+   389→    return R(("Prescrição CONSUMADA" if d["prescrito"] else "Prescrição não consumada") + f": termo final em {_br(d['termo_final'])}.",
+   390→             [{"tipo": "resultado", "titulo": CATALOGO[tipo]["descricao"], "destaque": f"Termo final {_br(d['termo_final'])}",
+   391→               "linhas": [CATALOGO[tipo]["base"]], "memoria": d["memoria"], "alertas": d["alertas"]}])
+   392→
+   393→
+   394→def ex_intercorrente(db: Session, s: dict) -> dict | Falta:
+   395→    from ..core.prescricao import calcular_intercorrente
+   396→    t = normalizar(s["texto"])
+   397→    rito = s.get("rito") or ("lef" if re.search(r"fiscal|lef|divida ativa|6\.?830", t) else None)
+   398→    if not rito:
+   399→        return Falta("rito_txt", "É execução fiscal (LEF) ou execução civil (CPC)?", ["Execução fiscal", "Execução civil"])
+   400→    data = s.get("data") or (s["ent"]["datas"][0] if s["ent"]["datas"] else None)
+   401→    if not data:
+   402→        return Falta("data", "Qual a data da ciência da primeira tentativa infrutífera de localizar o devedor ou bens?")
+   403→    anos, base = (5, "Lei 6.830/1980, art. 40, § 4º; STJ, Súmula 314") if rito == "lef" else (s.get("anos"), s.get("base"))
+   404→    if not anos:
+   405→        return Falta("anos", "Qual o prazo prescricional da pretensão executada, em anos?", ["3 anos", "5 anos", "10 anos"])
+   406→    r = calcular_intercorrente(rito, date.fromisoformat(data), date.today(), int(anos), base or "prazo da pretensão informado")
+   407→    d = r.as_dict()
+   408→    return R(("Intercorrente CONSUMADA" if d["prescrito"] else "Intercorrente não consumada") + f": termo final em {_br(d['termo_final'])}.",
+   409→             [{"tipo": "resultado", "titulo": "Prescrição intercorrente", "destaque": f"Termo final {_br(d['termo_final'])}",
+   410→               "memoria": d["memoria"], "alertas": d["alertas"]}])
+   411→
+   412→
+   413→def ex_valor_causa(db: Session, s: dict) -> dict | Falta:
+   414→    from ..core import valor_causa
+   415→    t = normalizar(s["texto"])
+   416→    pedidos = []
+   417→    for m in re.finditer(r"([a-z ]{0,40}?)r\$\s*([\d.]+(?:,\d{2})?)", t):
+   418→        ctx = m.group(1)
+   419→        v = m.group(2).replace(".", "").replace(",", ".")
+   420→        if re.search(r"alimento|pensao", ctx):
+   421→            pedidos.append({"tipo": "alimentos", "prestacao_mensal": v, "descricao": "Alimentos"})
+   422→        elif re.search(r"cobran|divida|debito|principal", ctx):
+   423→            pedidos.append({"tipo": "cobranca", "principal_corrigido": v, "descricao": "Cobrança"})
+   424→        else:
+   425→            pedidos.append({"tipo": "indenizacao", "valor": v, "descricao": "Danos morais" if "moral" in ctx else "Indenização"})
+   426→    if not pedidos:
+   427→        return Falta("valores", "Quais pedidos e valores? Ex.: danos morais de R$ 10.000,00 e cobrança de R$ 5.000,00.")
+   428→    rel = "alternativos" if "alternativ" in t else "subsidiarios" if "subsidiar" in t else "cumulados"
+   429→    r = valor_causa.calcular(pedidos, rel)
+   430→    return R(f"Valor da causa: R$ {r['valor_da_causa']}.", [{"tipo": "resultado", "titulo": "Valor da causa (CPC, art. 292)",
+   431→             "destaque": f"R$ {r['valor_da_causa']}", "memoria": r["memoria"], "alertas": r.get("alertas", [])}])
+   432→
+   433→
+   434→def ex_licitacao(db: Session, s: dict) -> dict | Falta:
+   435→    from ..core import licitacoes
+   436→    t = normalizar(s["texto"])
+   437→    modo = s.get("modo") or ("impugnacao" if re.search(r"impugn", t) else "recurso" if re.search(r"recurs", t)
+   438→                             else "habilitacao" if (re.search(r"habilita", t) and len(t) > 200) else None)
+   439→    if not modo:
+   440→        return Falta("modo_txt", "O que precisa na licitação?", ["Prazo de impugnação", "Prazo de recurso", "Matriz de habilitação"])
+   441→    data = s.get("data") or (s["ent"]["datas"][0] if s["ent"]["datas"] else None)
+   442→    if modo == "habilitacao":
+   443→        if not data:
+   444→            return Falta("data", "Qual a data da sessão?")
+   445→        r = licitacoes.matriz_habilitacao(s["texto"], [], date.fromisoformat(data))
+   446→        return R("Matriz de habilitação a partir do edital (Lei 14.133/2021, arts. 62 a 70).",
+   447→                 [{"tipo": "resultado", "titulo": "Habilitação", "linhas": [f"{x['requisito']}: {x['situacao']}" for x in r["linhas"]],
+   448→                   "alertas": [x["exigencia"] + ": " + x["orientacao"] for x in r.get("exigencias_sem_previsao_legal", [])]}])
+   449→    if not data:
+   450→        return Falta("data", "Qual a data de abertura do certame?" if modo == "impugnacao" else "Qual a data da intimação ou da lavratura da ata?")
+   451→    r = licitacoes.prazo_impugnacao(date.fromisoformat(data)) if modo == "impugnacao" else licitacoes.prazo_recurso(date.fromisoformat(data))
+   452→    chave = "limite_protocolo" if modo == "impugnacao" else next((k for k in r if k.startswith("vencimento") or k == "limite"), None)
+   453→    destaque = f"Limite: {_br(r.get(chave))}" if chave and r.get(chave) else ""
+   454→    return R(f"{'Impugnação' if modo == 'impugnacao' else 'Recurso'}: {destaque or 'veja a memória'}.",
+   455→             [{"tipo": "resultado", "titulo": "Licitação (Lei 14.133/2021)", "destaque": destaque, "memoria": r.get("memoria", []),
+   456→               "alertas": r.get("alertas", [])}])
+   457→
+   458→
+   459→def ex_contradicoes(db: Session, s: dict) -> dict | Falta:
+   460→    cid = s.get("caso_id") or _caso_de_texto(db, s["texto"])
+   461→    if not cid:
+   462→        return Falta("caso", "De qual caso?", _casos_recentes(db))
+   463→    acesso.exigir_caso(db, cid)
+   464→    from ..core.contradicoes import detectar
+   465→    from ..servicos import documentos
+   466→    r = detectar(documentos.paginas_do_caso(db, cid))
+   467→    if not r["contradicoes"]:
+   468→        return R("Não encontrei datas ou valores divergentes entre os documentos do caso.")
+   469→    return R(f"{len(r['contradicoes'])} possível(is) contradição(ões) entre documentos. São indícios para conferência.",
+   470→             [{"tipo": "lista", "titulo": "Contradições", "itens": [
+   471→                 {"titulo": c["rotulo"].replace("_", " "), "texto": " x ".join(c["valores"]), "nivel": "alerta",
+   472→                  "meta": "; ".join(f"{o['documento_nome']} p. {o['pagina']}{' (' + o['numeracao_autos'] + ')' if o['numeracao_autos'] else ''}" for o in c["ocorrencias"][:4])}
+   473→                 for c in r["contradicoes"]]}])
+   474→
+   475→
+   476→def ex_legislativo(db: Session, s: dict) -> dict | Falta:
+   477→    tema = s.get("tema") or re.sub(r"(?i)\b(h[aá]|existe[m]?|tem|algum|alguma|projetos?|de|lei|sobre|em|tramita\w*|no|na|congresso|"
+   478→                                   r"c[aâ]mara|senado|proposi\w*|pls?|quais|os|as|o|a)\b", " ", s["texto"]).strip(" ?.!")
+   479→    tema = " ".join(tema.split())
+   480→    if len(tema) < 4:
+   481→        return Falta("tema", "Sobre qual tema?")
+   482→    from ..integracoes import legislativo
+   483→    from ..servicos import legislacao
+   484→    try:
+   485→        r = legislacao.monitorar(db, tema)
+   486→    except legislativo.ErroLegislativo as e:
+   487→        return R(str(e))
+   488→    if not r["proposicoes"]:
+   489→        return R(f"Não encontrei proposições de {r['ano']} sobre \"{tema}\" na Câmara e no Senado." + (" Falhas: " + "; ".join(r["erros"]) if r["erros"] else ""))
+   490→    return R(f"{len(r['proposicoes'])} proposição(ões) de {r['ano']} sobre \"{tema}\"" + (" (correspondência parcial)" if r.get("correspondencia") == "parcial" else "") +
+   491→             ". Projetos não são lei vigente.",
+   492→             [{"tipo": "lista", "titulo": "Proposições", "itens": [
+   493→                 {"titulo": f"{x['sigla']} ({x['casa']})", "texto": x["ementa"][:300], "meta": _br(x["data_apresentacao"]), "link": x["link"]}
+   494→                 for x in r["proposicoes"][:10]]}])
+   495→
+   496→
+   497→def ex_jurimetria(db: Session, s: dict) -> dict | Falta:
+   498→    trib = s.get("tribunal") or (s["ent"]["tribunais"] or [None])[0]
+   499→    if not trib:
+   500→        return Falta("tribunal", "Em qual tribunal?", ["TJMG", "TRT3", "TRF6", "STJ"])
+   501→    tema = s.get("tema") or re.sub(r"(?i)\b(jurimetria|estat[ií]stic\w*|quantos processos|taxa de \w+|no|na|do|da|de|sobre|em)\b", " ", s["texto"])
+   502→    tema = " ".join(re.sub(r"(?i)\b" + re.escape(trib) + r"\b", " ", tema).split())
+   503→    from ..integracoes import datajud, tpu
+   504→    assunto = None
+   505→    if len(tema) >= 4:
+   506→        try:
+   507→            achados = tpu.pesquisar("assunto", tema, "nome")
+   508→            assunto = achados[0]["codigo"] if achados else None
+   509→        except tpu.ErroTPU:
+   510→            assunto = None
+   511→    try:
+   512→        r = datajud.jurimetria(trib.lower(), assunto=assunto)
+   513→    except datajud.ErroDataJud as e:
+   514→        return R(f"DataJud indisponível: {e}")
+   515→    linhas = [f"{x.get('orgao') or x.get('nome')}: {x.get('total') or x.get('processos')}" for x in (r.get("por_orgao") or [])[:8]]
+   516→    return R(f"{r.get('total')} processo(s) no {trib}" + (f" com assunto TPU {assunto}" if assunto else "") +
+   517→             ". Estatística descritiva: movimento de julgamento não equivale ao desfecho final.",
+   518→             [{"tipo": "resultado", "titulo": "Jurimetria descritiva (DataJud)", "linhas": linhas,
+   519→               "memoria": [f"{k}: {v}" for k, v in (r.get("desfechos") or r.get("movimentos") or {}).items()]}])
+   520→
+   521→
+   522→def ex_ajuda(db: Session, s: dict) -> dict:
+   523→    return R("Escreva o que precisa, do jeito que falaria com um colega. Exemplos:",
+   524→             [{"tipo": "lista", "titulo": "O que eu faço", "itens": [
+   525→                 {"titulo": v["descricao"]} for k, v in intencoes.INTENCOES.items() if k != "ajuda"]}],
+   526→             opcoes=["O que tenho para hoje?", "Prazo de 15 dias úteis a partir de hoje", "O que diz o art. 219 do CPC?",
+   527→                     "Redigir contestação", "Há projetos de lei sobre licitações?"])
+   528→
+   529→
+   530→EXECUTORES = {"briefing": ex_briefing, "prazo": ex_prazo, "intimacao": ex_intimacao, "_prazo_intimacao": ex_prazo_intimacao,
+   531→              "redigir": ex_redigir, "processo": ex_processo, "lei": ex_lei, "sumula": ex_sumula, "pesquisa": ex_pesquisa,
+   532→              "verificar": ex_verificar, "prescricao": ex_prescricao, "intercorrente": ex_intercorrente,
+   533→              "valor_causa": ex_valor_causa, "licitacao": ex_licitacao, "contradicoes": ex_contradicoes,
+   534→              "legislativo": ex_legislativo, "jurimetria": ex_jurimetria, "ajuda": ex_ajuda}
+   535→
+   536→
+   537→# ================================================================== preenchimento de dados faltantes
+   538→def _preencher(slot: str, texto: str, ent: dict, slots: dict, db: Session) -> bool:
+   539→    t = normalizar(texto)
+   540→    if slot == "data":
+   541→        if ent["datas"]:
+   542→            slots["data"] = ent["datas"][0]
+   543→            return True
+   544→    elif slot == "dias":
+   545→        if ent["dias"]:
+   546→            slots["dias"], slots["contagem"] = ent["dias"][0]["dias"], ent["dias"][0]["contagem"] or slots.get("contagem")
+   547→            return True
+   548→        m = re.match(r"^\s*(\d{1,3})\s*$", t)
+   549→        if m:
+   550→            slots["dias"] = int(m.group(1))
+   551→            return True
+   552→    elif slot == "caso":
+   553→        if "sem caso" in t:
+   554→            slots["sem_caso"] = True
+   555→            return True
+   556→        cid = _caso_de_texto(db, texto)
+   557→        if cid:
+   558→            slots["caso_id"] = cid
+   559→            return True
+   560→    elif slot == "tipo_peca":
+   561→        if ent.get("tipo_peca"):
+   562→            slots["tipo_peca"] = ent["tipo_peca"]
+   563→            return True
+   564→        slots["tipo_peca"] = texto.strip()[:80]
+   565→        return True
+   566→    elif slot == "numero":
+   567→        if ent["cnj"]:
+   568→            slots["numero"] = ent["cnj"][0]
+   569→            return True
+   570→    elif slot == "anos":
+   571→        m = re.search(r"(\d{1,2})", t)
+   572→        if m:
+   573→            slots["anos"] = int(m.group(1))
+   574→            return True
+   575→    elif slot == "rito_txt":
+   576→        slots["rito"] = "lef" if "fiscal" in t else "cpc"
+   577→        return True
+   578→    elif slot == "modo_txt":
+   579→        slots["modo"] = "impugnacao" if "impugn" in t else "recurso" if "recurs" in t else "habilitacao"
+   580→        return True
+   581→    elif slot in ("tipo_txt", "tema", "valores", "dispositivo", "tribunal"):
+   582→        slots[slot] = texto.strip()
+   583→        if slot == "tribunal":
+   584→            slots["tribunal"] = (ent["tribunais"] or [texto.strip().upper()])[0]
+   585→        return True
+   586→    return False
+   587→
+   588→
+   589→def _classificar_ia(texto: str) -> str | None:
+   590→    """Desempate por IA, só com provedor real. Saída restrita às intenções conhecidas."""
+   591→    cfg = get_config()
+   592→    if cfg.llm_provider == "mock":
+   593→        return None
+   594→    try:
+   595→        from ..llm.provedores import construir, extrair_json
+   596→        lista = "; ".join(f"{k}: {v['descricao']}" for k, v in intencoes.INTENCOES.items())
+   597→        tk = salvaguardas.novo_token()
+   598→        r = construir().gerar("classificar_intencao", "Classifique o pedido do advogado em UMA das intenções. Responda só JSON "
+   599→                              '{"intencao": str}. Intenções: ' + lista + salvaguardas.INSTRUCAO_SISTEMA,
+   600→                              salvaguardas.bloco("PEDIDO", texto, tk, 2000), {}, max_tokens=60)
+   601→        nome = extrair_json(r.texto).get("intencao")
+   602→        return nome if nome in intencoes.INTENCOES else None
+   603→    except Exception:  # noqa: BLE001
+   604→        return None
+   605→
+   606→
+   607→# ================================================================== orquestração
+   608→def conversa(db: Session, conversa_id: int | None, caso_id: int | None = None) -> Conversa:
+   609→    ctx = acesso.atual()
+   610→    if conversa_id:
+   611→        c = db.get(Conversa, conversa_id)
+   612→        if not c or (c.usuario_id != ctx.id and not ctx.admin) or (c.usuario_id is None and ctx.id is not None and not ctx.admin):
+   613→            raise acesso.SemPermissao("Conversa inexistente ou sem acesso.")
+   614→        if caso_id is not None:
+   615→            c.caso_id = caso_id or None
+   616→        return c
+   617→    c = Conversa(usuario=ctx.nome, usuario_id=ctx.id, caso_id=caso_id or None, estado={})
+   618→    db.add(c)
+   619→    db.commit()
+   620→    return c
+   621→
+   622→
+   623→def _registrar(db: Session, c: Conversa, papel: str, texto: str, dados: dict | None = None) -> None:
+   624→    db.add(MensagemAssistente(conversa_id=c.id, papel=papel, texto=texto, dados=dados or {}))
+   625→    db.commit()
+   626→
+   627→
+   628→def _executar(db: Session, c: Conversa, nome: str, slots: dict, texto: str, ent: dict) -> dict:
+   629→    s = {**slots, "texto": slots.get("texto_original") or texto, "ent": ent, "caso_id": slots.get("caso_id") or c.caso_id}
+   630→    try:
+   631→        r = EXECUTORES[nome](db, s)
+   632→    except acesso.SemPermissao as e:
+   633→        r = R(str(e))
+   634→    except ValueError as e:
+   635→        r = R(f"Não consegui concluir: {e}")
+   636→    if isinstance(r, Falta):
+   637→        est = dict(c.estado or {})
+   638→        est["pendente"] = {"intencao": nome, "slots": {**slots, "texto_original": s["texto"]}, "falta": r.slot}
+   639→        c.estado = est
+   640→        db.commit()
+   641→        return R(r.pergunta, opcoes=r.opcoes) | {"intencao": nome, "aguardando": r.slot}
+   642→    est = dict(c.estado or {})
+   643→    est.pop("pendente", None)
+   644→    if r.get("pendente"):
+   645→        est["pendente"] = r.pop("pendente")
+   646→    c.estado = est
+   647→    db.commit()
+   648→    return r | {"intencao": nome}
+   649→
+   650→
+   651→def processar(db: Session, conversa_id: int | None, texto: str, caso_id: int | None = None) -> dict:
+   652→    texto = (texto or "").strip()
+   653→    if caso_id:
+   654→        acesso.exigir_caso(db, caso_id)
+   655→    c = conversa(db, conversa_id, caso_id)
+   656→    _registrar(db, c, "usuario", texto)
+   657→    ent = ent_mod.extrair(texto)
+   658→    cls = intencoes.classificar(texto, ent)
+   659→    pend = (c.estado or {}).get("pendente")
+   660→    if pend:
+   661→        slots = dict(pend["slots"])
+   662→        novo_forte = cls["intencao"] and cls["intencao"] != pend["intencao"] and cls["confianca"] >= 0.75 and len(texto) > 25
+   663→        if not novo_forte and _preencher(pend["falta"], texto, ent, slots, db):
+   664→            ent_orig = ent_mod.extrair(slots.get("texto_original", ""))
+   665→            for k in ("datas", "dias"):
+   666→                if not ent_orig[k] and ent[k]:
+   667→                    ent_orig[k] = ent[k]
+   668→            r = _executar(db, c, pend["intencao"], slots, texto, ent_orig)
+   669→            r["conversa_id"] = c.id
+   670→            _registrar(db, c, "assistente", r["texto"], r)
+   671→            return r
+   672→    nome = cls["intencao"]
+   673→    if not nome or cls["confianca"] < 0.5:
+   674→        nome = _classificar_ia(texto) or nome
+   675→    if not nome:
+   676→        if len(texto) > 400:
+   677→            r = analisar_texto(db, c, texto)
+   678→        else:
+   679→            r = R("Não entendi o que precisa. Escolha um caminho ou reescreva com mais detalhe.",
+   680→                  opcoes=["Calcular um prazo", "Redigir uma peça", "Pesquisar jurisprudência", "O que tenho para hoje?"])
+   681→    else:
+   682→        r = _executar(db, c, nome, {"caso_id": c.caso_id}, texto, ent)
+   683→        r["confianca"] = cls["confianca"]
+   684→    r["conversa_id"] = c.id
+   685→    _registrar(db, c, "assistente", r["texto"], r)
+   686→    auditoria.registrar(db, "assistente:mensagem", f"conversa:{c.id}", {"intencao": r.get("intencao"), "confianca": cls["confianca"]})
+   687→    return r
+   688→
+   689→
+   690→def analisar_texto(db: Session, c: Conversa, texto: str, caso_id: int | None = None, nome: str = "texto colado") -> dict:
+   691→    """Triagem de um documento ou texto longo: tipo de ato, dados extraídos e providência com prazo."""
+   692→    ent = ent_mod.extrair(texto)
+   693→    tri = triagem.classificar(texto)
+   694→    provs = triagem.providencias(tri["tipo"], tri["jec"])
+   695→    linhas = [f"Tipo identificado: {tri['rotulo']} (confiança {tri['confianca']})" + (" · rito do juizado especial" if tri["jec"] else "")]
+   696→    if ent["cnj"]:
+   697→        linhas.append("Processo: " + ", ".join(ent["cnj"]))
+   698→    if ent["datas"]:
+   699→        linhas.append("Datas no documento: " + ", ".join(_br(d) for d in ent["datas"][:5]))
+   700→    if ent["valores"]:
+   701→        linhas.append("Valores: " + ", ".join(f"R$ {v}" for v in ent["valores"][:5]))
+   702→    cid = caso_id or c.caso_id or _caso_de_texto(db, texto)
+   703→    acoes = []
+   704→    for p in provs:
+   705→        params = {"peca": p["peca"], "dias": p["dias"], "contagem": p["contagem"], "base": p["base"], "caso_id": cid}
+   706→        if p["dias"]:
+   707→            acoes.append({"rotulo": f"Prazo de {p['peca'].lower()} ({p['dias']} dias)", "acao": "prazo_sugerido", "params": params,
+   708→                          "estilo": "principal" if p is provs[0] else ""})
+   709→        if cid:
+   710→            acoes.append({"rotulo": f"Redigir {p['peca'].lower()}", "acao": "redigir",
+   711→                          "params": {"tipo_peca": p["peca"], "caso_id": cid, "pedido": f"{p['peca']} em face de {tri['rotulo'].lower()}: {texto[:800]}"}})
+   712→    if tri["tipo"].startswith("intimacao") and _pode_gravar():
+   713→        acoes.append({"rotulo": "Registrar como intimação", "acao": "registrar_intimacao", "params": {"texto": texto[:20000], "caso_id": cid}})
+   714→    if ent["cnj"]:
+   715→        acoes.append({"rotulo": "Consultar processo no DataJud", "acao": "mensagem", "params": {"texto": f"Consultar processo {ent['cnj'][0]}"}})
+   716→    card = {"tipo": "resultado", "titulo": f"Triagem: {nome}", "destaque": tri["rotulo"], "linhas": linhas,
+   717→            "alertas": [f"{p['peca']}: {p['dias'] or 'prazo conforme rito'} dias {('úteis' if p['contagem'] == 'uteis' else 'corridos') if p['dias'] else ''} · {p['base']}. {p['nota']}".strip()
+   718→                        for p in provs] + ["Sugestão inicial: confira termo inicial, prazo em dobro (CPC, arts. 180, 183, 186 e 229) e cabimento."]}
+   719→    return R(f"Identifiquei {tri['rotulo'].lower()}." + (f" Providência provável: {provs[0]['peca'].lower()}." if provs else ""), [card], acoes) | {"intencao": "triagem"}
+   720→
+   721→
+   722→def acao(db: Session, conversa_id: int | None, nome: str, params: dict) -> dict:
+   723→    """Ações estruturadas disparadas por botões (sem interpretação de texto)."""
+   724→    c = conversa(db, conversa_id)
+   725→    from ..agente import pipeline
+   726→    try:
+   727→        if nome == "mensagem":
+   728→            return processar(db, c.id, params.get("texto", ""))
+   729→        if nome in ("responder_minuta", "aprovar_roteiro", "retomar_minuta"):
+   730→            m = db.get(Minuta, int(params["minuta_id"]))
+   731→            if not m:
+   732→                raise ValueError("Minuta inexistente.")
+   733→            acesso.exigir_caso(db, m.caso_id, edicao=True)
+   734→            m = (pipeline.responder(db, m.id, params.get("respostas") or {}) if nome == "responder_minuta"
+   735→                 else pipeline.aprovar_roteiro(db, m.id) if nome == "aprovar_roteiro" else pipeline.retomar(db, m.id))
+   736→            r = _resposta_minuta(m)
+   737→        elif nome == "redigir":
+   738→            slots = {"tipo_peca": params.get("tipo_peca"), "caso_id": params.get("caso_id"), "pedido": params.get("pedido")}
+   739→            if not params.get("caso_id"):
+   740→                slots["sem_caso"] = True
+   741→            r = _executar(db, c, "redigir", slots, params.get("pedido") or params.get("tipo_peca", ""), ent_mod.extrair(""))
+   742→        elif nome == "criar_caso_documento":
+   743→            if not _pode_gravar():
+   744→                raise acesso.SemPermissao("Perfil de leitura não cria casos.")
+   745→            from pathlib import Path
+   746→            from ..servicos import documentos
+   747→            tmp = Path(get_config().arquivos_dir) / "tmp" / f"{params['sha']}.bin"
+   748→            if not tmp.exists():
+   749→                raise ValueError("Arquivo temporário expirado: envie o documento de novo.")
+   750→            caso = Caso(titulo=params.get("titulo") or f"Caso de {params.get('nome')}", numero_processo=params.get("numero"),
+   751→                        dono_id=acesso.atual().id)
+   752→            db.add(caso)
+   753→            db.commit()
+   754→            doc, _ = documentos.ingerir_documento(db, caso.id, params.get("nome") or "documento", tmp.read_bytes(), usuario=acesso.atual().nome)
+   755→            tmp.unlink(missing_ok=True)
+   756→            c.caso_id = caso.id
+   757→            db.commit()
+   758→            auditoria.registrar(db, "caso:criar", f"caso:{caso.id}", {"origem": "assistente", "documento": doc.id})
+   759→            r = R(f"Caso #{caso.id} criado com o documento anexado e selecionado nesta conversa.") | {"caso_id": caso.id}
+   760→        elif nome == "prazo_sugerido":
+   761→            slots = {k: params.get(k) for k in ("dias", "contagem", "base", "peca", "caso_id")}
+   762→            if params.get("contagem") == "uteis_antes":
+   763→                slots["modo"] = "impugnacao"
+   764→                r = _executar(db, c, "licitacao", slots, "impugnação ao edital", ent_mod.extrair(""))
+   765→            else:
+   766→                slots["termo"] = "ciencia"
+   767→                r = _executar(db, c, "prazo", slots, f"prazo de {params.get('dias')} dias", ent_mod.extrair(""))
+   768→        elif nome == "registrar_intimacao":
+   769→            r = _executar(db, c, "intimacao", {"caso_id": params.get("caso_id")}, params.get("texto", ""), ent_mod.extrair(params.get("texto", "")))
+   770→        elif nome == "criar_caso_processo":
+   771→            if not _pode_gravar():
+   772→                raise acesso.SemPermissao("Perfil de leitura não cria casos.")
+   773→            from ..integracoes import datajud
+   774→            a = sorted(datajud.consultar_processo(params["numero"]), key=lambda x: x.get("atualizado_em") or "")[-1]
+   775→            caso = Caso(titulo=f"Processo {params['numero']} ({(a.get('classe') or {}).get('nome', '')})", numero_processo=params["numero"],
+   776→                        tribunal=a["tribunal"], classe_tpu=a.get("classe"), assuntos_tpu=a.get("assuntos") or [],
+   777→                        orgao_julgador=(a.get("orgao_julgador") or {}).get("nome"), metadados_datajud=a, dono_id=acesso.atual().id)
+   778→            db.add(caso)
+   779→            db.commit()
+   780→            c.caso_id = caso.id
+   781→            db.commit()
+   782→            auditoria.registrar(db, "caso:criar", f"caso:{caso.id}", {"origem": "datajud"})
+   783→            r = R(f"Caso #{caso.id} criado com os dados do DataJud e selecionado nesta conversa. Envie os autos para eu analisar.") | {"caso_id": caso.id}
+   784→        elif nome == "enriquecer_caso":
+   785→            acesso.exigir_caso(db, int(params["caso_id"]), edicao=True)
+   786→            from ..integracoes import datajud
+   787→            caso = db.get(Caso, int(params["caso_id"]))
+   788→            a = sorted(datajud.consultar_processo(caso.numero_processo), key=lambda x: x.get("atualizado_em") or "")[-1]
+   789→            caso.tribunal, caso.classe_tpu, caso.assuntos_tpu = a["tribunal"], a.get("classe"), a.get("assuntos") or []
+   790→            caso.orgao_julgador, caso.metadados_datajud = (a.get("orgao_julgador") or {}).get("nome"), a
+   791→            db.commit()
+   792→            r = R(f"Caso #{caso.id} atualizado com classe, assuntos e órgão julgador do DataJud.")
+   793→        elif nome == "coletar_planalto":
+   794→            if acesso.atual().papel not in ("admin", "advogado"):
+   795→                raise acesso.SemPermissao("Somente advogado ou administrador altera a base.")
+   796→            from ..servicos import legislacao
+   797→            res = legislacao.importar_planalto(db, params.get("slugs") or [])
+   798→            ok = [f"{x['slug']}: {x.get('artigos')} artigos" for x in res["diplomas"] if x["status"] in ("ok", "inalterado")]
+   799→            r = R("Coleta concluída: " + "; ".join(ok) + (". Erros: " + "; ".join(x["erro"] for x in res["erros"]) if res["erros"] else "."),
+   800→                  opcoes=["Repita a última pergunta"])
+   801→        elif nome in ("abrir_minuta", "baixar_minuta", "abrir_fontes"):
+   802→            r = R("Esta ação abre uma tela da interface.")
+   803→        else:
+   804→            raise ValueError(f"Ação desconhecida: {nome}")
+   805→    except acesso.SemPermissao as e:
+   806→        r = R(str(e))
+   807→    except (ValueError, pipeline.ErroFluxo) as e:
+   808→        r = R(f"Não consegui concluir: {e}")
+   809→    except Exception as e:  # noqa: BLE001
+   810→        r = R(f"Falha ao executar: {str(e)[:300]}")
+   811→    r["conversa_id"] = c.id
+   812→    _registrar(db, c, "assistente", r["texto"], r)
+   813→    return r
+   814→

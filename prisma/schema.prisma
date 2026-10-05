@@ -13,6 +13,8 @@ model User {
   id        String   @id @default(cuid())
   email     String   @unique
   name      String?
+  oabNumero String?  // número de inscrição na OAB (somente dígitos, ex: "123456")
+  oabEstado String?  // UF da inscrição (ex: "SP", "RJ", "MG")
   plan      String   @default("free") // free | individual_1 | individual_2 | individual_3 | enterprise
   minutasUsed     Int      @default(0)
   minutasLimit    Int      @default(3)
@@ -20,6 +22,9 @@ model User {
   updatedAt DateTime @updatedAt
   documents Document[]
   clients   Client[]
+
+  @@unique([oabEstado, oabNumero])
+  @@index([oabEstado, oabNumero])
 }
 
 // Clientes do escritório (uso pessoal, não SaaS)

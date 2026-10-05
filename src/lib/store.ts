@@ -23,14 +23,25 @@ interface AppState {
   view: View;
   setView: (v: View) => void;
   appTab:
+    | "assistente"
     | "dashboard"
     | "casos"
     | "clients"
     | "documents"
+    | "prazos"
+    | "audiencias"
+    | "financeiro"
+    | "produtividade"
+    | "calculadora"
     | "cerebro"
     | "intelligence"
+    | "pipeline"
     | "generator"
     | "editor"
+    | "homologacao"
+    | "visuallaw"
+    | "datajud"
+    | "grafo"
     | "settings";
   setAppTab: (t: AppState["appTab"]) => void;
   currentDocId: string | null;

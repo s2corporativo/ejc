@@ -11,8 +11,15 @@ import {
   Users,
   Network,
   Briefcase,
-  Calendar,
+  CalendarClock,
+  Gavel,
+  Wallet,
+  Calculator,
+  BarChart3,
+  GitBranch,
+  ClipboardCheck,
   Search,
+  Sparkles,
   Shield,
   ArrowRight,
 } from "lucide-react";
@@ -27,26 +34,45 @@ import { ClientsCases } from "./clients-cases";
 import { Cerebro } from "./cerebro";
 import { Inteligencia } from "./inteligencia";
 import { Casos } from "./casos";
+import { Assistente } from "./assistente";
+import { CalculadoraJuridica } from "./calculadora-juridica";
+import { Prazos } from "./prazos";
+import { Audiencias } from "./audiencias";
+import { Financeiro } from "./financeiro";
+import { Produtividade } from "./produtividade";
+import { Pipeline } from "./pipeline";
+import { Homologacao } from "./homologacao";
+import { VisualLaw } from "./visual-law";
+import { DataJudBusca } from "./datajud-busca";
+import { GrafoSistema } from "./grafo-sistema";
 
 // ── Duas zonas: ERP (operacional) + IA (cognitivo) ─────────────────────────
-// ERP é dono dos dados operacionais: Cliente, Caso, Processo, Documento, Prazo.
-// IA é dona dos dados cognitivos: Evidence, Fact, Assertion, Graph, Issue, Thesis.
+// ERP é dono dos dados operacionais: Cliente, Caso, Processo, Documento, Prazo, Audiência, Financeiro, Produtividade, Calculadora.
+// IA é dona dos dados cognitivos: Evidence, Fact, Assertion, Graph, Issue, Thesis, Pipeline, Homologação, Visual Law, DataJud, Grafo.
 
 const ERP_TABS = [
+  { id: "assistente" as const, label: "Assistente", icon: Sparkles, key: "s" },
   { id: "dashboard" as const, label: "Início", icon: LayoutDashboard, key: "1" },
   { id: "casos" as const, label: "Casos", icon: Briefcase, key: "k" },
   { id: "clients" as const, label: "Clientes", icon: Users, key: "c" },
   { id: "documents" as const, label: "Documentos", icon: FolderOpen, key: "d" },
+  { id: "prazos" as const, label: "Prazos", icon: CalendarClock, key: "z" },
+  { id: "audiencias" as const, label: "Audiências", icon: Gavel, key: "a" },
+  { id: "financeiro" as const, label: "Financeiro", icon: Wallet, key: "f" },
+  { id: "calculadora" as const, label: "Calculadora", icon: Calculator, key: "l" },
+  { id: "produtividade" as const, label: "Produtividade", icon: BarChart3, key: "t" },
 ];
 
 const IA_TABS = [
   { id: "cerebro" as const, label: "1. Entrada", icon: Brain, key: "e" },
   { id: "intelligence" as const, label: "2. Inteligência", icon: Network, key: "i" },
-  // 3. Legal Brain = Cérebro etapa 5-8 (já integrado no Cérebro)
-  // 4. Pesquisa = JurisprudênciaIA + LegalSource (acessível via Cérebro)
+  { id: "pipeline" as const, label: "3. Pipeline", icon: GitBranch, key: "p" },
   { id: "generator" as const, label: "5. Produção", icon: Wand2, key: "g" },
   { id: "editor" as const, label: "Editor", icon: FileText, key: "m" },
-  // 6. Governança = Settings (AI Gateway, AgentRuns, Audit, HITL)
+  { id: "homologacao" as const, label: "Homologação", icon: ClipboardCheck, key: "h" },
+  { id: "visuallaw" as const, label: "Visual Law", icon: BarChart3, key: "v" },
+  { id: "datajud" as const, label: "DataJud", icon: Search, key: "j" },
+  { id: "grafo" as const, label: "Grafo", icon: Network, key: "n" },
   { id: "settings" as const, label: "6. Governança", icon: Shield, key: "," },
 ];
 
@@ -113,15 +139,26 @@ export function AppShell() {
 
       <div>
         {/* ERP */}
+        {appTab === "assistente" && <Assistente />}
         {appTab === "dashboard" && <Dashboard />}
         {appTab === "casos" && <Casos />}
         {appTab === "clients" && <ClientsCases />}
         {appTab === "documents" && <DocumentsList />}
+        {appTab === "prazos" && <Prazos />}
+        {appTab === "audiencias" && <Audiencias />}
+        {appTab === "financeiro" && <Financeiro />}
+        {appTab === "calculadora" && <CalculadoraJuridica />}
+        {appTab === "produtividade" && <Produtividade />}
         {/* IA */}
         {appTab === "cerebro" && <Cerebro />}
         {appTab === "intelligence" && <Inteligencia />}
+        {appTab === "pipeline" && <Pipeline />}
         {appTab === "generator" && <Generator />}
         {appTab === "editor" && <Editor />}
+        {appTab === "homologacao" && <Homologacao />}
+        {appTab === "visuallaw" && <VisualLaw />}
+        {appTab === "datajud" && <DataJudBusca />}
+        {appTab === "grafo" && <GrafoSistema />}
         {appTab === "settings" && <Settings />}
       </div>
     </div>
