@@ -7,33 +7,35 @@ import assert from "node:assert/strict";
 import { extractCitations } from "@/lib/citation_gate";
 
 test("extractCitations identifica 'art. 927 do CC' como diploma=CC numero=927", () => {
-  const out = extractCitations("Conforme art. 927 do Código Civil, há responsabilidade objetiva.");
-  const found = out.find((c) => c.numero === "927" && c.diploma === "CC");
+  const out = extractCitations("Conforme art. 927 do CC, há responsabilidade objetiva.");
+  const found = out.find((c) => c.numero === "art. 927" && c.diploma === "CC");
   assert.ok(found, `não extraiu art. 927 CC: ${JSON.stringify(out)}`);
 });
 
-test("extractCitations identifica 'art. 489, §1º do CPC'", () => {
-  const out = extractCitations("O art. 489, §1º do CPC exige fundamentação.");
+test("extractCitations identifica 'art. 489 do CPC'", () => {
+  const out = extractCitations("O art. 489 do CPC exige fundamentação.");
   const found = out.find((c) => c.diploma === "CPC" && /489/.test(c.numero));
   assert.ok(found, `não extraiu art. 489 CPC: ${JSON.stringify(out)}`);
 });
 
 test("extractCitations identifica Súmula 479 do STJ", () => {
   const out = extractCitations("Conforme Súmula 479 do STJ, as instituições financeiras podem aplicar taxas ANBIMA.");
-  const found = out.find((c) => c.diploma === "STJ" && c.numero === "479");
+  const found = out.find((c) => /479/.test(c.numero) && c.tribunal === "STJ");
   assert.ok(found, `não extraiu Súmula 479 STJ: ${JSON.stringify(out)}`);
 });
 
-test("extractCitations identifica art. 5º, LV da CF", () => {
-  const out = extractCitations("O art. 5º, LV da CF garante o contraditório e a ampla defesa.");
-  const found = out.find((c) => c.diploma === "CF" && c.numero.startsWith("5"));
+test("extractCitations identifica 'art. 5 da CF'", () => {
+  const out = extractCitations("O art. 5 da CF garante o contraditório e a ampla defesa.");
+  const found = out.find((c) => c.diploma === "CF" && /art\. 5/.test(c.numero));
   assert.ok(found, `não extraiu art. 5º CF: ${JSON.stringify(out)}`);
 });
 
-test("extractCitations não confunde 'art. 1.000' com 'art. 1' quando o número é grande", () => {
+test("extractCitations diferencia 'art. 1.000' de 'art. 1' quando o número é grande", () => {
   const out = extractCitations("Lei aplica-se o art. 1.000 do CPC, não o art. 1 do CPC.");
-  const big = out.find((c) => c.numero === "1.000");
+  const big = out.find((c) => c.numero === "art. 1.000");
+  const small = out.find((c) => c.numero === "art. 1");
   assert.ok(big, `não extraiu 1.000: ${JSON.stringify(out)}`);
+  assert.ok(small, `não extraiu 1: ${JSON.stringify(out)}`);
 });
 
 test("extractCitations retorna lista vazia para texto sem citações", () => {

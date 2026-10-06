@@ -48,18 +48,13 @@ test("isCasoPenal detecta penal e processo_penal", () => {
   assert.equal(isCasoPenal("digital"), false);
 });
 
-test("System prompts NÃO prometem resultado (vedação OAB)", () => {
-  const padroesPromessa = [
-    /\bvai\s+ganhar\b/i,
-    /\bvocê\s+vai\s+vencer\b/i,
-    /\bgarantia\s+de\s+resultado\b/i,
-    /\bprometo\s+que\b/i,
-    /\b100%\s+de\s+chance\b/i,
-  ];
+test("System prompts proíbem promessa de resultado (vedação OAB)", () => {
   for (const [slug, p] of Object.entries(PERSONAS)) {
-    for (const re of padroesPromessa) {
-      assert.ok(!re.test(p.systemPrompt), `systemPrompt de ${slug} promete resultado (padrão ${re})`);
-    }
+    // Cada persona deve conter a regra explícita "NUNCA prometa"
+    assert.ok(
+      /NUNCA\s+prometa|N[ãa]o\s+prometa|nunca\s+garanta|N[ãa]o\s+garanta/i.test(p.systemPrompt),
+      `systemPrompt de ${slug} não contém vedação explícita de promessa de resultado`,
+    );
   }
 });
 

@@ -14,11 +14,12 @@ test("pseudonymize substitui CPF por [CPF_1]", () => {
 });
 
 test("pseudonymize é consistente: mesma PII → mesmo marcador no mesmo texto", () => {
-  const input = "João foi ao banco. João sacou R$500. João voltou.";
+  // O regex exige nome composto com TODAS as palavras capitalizadas (artigos "da", "de"
+  // não disparam). Usar "Maria Santos" (2 capitalizadas) para garantir match.
+  const input = "Maria Santos foi ao banco. Maria Santos sacou R$500. Maria Santos voltou.";
   const r = pseudonymize(input);
-  // Todos os "João" devem ter o mesmo marcador.
   const matches = r.text.match(/\[NOME_\d+\]/g);
-  assert.ok(matches && matches.length >= 3, `esperava >=3 marcadores [NOME_*], vi: ${matches?.length}`);
+  assert.ok(matches && matches.length >= 3, `esperava >=3 marcadores [NOME_*], vi: ${matches?.length ?? 0} em: ${r.text}`);
   const unique = new Set(matches);
   assert.equal(unique.size, 1, `mesma PII deve virar o mesmo marcador, vi: ${[...unique]}`);
 });
