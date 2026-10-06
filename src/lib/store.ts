@@ -30,6 +30,7 @@ interface AppState {
     | "cerebro"
     | "intelligence"
     | "tribunal"
+    | "wizard"
     | "pipeline"
     | "generator"
     | "editor"

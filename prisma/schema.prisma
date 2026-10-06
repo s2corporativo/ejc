@@ -648,3 +648,41 @@ model DebateTurn {
   @@index([debateId])
   @@index([persona])
 }
+
+// ── CASE MEMORY (memória de longo prazo por caso) ───────────────────────────
+// Permite que o usuário retome um caso dias/semanas depois com contexto
+// preservado (teses, decisões, resumo). Não é log de auditoria — é
+// memória de trabalho.
+model CaseMemory {
+  caseId         String   @id
+  resumo         String   // resumo do caso (~200 tokens)
+  teses          String   @default("[]") // JSON array de teses discutidas
+  decisoes       String   @default("{}") // JSON com decisões (área, valor, pedidos, etc)
+  totalGeracoes  Int      @default(0)
+  ultimoAcesso   DateTime @default(now()) @updatedAt
+  createdAt      DateTime @default(now())
+
+  @@index([ultimoAcesso])
+}
+
+// ── PEÇA HISTORY (histórico de gerações) ────────────────────────────────────
+// Cada geração de minuta/debate/petição é salva com snapshot completo
+// para permitir "retomar de onde parou".
+model PecaHistory {
+  id          String   @id @default(cuid())
+  caseId      String   @default("default-case")
+  userId      String?
+  tipoPeca    String   // peticao_inicial | contestacao | recurso | ...
+  area        String
+  templateSlug String?
+  fatos       String   // snapshot dos fatos
+  pedidos     String?  // snapshot dos pedidos
+  gerado      String   // conteúdo gerado
+  provider    String   // qual provider
+  tokensUsed  Int      @default(0)
+  metadata    String   @default("{}") // JSON com campos extras
+  createdAt   DateTime @default(now())
+
+  @@index([caseId, createdAt])
+  @@index([userId, createdAt])
+}
