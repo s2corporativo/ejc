@@ -29,6 +29,7 @@ interface AppState {
     | "calculadora"
     | "cerebro"
     | "intelligence"
+    | "tribunal"
     | "pipeline"
     | "generator"
     | "editor"
@@ -44,6 +45,8 @@ interface AppState {
   setCurrentCaseId: (id: string | null) => void;
   brainContext: string | null; // contexto da análise cerebral para passar ao gerador
   setBrainContext: (ctx: string | null) => void;
+  activeDebateId: string | null;
+  setActiveDebateId: (id: string | null) => void;
   selectedTemplateSlug: string | null;
   setSelectedTemplateSlug: (slug: string | null) => void;
   selectedSkillSlugs: string[];
@@ -85,6 +88,8 @@ export const useAppStore = create<AppState>()(
       setCurrentCaseId: (currentCaseId) => set({ currentCaseId }),
       brainContext: null,
       setBrainContext: (brainContext) => set({ brainContext }),
+      activeDebateId: null,
+      setActiveDebateId: (activeDebateId) => set({ activeDebateId }),
       selectedTemplateSlug: null,
       setSelectedTemplateSlug: (selectedTemplateSlug) => set({ selectedTemplateSlug }),
       selectedSkillSlugs: [],

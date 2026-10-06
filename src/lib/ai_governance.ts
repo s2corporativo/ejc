@@ -125,6 +125,13 @@ const TASK_SANITIZATION_MAP: Record<string, SanitizationMode> = {
   // Áreas sensíveis → local completo (fail-closed sem IA local)
   "criminal": SanitizationMode.LOCAL_COMPLETO,
   "menores": SanitizationMode.LOCAL_COMPLETO,
+  // Tribunal multi-agente — penal herda LOCAL_COMPLETO; demais usam pseudonimizado
+  "debate_advogado": SanitizationMode.EXTERNO_PSEUDONIMIZADO,
+  "debate_juiz": SanitizationMode.EXTERNO_PSEUDONIMIZADO,
+  "debate_promotor": SanitizationMode.EXTERNO_PSEUDONIMIZADO,
+  "debate_advogado_penal": SanitizationMode.LOCAL_COMPLETO,
+  "debate_juiz_penal": SanitizationMode.LOCAL_COMPLETO,
+  "debate_promotor_penal": SanitizationMode.LOCAL_COMPLETO,
   // Padrão para tarefas não mapeadas
   "default": SanitizationMode.EXTERNO_PSEUDONIMIZADO,
 };

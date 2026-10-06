@@ -566,3 +566,85 @@ model JudgeSimulation {
 
   @@index([caseId])
 }
+
+// ── CÉREBRO MULTI-AGENTE (Advogado / Juiz / Promotor) ──────────────────────
+
+// LegalDoctrine — base curada de legislação, súmulas, precedentes e
+// enunciados para uso RAG-lite.
+model LegalDoctrine {
+  id              String   @id @default(cuid())
+  area            String
+  diploma         String
+  numero          String
+  tribunal        String?
+  titulo          String
+  textoTrecho     String
+  tags            String   @default("[]")
+  urlOficial      String?
+  hashConteudo    String?
+  dataConsulta    DateTime?
+  vigencia        String   @default("vigente")
+  ativo           Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([diploma, numero, tribunal])
+  @@index([area, ativo])
+  @@index([diploma, numero])
+  @@index([vigencia])
+}
+
+model LegalSearchCache {
+  id          String   @id @default(cuid())
+  query       String   @unique
+  area        String?
+  results     String
+  fetchedAt   DateTime @default(now())
+  expiresAt   DateTime
+
+  @@index([area])
+  @@index([expiresAt])
+}
+
+model MultiAgentDebate {
+  id            String   @id @default(cuid())
+  caseId        String   @default("default-case")
+  userId        String?
+  ramoJuridico  String
+  area          String
+  title         String
+  factsInput    String
+  parteConfig   String
+  status        String   @default("em_andamento")
+  inadmissibilidade String?
+  veredito      String?
+  totalTokens   Int      @default(0)
+  hipoteseFinal String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  turns         DebateTurn[]
+
+  @@index([caseId])
+  @@index([status])
+  @@index([area])
+}
+
+model DebateTurn {
+  id            String   @id @default(cuid())
+  debateId      String
+  debate        MultiAgentDebate @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  turnNumber    Int
+  persona       String
+  subRole       String
+  content       String
+  citations     String   @default("[]")
+  evidenceIds   String   @default("[]")
+  tokensUsed    Int      @default(0)
+  latencyMs     Int      @default(0)
+  status        String   @default("ok")
+  errorMessage  String?
+  createdAt     DateTime @default(now())
+
+  @@index([debateId])
+  @@index([persona])
+}
