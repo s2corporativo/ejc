@@ -1615,3 +1615,94 @@ Design: framer-motion animations (cascata delay 0.03s), shadcn/ui Card/Button/Ba
 3. **Conhecimento real preservado**: 17 skills + 11 templates + 33 legalSources + 48 skillVersions — todos curados de fontes oficiais (Código Civil, CPC, CLT, CP, CDC, CTN, CF)
 4. **Audit script disponível**: `scripts/audit-fictitious.ts` pode ser rodado a qualquer momento para detectar novos fictícios
 5. **Clean script disponível**: `scripts/clean-fictitious.ts` pode ser rodado para limpar
+
+---
+Task ID: 50 (Publicação GitHub s2corporativo/ejc + limpeza total do remote)
+Agent: main (Z.ai Code)
+Task: Publicar o sistema no GitHub em https://github.com/s2corporativo/ejc e apagar TUDO que estava no remote.
+
+## Implementações
+
+### 1. Preparação para publicação
+- Adicionado `README.md` (128 linhas) documentando o sistema: arquitetura, 3 personas, camadas (cognitiva, governança, jurídica, privacidade, portadas), 6 APIs com LLM real, stack, setup, estrutura
+- Adicionado `.env.example` com template para novos contribuidores (`DATABASE_URL` + comentários sobre `NODE_ENV` e `JURIDIA_API_TOKEN`)
+- `.gitignore` atualizado: `.env*` substituído por padrões específicos (`.env`, `.env.local`, `.env.*.local`, `!.env.example`) para permitir commit de `.env.example`
+- Removido `.env` do tracking git (sensível — contém DATABASE_URL)
+- Removido `db/custom.db` do tracking (binário SQLite)
+- Adicionado `DEPLOY-GITHUB.md` com instruções detalhadas de publicação
+
+### 2. Verificação de segurança ANTES de publicar
+- Scan por hardcoded tokens/passwords: nenhum encontrado ✅
+- Scan por OAB numbers hardcoded: nenhum encontrado ✅
+- Scan por emails hardcoded: apenas `demo@juridia.com.br` (default user, não sensível) ✅
+- `.env` removido do tracking ✅
+- `db/custom.db` removido do tracking ✅
+
+### 3. Force push para o remote (substitui tudo)
+- Remote configurado: `origin → https://github.com/s2corporativo/ejc.git`
+- Token recebido do usuário: `ghp_***` (usado apenas na URL durante push, depois removido)
+- `git push --force origin main` executado → `4c03f86...20c9e08 main -> main (forced update)` ✅
+- Branch protection rules do remote foram BYPASSED pelo token (que tinha bypass privileges)
+- Remote URL revertida para versão limpa (sem token) após o push ✅
+
+### 4. Limpeza TOTAL do remote — branches + tags
+
+**Branches deletadas**: 181 (todas exceto `main`)
+- Branches com prefixos: `agent/`, `arquivo/`, `audit/`, `automation/`, `backup/`, `chore/`, `fix/`, `feature/`, `hotfix/`, `release/`, etc.
+- Muitas com nomes datados: `audit/consolidacao-total-20260902`, `chore/cleanup-obsolete-files-20260921`, etc.
+- Script bash que lista refs via GitHub API → para cada branch ≠ main → DELETE `https://api.github.com/repos/s2corporativo/ejc/git/refs/heads/<name>`
+- 204 No Content = sucesso; 422 = "Reference does not exist" (já tinha sido deletada)
+
+**Tags deletadas**: 169 (todas)
+- Tags com prefixos: `archive/branches/`, `archive/work/`, `archive/tmp/`, etc.
+- Muitas tags de arquivamento datadas: `archive/branches/2026-09-30/work/p1-jurimetria-mgjec-providers`, etc.
+- Script bash similar ao de branches → DELETE `https://api.github.com/repos/s2corporativo/ejc/git/refs/tags/<name>`
+- 169 tags deletadas em sequência
+
+### 5. Estado FINAL do remote
+
+| Métrica | Antes | Depois |
+|---|---|---|
+| Branches | 182 (1 main + 181 antigas) | **1** (apenas main) |
+| Tags | 169 | **0** |
+| Default branch | main | **main** |
+| HEAD sha | 4c03f86 (velho) | **20c9e08** (nosso) |
+| .env no remote | (desconhecido) | **NÃO** (404 = SAFE) |
+| README.md | (velho) | **NOVO** (5307 bytes, 128 linhas) |
+| .env.example | (não existia) | **NOVO** (252 bytes template) |
+| Pushed at | (velho) | **2026-10-06T14:09:40Z** |
+| Visibility | public | **public** (mantido) |
+| Stargazers | 2 | **2** (mantido) |
+| Forks | 1 | **1** (mantido) |
+| Open issues | 23 | **23** (mantido) |
+
+### 6. Pós-publicação: cleanup local
+- Token GitHub NÃO foi salvo em nenhum arquivo tracked (verificado via `grep -r "ghp_***"` → vazio) ✅
+- Token NÃO está no git history (verificado via `git log --all -p | grep "ghp_***"` → vazio) ✅
+- Remote URL revertida para versão limpa (sem token embutido) ✅
+- Commit local: `docs: add DEPLOY-GITHUB.md instructions (after successful publication)`
+- Push final para o remote
+
+### 7. Recomendação ao usuário
+GitHub NÃO permite revogar tokens via API REST. O usuário deve:
+1. Acessar https://github.com/settings/tokens
+2. Encontrar o token usado (começa com `ghp_tMvsOw...`)
+3. Clicar em **Delete** para revogar
+
+## Stage Summary
+
+- **Publicação**: ✅ sucedida — `git push --force origin main` substituiu o branch main
+- **Limpeza branches**: ✅ 181 branches antigas deletadas
+- **Limpeza tags**: ✅ 169 tags antigas deletadas
+- **Segurança**: ✅ `.env` não está no remote (404); token não está em arquivos tracked nem git history
+- **Documentação**: ✅ README.md (128 linhas) + .env.example + DEPLOY-GITHUB.md publicados
+- **Repo público**: https://github.com/s2corporativo/ejc — apenas branch `main`, sem tags, com README + .env.example + .gitignore + código fonte completo
+
+## ⚠️ AÇÃO RECOMENDADA AO USUÁRIO
+
+Revogar o token GitHub imediatamente:
+1. https://github.com/settings/tokens
+2. Encontrar token começando com `ghp_tMvsOw`
+3. Delete
+
+O token NÃO está salvo no código nem no git history, mas como foi transmitido via chat, é boa prática revogá-lo por segurança.
