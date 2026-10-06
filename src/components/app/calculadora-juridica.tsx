@@ -17,6 +17,9 @@ import {
   CheckCircle2,
   Copy,
   Loader2,
+  Swords,
+  Shield,
+  Gavel,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -44,7 +47,10 @@ type ToolId =
   | "valor-causa"
   | "triagem"
   | "vedacao-surpresa"
-  | "checklist-julgador";
+  | "checklist-julgador"
+  | "gerar-contraria"
+  | "simular-reu"
+  | "analyze-juiz";
 
 interface ToolDef {
   id: ToolId;
@@ -64,6 +70,9 @@ const TOOLS: ToolDef[] = [
   { id: "triagem", label: "Triagem de risco", icon: Filter, description: "Classifica caso por prioridade e área", color: "text-emerald-600" },
   { id: "vedacao-surpresa", label: "Vedação à decisão surpresa", icon: EyeOff, description: "Art. 10 do CPC — contraditório prévio", color: "text-amber-600" },
   { id: "checklist-julgador", label: "Checklist do julgador", icon: ListChecks, description: "Admissibilidade + mérito (pré-protocolo)", color: "text-cyan-600" },
+  { id: "gerar-contraria", label: "Peça adversária (1 clique)", icon: Swords, description: "Crítica estruturada da peça atual", color: "text-red-600" },
+  { id: "simular-reu", label: "Simular réu (1 turno)", icon: Shield, description: "Contestação completa no padrão CPC 341-343", color: "text-blue-600" },
+  { id: "analyze-juiz", label: "Análise do juiz (1 turno)", icon: Gavel, description: "Admissibilidade + mérito + consectários", color: "text-purple-600" },
 ];
 
 interface ResultState {
@@ -87,6 +96,13 @@ export function CalculadoraJuridica() {
   const [prescForm, setPrescForm] = useState({ dataFato: "", dataAjuizamento: "", area: "civil" });
   const [valorCausaForm, setValorCausaForm] = useState({ valor: "", pedidos: "", area: "civil" });
   const [triagemForm, setTriagemForm] = useState({ fatos: "", area: "civil", valorCausa: "", provas: "" });
+  const [iaForm, setIaForm] = useState<{ fatos: string; areaJuridica: string; textoPeca: string; pedidosAutor: string; tipoPeca: string }>({
+    fatos: "",
+    areaJuridica: "civil",
+    textoPeca: "",
+    pedidosAutor: "",
+    tipoPeca: "peticao_inicial",
+  });
   const [vedacaoForm, setVedacaoForm] = useState({ decisao: "", partes: "", fundamentos: "" });
   const [salvaguardasForm, setSalvaguardasForm] = useState({ contrato: "", area: "consumer" });
 
@@ -154,12 +170,62 @@ export function CalculadoraJuridica() {
       } else if (activeTool === "checklist-julgador") {
         const obs = checklistJulgador(triagemForm);
         setResult({ tool: "checklist-julgador", payload: obs.payload, observacoes: obs.observacoes });
+      } else if (
+        activeTool === "gerar-contraria" ||
+        activeTool === "simular-reu" ||
+        activeTool === "analyze-juiz"
+      ) {
+        await chamarEndpointIA(activeTool, iaForm);
+        return;
       }
     } catch (e) {
       toast({ title: "Erro", description: e instanceof Error ? e.message : "Erro ao calcular", variant: "destructive" });
     } finally {
       setLoading(false);
     }
+  }
+
+  async function chamarEndpointIA(tool: "gerar-contraria" | "simular-reu" | "analyze-juiz", form: { areaJuridica: string; fatos: string; textoPeca: string; pedidosAutor?: string; tipoPeca?: string }) {
+    const endpoint =
+      tool === "gerar-contraria"
+        ? "/api/gerar-contraria"
+        : tool === "simular-reu"
+          ? "/api/simular-reu"
+          : "/api/analyze-juiz";
+    const body: Record<string, unknown> = {
+      caseId: null,
+      areaJuridica: form.areaJuridica,
+      fatosCaso: form.fatos,
+    };
+    if (tool === "gerar-contraria") {
+      body.textoPeca = form.textoPeca;
+    } else if (tool === "simular-reu") {
+      body.pedidosAutor = form.pedidosAutor;
+    } else if (tool === "analyze-juiz") {
+      body.textoPeca = form.textoPeca;
+      body.tipoPeca = form.tipoPeca ?? "peticao_inicial";
+    }
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Erro" }));
+      throw new Error(err.error || "Falha no endpoint");
+    }
+    const data = await res.json() as { raw?: string; contestacao?: string; analise?: string; parsed?: unknown; provider?: string; fallback?: boolean; latencyMs?: number };
+    const texto = data.raw ?? data.contestacao ?? data.analise ?? "(sem conteúdo)";
+    setResult({
+      tool,
+      payload: {
+        texto,
+        provider: data.provider ?? "desconhecido",
+        fallback: data.fallback ?? false,
+        latencyMs: data.latencyMs ?? 0,
+        parsed: data.parsed,
+      },
+    });
   }
 
   function copyResult() {
@@ -432,9 +498,107 @@ export function CalculadoraJuridica() {
                 </div>
               </TabsContent>
 
+              <TabsContent value="gerar-contraria" className="space-y-3 mt-0">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Texto da peça a ser criticada</Label>
+                  <Textarea rows={6} value={iaForm.textoPeca} onChange={(e) => setIaForm(s => ({ ...s, textoPeca: e.target.value }))} placeholder="Cole aqui a petição inicial, contestação, recurso..." />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Fatos do caso (contexto)</Label>
+                  <Textarea rows={3} value={iaForm.fatos} onChange={(e) => setIaForm(s => ({ ...s, fatos: e.target.value }))} placeholder="Resumo dos fatos relevantes" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Área jurídica</Label>
+                  <Select value={iaForm.areaJuridica} onValueChange={(v) => setIaForm(s => ({ ...s, areaJuridica: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="civil">Cível</SelectItem>
+                      <SelectItem value="penal">Penal</SelectItem>
+                      <SelectItem value="consumidor">Consumidor</SelectItem>
+                      <SelectItem value="trabalhista">Trabalhista</SelectItem>
+                      <SelectItem value="previdenciario">Previdenciário</SelectItem>
+                      <SelectItem value="tributario">Tributário</SelectItem>
+                      <SelectItem value="administrativo">Administrativo</SelectItem>
+                      <SelectItem value="ambiental">Ambiental</SelectItem>
+                      <SelectItem value="digital">Digital (LGPD)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="simular-reu" className="space-y-3 mt-0">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Fatos narrados pelo autor</Label>
+                  <Textarea rows={6} value={iaForm.fatos} onChange={(e) => setIaForm(s => ({ ...s, fatos: e.target.value }))} placeholder="Narrativa dos fatos pelo autor da ação" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Pedidos do autor (opcional)</Label>
+                  <Textarea rows={3} value={iaForm.pedidosAutor} onChange={(e) => setIaForm(s => ({ ...s, pedidosAutor: e.target.value }))} placeholder="Liste os pedidos do autor para a contestação rebatê-los" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Área jurídica</Label>
+                  <Select value={iaForm.areaJuridica} onValueChange={(v) => setIaForm(s => ({ ...s, areaJuridica: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="civil">Cível</SelectItem>
+                      <SelectItem value="penal">Penal</SelectItem>
+                      <SelectItem value="consumidor">Consumidor</SelectItem>
+                      <SelectItem value="trabalhista">Trabalhista</SelectItem>
+                      <SelectItem value="previdenciario">Previdenciário</SelectItem>
+                      <SelectItem value="tributario">Tributário</SelectItem>
+                      <SelectItem value="administrativo">Administrativo</SelectItem>
+                      <SelectItem value="ambiental">Ambiental</SelectItem>
+                      <SelectItem value="digital">Digital (LGPD)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="analyze-juiz" className="space-y-3 mt-0">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Fatos do caso</Label>
+                  <Textarea rows={6} value={iaForm.fatos} onChange={(e) => setIaForm(s => ({ ...s, fatos: e.target.value }))} placeholder="Narrativa dos fatos" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Texto da peça (opcional — para análise de admissibilidade)</Label>
+                  <Textarea rows={6} value={iaForm.textoPeca} onChange={(e) => setIaForm(s => ({ ...s, textoPeca: e.target.value }))} placeholder="Cole a peça a ser analisada pelo juiz" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Área</Label>
+                    <Select value={iaForm.areaJuridica} onValueChange={(v) => setIaForm(s => ({ ...s, areaJuridica: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="civil">Cível</SelectItem>
+                        <SelectItem value="penal">Penal</SelectItem>
+                        <SelectItem value="consumidor">Consumidor</SelectItem>
+                        <SelectItem value="trabalhista">Trabalhista</SelectItem>
+                        <SelectItem value="previdenciario">Previdenciário</SelectItem>
+                        <SelectItem value="tributario">Tributário</SelectItem>
+                        <SelectItem value="administrativo">Administrativo</SelectItem>
+                        <SelectItem value="ambiental">Ambiental</SelectItem>
+                        <SelectItem value="digital">Digital (LGPD)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Tipo de peça</Label>
+                    <Select value={iaForm.tipoPeca} onValueChange={(v) => setIaForm(s => ({ ...s, tipoPeca: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="peticao_inicial">Petição inicial</SelectItem>
+                        <SelectItem value="contestacao">Contestação</SelectItem>
+                        <SelectItem value="recurso">Recurso</SelectItem>
+                        <SelectItem value="denuncia">Denúncia</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </TabsContent>
+
               <Button onClick={calcular} disabled={loading} className="mt-2 w-full">
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Calculator className="mr-2 h-4 w-4" />}
-                Calcular
+                {activeTool === "gerar-contraria" || activeTool === "simular-reu" || activeTool === "analyze-juiz" ? "Gerar" : "Calcular"}
               </Button>
             </Tabs>
           </CardContent>
@@ -445,7 +609,7 @@ export function CalculadoraJuridica() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2 text-base">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" /> Resultado determinístico
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" /> {result && (result.tool === "gerar-contraria" || result.tool === "simular-reu" || result.tool === "analyze-juiz") ? "Resultado da IA (rascunho)" : "Resultado determinístico"}
               </CardTitle>
               {result && (
                 <Button size="sm" variant="ghost" onClick={copyResult}>
@@ -562,6 +726,13 @@ function ResultRenderer({ result }: { result: ResultState }) {
       </>
     );
   }
+  if (
+    result.tool === "gerar-contraria" ||
+    result.tool === "simular-reu" ||
+    result.tool === "analyze-juiz"
+  ) {
+    return <IaResultRender payload={p} />;
+  }
   // Resultado genérico
   return (
     <>
@@ -569,6 +740,34 @@ function ResultRenderer({ result }: { result: ResultState }) {
         <pre className="max-h-72 overflow-auto text-[11px] scrollbar-juridia">{JSON.stringify(p, null, 2)}</pre>
       </div>
       <ObservacoesList obs={result.observacoes} />
+    </>
+  );
+}
+
+function IaResultRender({ payload }: { payload: Record<string, unknown> }) {
+  const texto = String(payload.texto ?? "(sem conteúdo)");
+  const provider = String(payload.provider ?? "desconhecido");
+  const fallback = Boolean(payload.fallback);
+  const latency = Number(payload.latencyMs ?? 0);
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2 text-[10px]">
+        <Badge variant={fallback ? "secondary" : "default"}>
+          provider: {provider}{fallback ? " (fallback)" : ""}
+        </Badge>
+        <Badge variant="outline">{latency}ms</Badge>
+      </div>
+      <div className="rounded-lg border border-border p-3">
+        <pre className="max-h-[28rem] overflow-auto whitespace-pre-wrap text-[11px] leading-relaxed scrollbar-juridia">
+          {texto}
+        </pre>
+      </div>
+      {payload.parsed != null && (
+        <details className="rounded-lg border border-border p-2 text-[10px]">
+          <summary className="cursor-pointer text-muted-foreground">JSON estruturado</summary>
+          <pre className="mt-2 max-h-48 overflow-auto">{JSON.stringify(payload.parsed, null, 2)}</pre>
+        </details>
+      )}
     </>
   );
 }
